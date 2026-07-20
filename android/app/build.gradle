@@ -1,0 +1,58 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace = "com.quiverfall.quiverfall"
+    compileSdk = 35
+    ndkVersion = "25.1.8937393"
+
+    // Java 17, not 8. AGP 8.6.0 on the JDK 21 bundled with Android Studio needs a
+    // modern target, and Java 8 desugaring breaks several plugin deps.
+    //
+    // Toolchain is Gradle 8.7 / AGP 8.6.0 / Kotlin 2.1.0. Kotlin 2.1 is required
+    // (not optional): firebase_analytics pulls play-services-measurement 22.5.0,
+    // whose Kotlin metadata is 2.1.0 and fails to link against Kotlin 1.9.x.
+    // compileSdk 35 is required by audioplayers_android, which in turn forces
+    // AGP >= 8.6. See docs/decisions/0001-toolchain.md.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled = true
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId = "com.quiverfall.quiverfall"
+        // 24 is the floor for google_mobile_ads and keeps us above the reference
+        // low-end device (Snapdragon 665 class shipped on API 28). See docs/19.
+        minSdk = 24
+        targetSdk = 35
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    buildTypes {
+        release {
+            // TODO(phase-18): real signing config before store submission.
+            signingConfig = signingConfigs.debug
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
+}

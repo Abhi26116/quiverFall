@@ -1,0 +1,63 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+  errors:
+    # Unused code is a bug signal, not a style preference.
+    unused_import: error
+    unused_local_variable: error
+    unused_element: error
+    dead_code: error
+    # Missing awaits cause save corruption and race conditions.
+    unawaited_futures: error
+    # Exhaustiveness matters — enemy families, Draw tiers, rarities and boss
+    # phases are all closed sets, and a missed case is a silent gameplay bug.
+    missing_enum_constant_in_switch: error
+
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "build/**"
+
+linter:
+  rules:
+    # ── Correctness ──────────────────────────────────────────────────────────
+    always_declare_return_types: true
+    avoid_dynamic_calls: true
+    avoid_slow_async_io: true
+    cancel_subscriptions: true
+    close_sinks: true
+    literal_only_boolean_expressions: true
+    no_adjacent_strings_in_list: true
+    prefer_void_to_null: true
+    test_types_in_equals: true
+    throw_in_finally: true
+    unnecessary_statements: true
+    use_build_context_synchronously: true
+
+    # ── Performance — these directly serve the 60 FPS law (docs/19) ──────────
+    avoid_function_literals_in_foreach_calls: true
+    prefer_const_constructors: true
+    prefer_const_constructors_in_immutables: true
+    prefer_const_declarations: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_final_in_for_each: true
+    prefer_final_locals: true
+    sized_box_for_whitespace: true
+    use_decorated_box: true
+
+    # ── Style / consistency ──────────────────────────────────────────────────
+    always_use_package_imports: true
+    avoid_redundant_argument_values: true
+    directives_ordering: true
+    prefer_single_quotes: true
+    # require_trailing_commas is deliberately off: it disagrees with
+    # `dart format`'s wrapping, so enabling both produces a lint that the
+    # formatter then reverts. The formatter is the authority on layout.
+    sort_child_properties_last: true
+    unnecessary_lambdas: true
+    unnecessary_parenthesis: true

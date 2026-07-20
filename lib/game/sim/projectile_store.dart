@@ -1,0 +1,164 @@
+import 'dart:typed_data';
+
+import 'package:quiverfall/game/sim/sim_config.dart';
+
+/// Per-projectile data, indexed by entity slot.
+///
+/// Kept out of [EntityStore] because only a fraction of entities are
+/// projectiles, and mixing rarely-used arrays into the hot component set hurts
+/// the cache locality that struct-of-arrays exists to buy.
+///
+/// Sized to the entity capacity so it can be indexed directly by slot with no
+/// mapping — a lookup table would cost an indirection on the hottest path in
+/// the game.
+class ProjectileStore {
+  ProjectileStore({int capacity = SimConfig.maxEntities})
+      : _capacity = capacity,
+        damage = Float64List(capacity),
+        pierceRemaining = Int32List(capacity),
+        drawTier = Uint8List(capacity),
+        elementalBonus = Float64List(capacity),
+        confluenceBonus = Float64List(capacity),
+        lifetime = Float64List(capacity),
+        hitCount = Int32List(capacity),
+        _hits = Int32List(capacity * maxTrackedHits);
+
+  /// How many distinct targets one arrow remembers striking.
+  ///
+  /// An arrow that pierces more than this may re-hit an earlier target. That is
+  /// a deliberate, documented ceiling rather than an unbounded set: tracking is
+  /// fixed-size to stay allocation-free, and by the twelfth target pierce
+  /// falloff has already reduced damage to ~14%, so a rare double-hit at that
+  /// depth is beneath notice. Unbounded pierce (Boon 25, *The Long Arrow*) is
+  /// the only build that reaches here.
+  static const int maxTrackedHits = 12;
+
+  final int _capacity;
+
+  /// Pre-resolved attack value for this arrow, computed once at fire time.
+  /// Resolving the full chain per *hit* would repeat work that cannot change
+  /// mid-flight.
+  final Float64List damage;
+
+  final Int32List pierceRemaining;
+
+  /// The Draw tier this arrow was fired at. Needed at impact to decide whether
+  /// it breaks a Carapace plate — the arrow carries its tier, it is not read
+  /// from the shooter's current state, because the shooter may have moved and
+  /// dropped to Tier I while the arrow is still in flight.
+  final Uint8List drawTier;
+
+  final Float64List elementalBonus;
+  final Float64List confluenceBonus;
+
+  /// Seconds remaining before the arrow despawns.
+  final Float64List lifetime;
+
+  final Int32List hitCount;
+  final Int32List _hits;
+
+  // ── Confluence ────────────────────────────────────────────────────────────
+
+  /// Serial of the Windline this arrow is itself laying. Every Confluence test
+  /// requires strictly-older segments, and this is what "older" is measured
+  /// against.
+  final Int32List windlineSerial = Int32List(SimConfig.maxEntities);
+
+  /// Stacks accumulated so far in flight.
+  final Int32List confluenceStacks = Int32List(SimConfig.maxEntities);
+
+  /// Distinct element indices picked up from crossed lines, packed as a bitmask.
+  /// Three or more distinct elements collapse to Prismbreak.
+  final Int32List confluenceElementMask = Int32List(SimConfig.maxEntities);
+
+  /// The element this arrow itself carries, or -1.
+  final Int8List element = Int8List(SimConfig.maxEntities);
+
+  /// This arrow's own trail id. Every segment it lays carries this, so another
+  /// arrow crossing the trail counts it once.
+  final Int32List trailId = Int32List(SimConfig.maxEntities);
+
+  /// Distance flown since the last Windline segment was emitted.
+  ///
+  /// Segments are emitted per distance travelled rather than per tick. Per-tick
+  /// emission produced ~120 segments for a two-second flight, which filled the
+  /// 1024-segment ring in a handful of shots and pushed the Confluence sweep to
+  /// 1.82 ms on device against a 0.8 ms budget.
+  final Float64List sinceLastSegment = Float64List(SimConfig.maxEntities);
+
+  final Int32List crossedCount = Int32List(SimConfig.maxEntities);
+  final Int32List _crossed =
+      Int32List(SimConfig.maxEntities * maxTrackedCrossings);
+
+  /// How many distinct Windline serials an arrow remembers crossing.
+  ///
+  /// Sized just above the highest reachable stack count (5, for Iris) so an
+  /// arrow cannot farm repeat stacks from one line while travelling nearly
+  /// parallel to it.
+  static const int maxTrackedCrossings = 8;
+
+  void reset(int slot) {
+    damage[slot] = 0;
+    pierceRemaining[slot] = 0;
+    drawTier[slot] = 0;
+    elementalBonus[slot] = 0;
+    confluenceBonus[slot] = 0;
+    lifetime[slot] = 0;
+    hitCount[slot] = 0;
+    windlineSerial[slot] = 0;
+    confluenceStacks[slot] = 0;
+    confluenceElementMask[slot] = 0;
+    element[slot] = -1;
+    trailId[slot] = 0;
+    sinceLastSegment[slot] = 0;
+    crossedCount[slot] = 0;
+  }
+
+  bool hasCrossed(int slot, int serial) {
+    final int n = crossedCount[slot];
+    final int base = slot * maxTrackedCrossings;
+    for (int i = 0; i < n; i++) {
+      if (_crossed[base + i] == serial) return true;
+    }
+    return false;
+  }
+
+  void recordCrossing(int slot, int serial) {
+    final int n = crossedCount[slot];
+    if (n >= maxTrackedCrossings) return;
+    _crossed[slot * maxTrackedCrossings + n] = serial;
+    crossedCount[slot] = n + 1;
+  }
+
+  /// The raw crossed-serial array, for the sweep's dedupe pass.
+  ///
+  /// Exposed directly, with [crossedBase] as the offset, rather than as a
+  /// sublist or an Iterable view: `getRange`, `sublist`, and `where` all
+  /// allocate, and this is read once per arrow per tick.
+  Int32List get crossedRaw => _crossed;
+
+  int crossedBase(int slot) => slot * maxTrackedCrossings;
+
+  /// True if this arrow has already struck [targetId].
+  ///
+  /// Stores the full generation-tagged handle, not the slot index, so an arrow
+  /// cannot be fooled into skipping a *new* enemy that happens to have recycled
+  /// a dead one's slot.
+  bool hasHit(int slot, int targetId) {
+    final int n = hitCount[slot];
+    final int base = slot * maxTrackedHits;
+    for (int i = 0; i < n; i++) {
+      if (_hits[base + i] == targetId) return true;
+    }
+    return false;
+  }
+
+  void recordHit(int slot, int targetId) {
+    final int n = hitCount[slot];
+    if (n >= maxTrackedHits) return;
+    _hits[slot * maxTrackedHits + n] = targetId;
+    hitCount[slot] = n + 1;
+  }
+
+  int get capacity => _capacity;
+}

@@ -1,0 +1,519 @@
+{
+  "_comment": "The complete enemy table — all 26 types from docs/05-enemies.md, authored in Phase 5 alongside their behaviour trees. Values are multipliers and fractions, never absolutes (docs/05 §5.0): hpMultiplier scales Curves.enemyHp, and every damage number is a fraction of the player's MAX HP. The `id` is the archetype: it is parsed straight into EnemyArchetype, so data and behaviour branch cannot drift apart. `family` is redundant with the archetype and is kept for readability — the loader cross-checks it.",
+  "schemaVersion": 2,
+  "enemies": [
+    {
+      "id": "mote",
+      "name": "Mote",
+      "family": "drift",
+      "hpMultiplier": 1.0,
+      "speed": 1.6,
+      "contactDamage": 0.06,
+      "radius": 0.22,
+      "threatCost": 4.0,
+      "goldWeight": 1.0,
+      "materialChance": 0.04,
+      "introducedInChapter": 1
+    },
+    {
+      "id": "swarmling",
+      "name": "Swarmling",
+      "family": "drift",
+      "hpMultiplier": 0.45,
+      "speed": 2.6,
+      "contactDamage": 0.04,
+      "radius": 0.16,
+      "threatCost": 2.0,
+      "goldWeight": 0.3,
+      "materialChance": 0.01,
+      "combat": {
+        "contactCooldown": 0.5,
+        "keepDistance": 1.2
+      },
+      "introducedInChapter": 2
+    },
+    {
+      "id": "wisp",
+      "name": "Wisp",
+      "family": "drift",
+      "hpMultiplier": 0.7,
+      "speed": 2.0,
+      "contactDamage": 0.05,
+      "radius": 0.2,
+      "threatCost": 5.0,
+      "goldWeight": 1.4,
+      "materialChance": 0.06,
+      "introducedInChapter": 3
+    },
+    {
+      "id": "cinderMote",
+      "name": "Cinder Mote",
+      "family": "drift",
+      "hpMultiplier": 1.0,
+      "speed": 1.6,
+      "contactDamage": 0.06,
+      "radius": 0.24,
+      "threatCost": 7.0,
+      "goldWeight": 1.6,
+      "materialChance": 0.08,
+      "combat": {
+        "attackRange": 3.0,
+        "windUpSeconds": 0.6,
+        "chargeSpeed": 2.56,
+        "deathBlastDamage": 0.14,
+        "deathBlastRadius": 2.2
+      },
+      "introducedInChapter": 4
+    },
+
+    {
+      "id": "husk",
+      "name": "Husk",
+      "family": "carapace",
+      "hpMultiplier": 3.0,
+      "speed": 1.0,
+      "contactDamage": 0.09,
+      "radius": 0.38,
+      "threatCost": 14.0,
+      "goldWeight": 4.0,
+      "materialChance": 0.18,
+      "hasFrontalPlate": true,
+      "combat": {
+        "turnRateDegrees": 110.0
+      },
+      "introducedInChapter": 1
+    },
+    {
+      "id": "bulwark",
+      "name": "Bulwark",
+      "family": "carapace",
+      "hpMultiplier": 6.0,
+      "speed": 0.0,
+      "contactDamage": 0.0,
+      "radius": 0.45,
+      "threatCost": 20.0,
+      "goldWeight": 6.0,
+      "materialChance": 0.3,
+      "hasFrontalPlate": true,
+      "plateArcDegrees": 180.0,
+      "combat": {
+        "turnRateDegrees": 90.0
+      },
+      "introducedInChapter": 3
+    },
+    {
+      "id": "shellback",
+      "name": "Shellback",
+      "family": "carapace",
+      "hpMultiplier": 4.0,
+      "speed": 1.2,
+      "contactDamage": 0.1,
+      "radius": 0.4,
+      "threatCost": 16.0,
+      "goldWeight": 4.5,
+      "materialChance": 0.2,
+      "hasFrontalPlate": true,
+      "plateRegenSeconds": 2.0,
+      "combat": {
+        "recoverySeconds": 2.0,
+        "turnRateDegrees": 130.0
+      },
+      "introducedInChapter": 5
+    },
+    {
+      "id": "ironmaw",
+      "name": "Ironmaw",
+      "family": "carapace",
+      "hpMultiplier": 5.0,
+      "speed": 1.4,
+      "contactDamage": 0.13,
+      "radius": 0.42,
+      "threatCost": 22.0,
+      "goldWeight": 7.0,
+      "materialChance": 0.25,
+      "hasFrontalPlate": true,
+      "combat": {
+        "windUpSeconds": 0.4,
+        "recoverySeconds": 5.0,
+        "chargeSpeed": 3.9,
+        "turnRateDegrees": 120.0
+      },
+      "introducedInChapter": 6
+    },
+
+    {
+      "id": "lancer",
+      "name": "Lancer",
+      "family": "rush",
+      "hpMultiplier": 1.4,
+      "speed": 3.4,
+      "contactDamage": 0.05,
+      "radius": 0.3,
+      "threatCost": 9.0,
+      "goldWeight": 2.2,
+      "materialChance": 0.1,
+      "combat": {
+        "attackDamage": 0.12,
+        "attackRange": 5.0,
+        "attackCooldown": 1.2,
+        "windUpSeconds": 0.7,
+        "recoverySeconds": 1.1,
+        "chargeSpeed": 8.0,
+        "chargeDistance": 6.0
+      },
+      "introducedInChapter": 1
+    },
+    {
+      "id": "stalker",
+      "name": "Stalker",
+      "family": "rush",
+      "hpMultiplier": 1.1,
+      "speed": 2.8,
+      "contactDamage": 0.04,
+      "radius": 0.28,
+      "threatCost": 9.0,
+      "goldWeight": 2.0,
+      "materialChance": 0.09,
+      "combat": {
+        "attackDamage": 0.1,
+        "attackRange": 4.5,
+        "attackCooldown": 2.0,
+        "windUpSeconds": 0.35,
+        "recoverySeconds": 0.6,
+        "chargeSpeed": 7.0,
+        "chargeDistance": 4.5,
+        "keepDistance": 4.0
+      },
+      "introducedInChapter": 2
+    },
+    {
+      "id": "bounder",
+      "name": "Bounder",
+      "family": "rush",
+      "hpMultiplier": 1.2,
+      "speed": 2.2,
+      "contactDamage": 0.05,
+      "radius": 0.3,
+      "threatCost": 10.0,
+      "goldWeight": 2.4,
+      "materialChance": 0.11,
+      "combat": {
+        "attackDamage": 0.11,
+        "attackRange": 7.0,
+        "attackCooldown": 2.5,
+        "windUpSeconds": 0.5,
+        "recoverySeconds": 0.6,
+        "flightSeconds": 1.0,
+        "areaRadius": 1.8
+      },
+      "introducedInChapter": 4
+    },
+    {
+      "id": "ripper",
+      "name": "Ripper",
+      "family": "rush",
+      "hpMultiplier": 2.0,
+      "speed": 2.2,
+      "contactDamage": 0.05,
+      "radius": 0.32,
+      "threatCost": 13.0,
+      "goldWeight": 3.0,
+      "materialChance": 0.14,
+      "combat": {
+        "attackDamage": 0.14,
+        "attackRange": 1.3,
+        "attackCooldown": 1.6,
+        "windUpSeconds": 0.35,
+        "heavyWindUpSeconds": 0.8,
+        "recoverySeconds": 0.7
+      },
+      "introducedInChapter": 3
+    },
+    {
+      "id": "thresher",
+      "name": "Thresher",
+      "family": "rush",
+      "hpMultiplier": 3.5,
+      "speed": 1.8,
+      "contactDamage": 0.0,
+      "radius": 0.34,
+      "threatCost": 16.0,
+      "goldWeight": 4.0,
+      "materialChance": 0.16,
+      "combat": {
+        "attackDamage": 0.09,
+        "attackCooldown": 0.6,
+        "attackRange": 2.4,
+        "areaRadius": 2.4
+      },
+      "introducedInChapter": 5
+    },
+
+    {
+      "id": "spitter",
+      "name": "Spitter",
+      "family": "salvo",
+      "hpMultiplier": 1.0,
+      "speed": 1.2,
+      "contactDamage": 0.03,
+      "radius": 0.3,
+      "threatCost": 8.0,
+      "goldWeight": 2.0,
+      "materialChance": 0.1,
+      "combat": {
+        "attackDamage": 0.07,
+        "attackRange": 8.0,
+        "attackCooldown": 2.2,
+        "windUpSeconds": 0.3,
+        "flightSeconds": 1.0,
+        "areaRadius": 1.2,
+        "lingerSeconds": 3.5,
+        "lingerDamage": 0.04,
+        "keepDistance": 6.0
+      },
+      "introducedInChapter": 1
+    },
+    {
+      "id": "nettle",
+      "name": "Nettle",
+      "family": "salvo",
+      "hpMultiplier": 0.9,
+      "speed": 1.0,
+      "contactDamage": 0.03,
+      "radius": 0.28,
+      "threatCost": 7.0,
+      "goldWeight": 1.8,
+      "materialChance": 0.09,
+      "combat": {
+        "attackDamage": 0.05,
+        "attackRange": 9.0,
+        "attackCooldown": 1.8,
+        "windUpSeconds": 0.4,
+        "projectileSpeed": 5.0,
+        "projectileCount": 3,
+        "spreadDegrees": 30.0,
+        "keepDistance": 5.0
+      },
+      "introducedInChapter": 2
+    },
+    {
+      "id": "longeye",
+      "name": "Longeye",
+      "family": "salvo",
+      "hpMultiplier": 1.3,
+      "speed": 0.8,
+      "contactDamage": 0.05,
+      "radius": 0.3,
+      "threatCost": 15.0,
+      "goldWeight": 3.5,
+      "materialChance": 0.15,
+      "combat": {
+        "attackDamage": 0.22,
+        "attackRange": 12.0,
+        "attackCooldown": 3.0,
+        "windUpSeconds": 1.2,
+        "trackingCutoffSeconds": 0.4,
+        "recoverySeconds": 0.8,
+        "areaRadius": 0.45,
+        "keepDistance": 8.0
+      },
+      "introducedInChapter": 4
+    },
+    {
+      "id": "mortarite",
+      "name": "Mortarite",
+      "family": "salvo",
+      "hpMultiplier": 2.2,
+      "speed": 0.6,
+      "contactDamage": 0.04,
+      "radius": 0.36,
+      "threatCost": 14.0,
+      "goldWeight": 3.2,
+      "materialChance": 0.14,
+      "combat": {
+        "attackDamage": 0.11,
+        "attackRange": 12.0,
+        "attackCooldown": 3.2,
+        "windUpSeconds": 0.5,
+        "flightSeconds": 1.4,
+        "projectileCount": 3,
+        "areaRadius": 1.4,
+        "keepDistance": 7.0
+      },
+      "introducedInChapter": 5
+    },
+    {
+      "id": "screecher",
+      "name": "Screecher",
+      "family": "salvo",
+      "hpMultiplier": 1.5,
+      "speed": 1.4,
+      "contactDamage": 0.03,
+      "radius": 0.3,
+      "threatCost": 12.0,
+      "goldWeight": 3.0,
+      "materialChance": 0.13,
+      "combat": {
+        "attackDamage": 0.06,
+        "attackRange": 5.0,
+        "attackCooldown": 3.0,
+        "windUpSeconds": 0.6,
+        "recoverySeconds": 0.5,
+        "spreadDegrees": 60.0,
+        "areaRadius": 5.0,
+        "turnRateDegrees": 60.0,
+        "drawLockSeconds": 2.0,
+        "keepDistance": 4.5
+      },
+      "introducedInChapter": 6
+    },
+
+    {
+      "id": "weaver",
+      "name": "Weaver",
+      "family": "choir",
+      "hpMultiplier": 1.6,
+      "speed": 1.0,
+      "contactDamage": 0.05,
+      "radius": 0.28,
+      "threatCost": 12.0,
+      "goldWeight": 3.0,
+      "materialChance": 0.14,
+      "combat": {
+        "attackCooldown": 3.0,
+        "auraRadius": 6.0,
+        "auraStrength": 0.4,
+        "keepDistance": 1.4
+      },
+      "introducedInChapter": 2
+    },
+    {
+      "id": "chanter",
+      "name": "Chanter",
+      "family": "choir",
+      "hpMultiplier": 1.4,
+      "speed": 1.0,
+      "contactDamage": 0.04,
+      "radius": 0.28,
+      "threatCost": 11.0,
+      "goldWeight": 2.8,
+      "materialChance": 0.13,
+      "combat": {
+        "auraRadius": 5.0,
+        "auraStrength": 0.3,
+        "keepDistance": 6.0
+      },
+      "introducedInChapter": 4
+    },
+    {
+      "id": "knitter",
+      "name": "Knitter",
+      "family": "choir",
+      "hpMultiplier": 1.8,
+      "speed": 1.2,
+      "contactDamage": 0.05,
+      "radius": 0.3,
+      "threatCost": 14.0,
+      "goldWeight": 3.4,
+      "materialChance": 0.15,
+      "combat": {
+        "auraRadius": 4.0,
+        "auraStrength": 0.04
+      },
+      "introducedInChapter": 6
+    },
+    {
+      "id": "wardenFell",
+      "name": "Warden-Fell",
+      "family": "choir",
+      "hpMultiplier": 2.5,
+      "speed": 0.9,
+      "contactDamage": 0.06,
+      "radius": 0.34,
+      "threatCost": 18.0,
+      "goldWeight": 4.2,
+      "materialChance": 0.18,
+      "combat": {
+        "auraRadius": 5.0,
+        "auraStrength": 1.0
+      },
+      "introducedInChapter": 6
+    },
+
+    {
+      "id": "riftMaw",
+      "name": "Rift Maw",
+      "family": "riftborn",
+      "hpMultiplier": 4.0,
+      "speed": 0.0,
+      "contactDamage": 0.1,
+      "radius": 0.5,
+      "threatCost": 34.0,
+      "goldWeight": 8.0,
+      "materialChance": 0.4,
+      "combat": {
+        "attackCooldown": 4.0,
+        "windUpSeconds": 0.5,
+        "spawnsId": "swarmling",
+        "spawnCount": 4,
+        "spawnCap": 16
+      },
+      "introducedInChapter": 3
+    },
+    {
+      "id": "echo",
+      "name": "Echo",
+      "family": "riftborn",
+      "hpMultiplier": 2.0,
+      "speed": 2.4,
+      "contactDamage": 0.09,
+      "radius": 0.35,
+      "threatCost": 26.0,
+      "goldWeight": 6.0,
+      "materialChance": 0.3,
+      "combat": {
+        "attackDamage": 0.06,
+        "attackRange": 14.0,
+        "attackCooldown": 0.45,
+        "projectileSpeed": 8.0,
+        "projectileCount": 1
+      },
+      "introducedInChapter": 5
+    },
+    {
+      "id": "gravebound",
+      "name": "Gravebound",
+      "family": "riftborn",
+      "hpMultiplier": 3.0,
+      "speed": 1.6,
+      "contactDamage": 0.11,
+      "radius": 0.36,
+      "threatCost": 28.0,
+      "goldWeight": 6.5,
+      "materialChance": 0.32,
+      "combat": {
+        "windUpSeconds": 2.5,
+        "reviveCount": 1,
+        "reviveHealthFraction": 0.4,
+        "reviveSpeedBonus": 0.4
+      },
+      "introducedInChapter": 7
+    },
+    {
+      "id": "nullborn",
+      "name": "Null",
+      "family": "riftborn",
+      "hpMultiplier": 2.8,
+      "speed": 2.0,
+      "contactDamage": 0.1,
+      "radius": 0.34,
+      "threatCost": 32.0,
+      "goldWeight": 7.5,
+      "materialChance": 0.35,
+      "combat": {
+        "immunitySeconds": 6.0
+      },
+      "introducedInChapter": 8
+    }
+  ]
+}

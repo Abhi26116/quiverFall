@@ -1,0 +1,12 @@
+tags:
+  phase0:
+    description: >-
+      Toolchain and platform verification from Phase 0. These are benchmarks and
+      environment probes, not behavioural tests; they are allowed to be slower
+      than the rest of the suite.
+  guard:
+    description: >-
+      Architecture guards. These fail the build when a structural invariant from
+      docs/12-architecture.md is violated.
+  slow:
+    description: Long-running simulation or balance tests.

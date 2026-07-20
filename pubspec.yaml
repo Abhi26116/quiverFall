@@ -1,0 +1,76 @@
+name: quiverfall
+description: "Quiverfall — an action roguelike archer game."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.5.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── Render layer ────────────────────────────────────────────────────────────
+  flame: 1.22.0
+
+  # ── App state / routing / DI ────────────────────────────────────────────────
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  go_router: ^14.0.0
+  get_it: ^7.7.0
+
+  # ── Models ──────────────────────────────────────────────────────────────────
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+  collection: ^1.18.0
+  meta: ^1.15.0
+
+  # ── Local store ─────────────────────────────────────────────────────────────
+  # Isar 3.1.0+1 was evaluated and rejected in Phase 0: isar_flutter_libs
+  # declares no AGP namespace, so it cannot build under AGP 8.x, and upstream
+  # has been unmaintained since 2023. See docs/decisions/0001-toolchain.md.
+  hive_ce: ^2.0.0
+  hive_ce_flutter: ^2.0.0
+
+  # ── Platform services ───────────────────────────────────────────────────────
+  in_app_purchase: ^3.2.0
+  audioplayers: ^6.1.0
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.4
+  package_info_plus: ^8.0.2
+  device_info_plus: ^10.1.2
+  crypto: ^3.0.5
+
+  # ── Deferred to Phase 16/17 — DO NOT re-add before reading the note below ────
+  #
+  # google_mobile_ads: ^5.3.1
+  #   Verified working on Android (release APK builds). Breaks the iOS build:
+  #   Google-Mobile-Ads-SDK 11.13 links against MarketplaceKit, which needs
+  #   Xcode 15.4+. This machine has Xcode 15.2 (capped by macOS 13).
+  #
+  # firebase_core / firebase_analytics / firebase_crashlytics
+  #   Verified working on Android. On iOS: the 11.x SDK needs Swift 6 (Xcode 16)
+  #   and fails to compile; the 10.x SDK compiles but fails to link.
+  #
+  # Both are Phase 16/17 concerns and both sit behind ports (AdsPort,
+  # AnalyticsPort) per docs/12-architecture.md, so nothing in Phases 1–15
+  # depends on them. Keeping them out here is what keeps iOS buildable
+  # throughout the main build. See docs/decisions/0001-toolchain.md.
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  test: ^1.25.0
+  flutter_lints: ^4.0.0
+  custom_lint: ^0.6.4
+  riverpod_lint: ^2.3.12
+  build_runner: ^2.4.12
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.4.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/
+
