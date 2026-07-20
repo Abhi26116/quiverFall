@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
 import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
 import 'package:quiverfall/game/device/quality_tier.dart';
@@ -109,6 +110,17 @@ class QuiverfallGame extends FlameGame {
   /// Set while a pause sheet or a Boon choice is up.
   bool halted = false;
 
+  /// Mirrors [StageRunner.status], updated only on the tick it actually
+  /// changes rather than every frame.
+  ///
+  /// The screen listens to this instead of polling [runner] itself: [halted]
+  /// stops [_afterTick] from running at all once the Boon Choice or the
+  /// Shrine takes over, so a resolved choice has to push its own new status
+  /// here rather than waiting for the next tick to notice it — there will not
+  /// be one until [halted] is cleared.
+  final ValueNotifier<StageStatus> runStatus =
+      ValueNotifier<StageStatus>(StageStatus.fighting);
+
   /// Simulation steps taken on the most recent frame. Surfaced for the on-device
   /// bench overlay.
   int get stepsLastFrame => driver.stepsLastFrame;
@@ -171,7 +183,17 @@ class QuiverfallGame extends FlameGame {
 
     // After the events are drained, so the room-cleared cue has already been
     // raised for the room that just ended rather than for the one starting.
-    runner?.update();
+    final StageRunner? r = runner;
+    if (r != null && r.update()) {
+      runStatus.value = r.status;
+      // Self-halts the moment an interstitial appears, rather than waiting for
+      // the widget layer to notice and set it — a frame's worth of the sim
+      // ticking on in an already-cleared room while nothing is watching for it
+      // is harmless today, but "harmless because the room is empty" is not a
+      // property worth depending on.
+      halted = r.status == StageStatus.awaitingBoonChoice ||
+          r.status == StageStatus.awaitingShrine;
+    }
   }
 
   @override

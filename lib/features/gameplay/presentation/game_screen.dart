@@ -6,6 +6,12 @@ import 'package:quiverfall/core/routing/routes.dart';
 import 'package:quiverfall/core/theme/tokens.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
 import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
+import 'package:quiverfall/features/gameplay/presentation/boon_choice.dart';
+import 'package:quiverfall/features/gameplay/presentation/shrine.dart';
+import 'package:quiverfall/game/boons/boon_catalogue.dart';
+import 'package:quiverfall/game/boons/boon_content_loader.dart';
+import 'package:quiverfall/game/boons/boon_definition.dart';
+import 'package:quiverfall/game/boons/synergy_catalogue.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/content_loader.dart';
 import 'package:quiverfall/game/feel/cues.dart';
@@ -21,12 +27,11 @@ import 'package:quiverfall/view/quiverfall_game.dart';
 
 /// The arena.
 ///
-/// Phase 6's deliverable is a thing eight people who have never seen the game
-/// can be handed, and this is that thing. It is deliberately not the final
-/// gameplay screen — no pause sheet, no ultimate button, no Boon choice, no
-/// victory flow — because none of those are what the gate measures. The gate
-/// measures whether the Draw/Confluence loop is fun, and everything here exists
-/// to put that in front of a thumb.
+/// Phase 6's deliverable was a thing eight people who have never seen the game
+/// can be handed, and Phase 9 is the first phase to build on top of it rather
+/// than replace it: the Boon Choice and the Shrine are now real, everything
+/// else Phase 6 deferred — a pause sheet, an ultimate button, a victory flow —
+/// still is not here.
 ///
 /// Phase 8 replaces the hard-coded room with the real level generator and the
 /// `RunCoordinator` handshake; Phase 15 replaces the HUD with the production
@@ -90,9 +95,33 @@ class _GameScreenState extends State<GameScreen>
     _hudFrame.value++;
   }
 
+  /// Runs a [StageRunner] mutation from the Boon Choice or the Shrine, then
+  /// re-syncs the game with whatever it left behind.
+  ///
+  /// Needed because [QuiverfallGame.halted] stops [QuiverfallGame._afterTick]
+  /// from running at all while an interstitial is up — there will be no
+  /// further tick to notice the runner's status changed on its own, so the
+  /// widget that caused the change has to push it through itself.
+  void _resolve(void Function() action) {
+    final QuiverfallGame? game = _game;
+    final StageRunner? runner = _runner;
+    if (game == null || runner == null) return;
+
+    action();
+
+    game.runStatus.value = runner.status;
+    game.halted = runner.status == StageStatus.awaitingBoonChoice ||
+        runner.status == StageStatus.awaitingShrine;
+  }
+
   Future<void> _start() async {
     try {
-      final ContentLibrary content = await ContentLoader.load();
+      // Loaded together: neither is needed before the other, and a run that
+      // fails to load its Boon table should fail the same way a run that
+      // fails to load its enemy table does, rather than reaching the first
+      // room clear and discovering it there.
+      final (ContentLibrary content, (BoonCatalogue, SynergyCatalogue) boons) =
+          await (ContentLoader.load(), BoonContentLoader.load()).wait;
       if (!mounted) return;
 
       // The whole stage is generated up front. That is what makes it
@@ -126,6 +155,8 @@ class _GameScreenState extends State<GameScreen>
         world: sim,
         content: content,
         plan: plan,
+        boonCatalogue: boons.$1,
+        synergies: boons.$2,
       )..start();
 
       setState(() {
@@ -182,6 +213,35 @@ class _GameScreenState extends State<GameScreen>
               showTelemetry: widget.showTelemetry,
             ),
             _ExitButton(telemetry: game.telemetry),
+            ValueListenableBuilder<StageStatus>(
+              valueListenable: game.runStatus,
+              builder: (BuildContext context, StageStatus status, _) {
+                final StageRunner? runner = _runner;
+                if (runner == null) return const SizedBox.shrink();
+
+                return switch (status) {
+                  StageStatus.awaitingBoonChoice => BoonChoice(
+                      runner: runner,
+                      onPick: (BoonDefinition def) =>
+                          _resolve(() => runner.pickBoon(def)),
+                      onReroll: runner.rerollsRemaining > 0
+                          ? () => _resolve(runner.rerollBoonOffers)
+                          : null,
+                    ),
+                  StageStatus.awaitingShrine => Shrine(
+                      runner: runner,
+                      onBuyHeal: () => _resolve(runner.buyShrineHeal),
+                      onBuyReroll: () => _resolve(runner.buyShrineReroll),
+                      onBuyBoon: () => _resolve(runner.buyShrineBoon),
+                      onLeave: () => _resolve(runner.leaveShrine),
+                    ),
+                  StageStatus.fighting ||
+                  StageStatus.complete ||
+                  StageStatus.failed =>
+                    const SizedBox.shrink(),
+                };
+              },
+            ),
           ],
         ),
       ),
