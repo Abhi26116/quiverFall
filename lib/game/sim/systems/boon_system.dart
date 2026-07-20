@@ -140,7 +140,22 @@ abstract final class BoonSystem {
   static void _tickTimers(BoonRuntime boons, double dt) {
     if (boons.covenantRemaining > 0) boons.covenantRemaining -= dt;
     if (boons.invulnerableRemaining > 0) boons.invulnerableRemaining -= dt;
-    if (boons.dashCooldown > 0) boons.dashCooldown -= dt;
+
+    if (boons.dashCooldown > 0) {
+      boons.dashCooldown -= dt;
+      // *Blink* (#53) recharges one of its two charges when the shared
+      // cooldown completes, rather than both at once — the standard
+      // charge-ability model, and the reading of "2 charges" that needs no
+      // number beyond the one *Dash* already gives.
+      if (boons.dashCooldown <= 0 &&
+          boons.has(BoonBehaviour.blink) &&
+          boons.blinkCharges < BoonRuntime.blinkChargeCount) {
+        boons.blinkCharges++;
+        if (boons.blinkCharges < BoonRuntime.blinkChargeCount) {
+          boons.dashCooldown = BoonRuntime.dashCooldownSeconds;
+        }
+      }
+    }
   }
 
   /// *Momentum Engine* (#54) and *Perpetual* (#58).

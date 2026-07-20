@@ -1,15 +1,19 @@
+import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
 import 'package:quiverfall/game/boons/boon_inventory.dart';
+import 'package:quiverfall/game/boons/boon_pool.dart';
 import 'package:quiverfall/game/boons/loadout_resolver.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
+import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
@@ -306,6 +310,145 @@ void main() {
       expect(world.playerDraw.isAtMaxMomentum, isTrue);
       expect(world.boons.has(BoonBehaviour.runnersHigh), isTrue);
     });
+
+    test('#49 Dash moves the player instantly and starts a cooldown', () {
+      final SimWorld world = arena(<String>['dash'], withTarget: false).world;
+      world.beginRoomForTest();
+
+      final double before = world.entities.posX[0];
+      final InputSnapshot dashRight = InputSnapshot()..set(1, 0, dash: true);
+      world.tick(dashRight);
+
+      final double moved = world.entities.posX[0] - before;
+      // A single 60 Hz tick of ordinary movement covers a small fraction of a
+      // unit; the dash itself is 3 u. Any plausible ordinary-movement distance
+      // is at least an order of magnitude short of that, so this distinguishes
+      // "the dash fired" from "the stick just happened to be held". The upper
+      // bound allows for that same ordinary movement stacking on top of the
+      // dash within the same tick, since the stick is still held.
+      expect(moved, greaterThan(1.0), reason: 'the dash did not displace the player');
+      expect(
+        moved,
+        lessThanOrEqualTo(
+          BoonRuntime.dashDistance + SimConfig.playerMoveSpeed * SimConfig.fixedStep + 1e-6,
+        ),
+      );
+      expect(world.boons.dashCooldown, greaterThan(0));
+    });
+
+    test('Dash does nothing without the card', () {
+      // Held-stick movement still happens with no Dash Boon — the assertion is
+      // "no dash-sized jump", not "no movement at all".
+      final SimWorld world = arena(<String>[], withTarget: false).world;
+      world.beginRoomForTest();
+      final double before = world.entities.posX[0];
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.entities.posX[0] - before, lessThan(1.0));
+    });
+
+    test('Dash is blocked by its own cooldown', () {
+      final SimWorld world = arena(<String>['dash'], withTarget: false).world;
+      world.beginRoomForTest();
+
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      final double afterFirst = world.entities.posX[0];
+
+      // Immediately try again, same tick's worth of input. Ordinary held-stick
+      // movement still happens every tick regardless of the dash, so the check
+      // is "far short of a real dash", not "unchanged".
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.entities.posX[0] - afterFirst, lessThan(1.0),
+          reason: 'a second dash fired before the cooldown expired');
+
+      // Wait out the cooldown and try a third time.
+      run(world, (BoonRuntime.dashCooldownSeconds * 60).ceil() + 5);
+      final double beforeThird = world.entities.posX[0];
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.entities.posX[0] - beforeThird, greaterThan(1.0),
+          reason: 'the dash never came off cooldown');
+    });
+
+    test('Dash stops at a wall rather than passing through it', () {
+      // A wall two units away — well inside the 3 u dash distance, so an
+      // unclamped dash would land inside it.
+      final SimWorld world = SimWorld(
+        seed: 1,
+        content: content,
+        arena: Arena.standard(walls: const <Rect>[Rect(6.0, 0.0, 9.0, 9.0)]),
+      );
+      world.spawnPlayer(4.0, 4.5);
+      final BoonInventory inv = BoonInventory(catalogue: catalogue)
+        ..take(catalogue.byKey('dash')!);
+      LoadoutResolver.applyBuild(world, inv, baseAttack: 10);
+      world.beginRoomForTest();
+
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+
+      expect(world.entities.posX[0], lessThan(6.0),
+          reason: 'the dash passed through the wall');
+      expect(world.entities.posX[0], greaterThan(4.5),
+          reason: 'the dash did not travel at all');
+    });
+
+    test('#53 Blink replaces the cooldown with two charges', () {
+      final SimWorld world =
+          arena(<String>['dash', 'blink'], withTarget: false).world;
+      world.beginRoomForTest();
+      expect(world.boons.blinkCharges, BoonRuntime.blinkChargeCount);
+
+      final double start = world.entities.posX[0];
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.boons.blinkCharges, BoonRuntime.blinkChargeCount - 1);
+
+      // A second charge is still available immediately — no shared cooldown
+      // blocks it the way a plain Dash would.
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.boons.blinkCharges, 0);
+      expect(world.entities.posX[0] - start, greaterThan(2.0));
+
+      // Both spent: a third attempt does not dash — only ordinary movement.
+      final double afterTwo = world.entities.posX[0];
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.entities.posX[0] - afterTwo, lessThan(1.0));
+    });
+
+    test('Blink recharges one charge at a time', () {
+      final SimWorld world =
+          arena(<String>['dash', 'blink'], withTarget: false).world;
+      world.beginRoomForTest();
+
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.boons.blinkCharges, 0);
+
+      run(world, (BoonRuntime.dashCooldownSeconds * 60).ceil() + 5);
+      expect(world.boons.blinkCharges, 1,
+          reason: 'one charge should have recharged, not both');
+    });
+
+    test('#56 Ghost Step grants invulnerability on a dash', () {
+      final SimWorld world =
+          arena(<String>['dash', 'ghost_step'], withTarget: false).world;
+      world.beginRoomForTest();
+      expect(world.boons.isInvulnerable, isFalse);
+
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      // BoonSystem's timer tick runs at the end of the same tick the dash set
+      // this, so one fixed step has already been spent by the time the tick
+      // returns.
+      expect(
+        world.boons.invulnerableRemaining,
+        closeTo(BoonRuntime.ghostStepSeconds - SimConfig.fixedStep, 1e-6),
+      );
+      expect(world.boons.isInvulnerable, isTrue);
+    });
+
+    test('without Ghost Step, dashing grants no invulnerability', () {
+      final SimWorld world = arena(<String>['dash'], withTarget: false).world;
+      world.beginRoomForTest();
+      world.tick(InputSnapshot()..set(1, 0, dash: true));
+      expect(world.boons.isInvulnerable, isFalse);
+    });
   });
 
   group('Windline', () {
@@ -430,6 +573,91 @@ void main() {
       final SimWorld world = arena(<String>['blind_fury']).world;
       expect(world.boons.has(BoonBehaviour.blindFury), isTrue);
       expect(world.fireRateMultiplier, closeTo(1.35, 1e-9));
+    });
+
+    test('#110 Bloodprice upgrades every future roll by one rarity', () {
+      final BoonInventory inv = BoonInventory(catalogue: catalogue);
+      for (final BuildTag tag in BuildTag.values) {
+        inv.grantTag(tag);
+      }
+      inv.take(catalogue.byKey('bloodprice')!);
+
+      final BoonPool pool = BoonPool(catalogue: catalogue, inventory: inv);
+      final Rng rng = Rng(9001);
+
+      // Room 1: with no bump, Commons would dominate. With Bloodprice every
+      // roll is pushed up one tier, so a Common result is unreachable.
+      for (int i = 0; i < 500; i++) {
+        for (final BoonOffer o
+            in pool.drawSet(rng, const DrawContext(roomIndex: 1))) {
+          expect(o.definition.rarity, isNot(BoonRarity.common),
+              reason: 'Bloodprice should make a Common roll unreachable');
+        }
+      }
+    });
+
+    test('Bloodprice never bumps into Legendary before room 3', () {
+      final BoonInventory inv = BoonInventory(catalogue: catalogue);
+      for (final BuildTag tag in BuildTag.values) {
+        inv.grantTag(tag);
+      }
+      inv.take(catalogue.byKey('bloodprice')!);
+
+      final BoonPool pool = BoonPool(catalogue: catalogue, inventory: inv);
+      final Rng rng = Rng(7);
+
+      for (int i = 0; i < 2000; i++) {
+        for (final BoonOffer o
+            in pool.drawSet(rng, const DrawContext(roomIndex: 1))) {
+          expect(o.definition.rarity.isLateOnly, isFalse,
+              reason: 'rule 3 was bypassed by the Bloodprice bump');
+        }
+      }
+    });
+
+    test('Bloodprice charges HP on the next pick, not on itself', () {
+      final BoonInventory inv = BoonInventory(catalogue: catalogue)
+        ..take(catalogue.byKey('bloodprice')!);
+      expect(inv.pendingBloodpriceCost, 0,
+          reason: 'taking Bloodprice must not tax itself');
+
+      inv.take(catalogue.byKey('sharpened_points')!);
+      expect(inv.pendingBloodpriceCost,
+          closeTo(BoonInventory.bloodpriceHpCostFraction, 1e-9));
+    });
+
+    test('the HP cost reaches the player and does not stack silently lost', () {
+      final BoonInventory inv = BoonInventory(catalogue: catalogue)
+        ..take(catalogue.byKey('bloodprice')!)
+        ..take(catalogue.byKey('sharpened_points')!)
+        ..take(catalogue.byKey('rapid_nock')!);
+      // Two cards taken after Bloodprice: 24 % of max HP owed.
+      expect(inv.pendingBloodpriceCost, closeTo(0.24, 1e-9));
+
+      final SimWorld world = SimWorld(seed: 1, content: content);
+      world.spawnPlayer(4, 4.5);
+      world.entities.maxHealth[0] = 100;
+      world.entities.health[0] = 100;
+      LoadoutResolver.applyBuild(world, inv, baseAttack: 10);
+
+      expect(world.entities.health[0], closeTo(76, 1e-9));
+      expect(inv.pendingBloodpriceCost, 0,
+          reason: 'the cost must be consumed once it is paid');
+    });
+
+    test('Bloodprice cannot kill the player from the choice screen', () {
+      final BoonInventory inv = BoonInventory(catalogue: catalogue)
+        ..take(catalogue.byKey('bloodprice')!)
+        ..take(catalogue.byKey('sharpened_points')!);
+
+      final SimWorld world = SimWorld(seed: 1, content: content);
+      world.spawnPlayer(4, 4.5);
+      world.entities.maxHealth[0] = 100;
+      world.entities.health[0] = 2;
+      LoadoutResolver.applyBuild(world, inv, baseAttack: 10);
+
+      expect(world.entities.health[0], greaterThanOrEqualTo(1.0),
+          reason: 'a menu pick killed the player with no way to dodge it');
     });
   });
 }

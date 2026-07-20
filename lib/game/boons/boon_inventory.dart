@@ -128,8 +128,25 @@ class BoonInventory {
     tags.addAll(def.grants);
     _recompose();
     _resolveOnPickup(def, rng);
+
+    // *Bloodprice* (#110): "every FUTURE Boon" costs HP, so the card that
+    // activates it is exempt from its own tax.
+    if (def.behaviour != BoonBehaviour.bloodprice &&
+        hasBehaviour(BoonBehaviour.bloodprice)) {
+      pendingBloodpriceCost += bloodpriceHpCostFraction;
+    }
+
     return true;
   }
+
+  /// Fraction of max HP *Bloodprice* charges per Boon taken after it, docs/09
+  /// §9.2 G.
+  static const double bloodpriceHpCostFraction = 0.12;
+
+  /// Accumulated, unpaid Bloodprice cost, in fractions of max HP. Consumed by
+  /// whoever owns the player's health — see [healToFullPending] for the same
+  /// pattern.
+  double pendingBloodpriceCost = 0;
 
   /// The three cards that decide something the moment they are taken.
   ///
@@ -299,6 +316,7 @@ class BoonInventory {
     tags.clear();
     attunedElement = null;
     healToFullPending = false;
+    pendingBloodpriceCost = 0;
     activeSets.clear();
     activeEvolutions.clear();
     _recompose();

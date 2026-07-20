@@ -124,6 +124,7 @@ class FeelTelemetry {
         case SimEventType.reactionTriggered:
         case SimEventType.ultimateReady:
         case SimEventType.ultimateUsed:
+        case SimEventType.playerDashed:
           break;
       }
     }

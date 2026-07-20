@@ -2,6 +2,7 @@ import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
 import 'package:quiverfall/game/boons/boon_inventory.dart';
+import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
 
 /// Why a card ended up in a set. Recorded per draw so the balance harness can
@@ -174,7 +175,8 @@ class BoonPool {
     // nothing offerable left. A run that has taken every Rare must still get a
     // full set.
     for (int attempt = 0; attempt < BoonRarity.values.length; attempt++) {
-      final BoonRarity rarity = _rollRarity(rng, weights);
+      final BoonRarity rarity =
+          _bumpForBloodprice(_rollRarity(rng, weights), context);
       final BoonDefinition? pick =
           _pickOfRarity(rng, rarity, taken, restrictToOffence);
       if (pick != null) return pick;
@@ -186,6 +188,28 @@ class BoonPool {
 
     // Nothing anywhere at any rarity.
     return _pickAny(rng, taken, restrictToOffence);
+  }
+
+  /// *Bloodprice* (#110): "every future Boon is upgraded one rarity".
+  ///
+  /// Applied to the rolled rarity rather than to the weights, because bumping
+  /// a weight distribution up a tier is a different (and wrong) statement —
+  /// it would let a bumped Rare roll independently collide with a naturally
+  /// rolled Epic and change the pool's exhaustion order. Bumping the *result*
+  /// is what the card text says: this specific roll becomes one better.
+  ///
+  /// Never bumps into Legendary or Mythic before room [lateRarityFromRoom] —
+  /// rule 3 is enforced on the *final* rarity, not just on the base roll, or
+  /// Bloodprice would be a second, undocumented way around it.
+  BoonRarity _bumpForBloodprice(BoonRarity rarity, DrawContext context) {
+    if (!inventory.hasBehaviour(BoonBehaviour.bloodprice)) return rarity;
+    final int bumped = rarity.index + 1;
+    if (bumped >= BoonRarity.values.length) return rarity;
+    final BoonRarity candidate = BoonRarity.values[bumped];
+    if (candidate.isLateOnly && context.roomIndex < lateRarityFromRoom) {
+      return rarity;
+    }
+    return candidate;
   }
 
   /// Depth-scaled weights for this room, with modifiers applied.

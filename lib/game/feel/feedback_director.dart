@@ -118,6 +118,7 @@ class FeedbackDirector {
         case SimEventType.elementApplied:
         case SimEventType.ultimateReady:
         case SimEventType.ultimateUsed:
+        case SimEventType.playerDashed:
           break;
       }
     }

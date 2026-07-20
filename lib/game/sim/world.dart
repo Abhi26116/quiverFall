@@ -363,6 +363,7 @@ class SimWorld {
     final bool wantsToMove = input.isMoving;
     _playerFiredThisTick = false;
     _applyInput(input);
+    if (input.dashRequested) _applyDash(input, dt);
 
     // ── movement ───────────────────────────────────────────────────────────
     MovementSystem.update(entities, arena, dt);
@@ -848,6 +849,87 @@ class SimWorld {
     entities.velX[i] = input.stickX * inv * speed;
     entities.velY[i] = input.stickY * inv * speed;
     entities.facing[i] = math.atan2(entities.velY[i], entities.velX[i]);
+  }
+
+  /// *Dash* (#49), and its two evolutions.
+  ///
+  /// The gesture that triggers this is not the simulation's concern —
+  /// [InputSnapshot.dashRequested] is the whole contract, true for exactly one
+  /// tick per attempt regardless of what recognised the double-tap. What
+  /// happens once it fires is: an instant displacement along the current
+  /// input direction (or facing, if the stick is centred), clamped short of
+  /// any wall it would otherwise pass through.
+  void _applyDash(InputSnapshot input, double dt) {
+    if (player.isNone || !entities.isAlive(player)) return;
+    if (!boons.has(BoonBehaviour.dash)) return;
+    if (_stunRemaining > 0) return;
+
+    final bool blink = boons.has(BoonBehaviour.blink);
+    if (blink) {
+      if (boons.blinkCharges <= 0) return;
+    } else if (boons.dashCooldown > 0) {
+      return;
+    }
+
+    final int p = player.index;
+    final double magSq = input.magnitudeSquared;
+    double dirX;
+    double dirY;
+    if (magSq > 1e-9) {
+      final double inv = 1.0 / math.sqrt(magSq);
+      dirX = input.stickX * inv;
+      dirY = input.stickY * inv;
+    } else {
+      dirX = math.cos(entities.facing[p]);
+      dirY = math.sin(entities.facing[p]);
+    }
+
+    final double fromX = entities.posX[p];
+    final double fromY = entities.posY[p];
+    final double r = entities.radius[p];
+
+    // Walk outward in small steps rather than testing the far endpoint
+    // directly, so a dash toward a wall stops *at* it instead of teleporting
+    // through it. Fires rarely enough (a multi-second cooldown, or one of two
+    // charges) that this is not a cost worth optimising away.
+    double legalX = fromX;
+    double legalY = fromY;
+    const double step = 0.1;
+    final int steps = (BoonRuntime.dashDistance / step).round();
+    for (int s = 1; s <= steps; s++) {
+      final double candidateX = fromX + dirX * step * s;
+      final double candidateY = fromY + dirY * step * s;
+      if (arena.circleHitsWall(candidateX, candidateY, r) ||
+          !arena.containsPoint(candidateX, candidateY)) {
+        break;
+      }
+      legalX = candidateX;
+      legalY = candidateY;
+    }
+
+    entities.posX[p] = legalX;
+    entities.posY[p] = legalY;
+
+    if (blink) {
+      boons.blinkCharges--;
+      // Recharges one charge at a time on the same cooldown a plain Dash uses,
+      // rather than all at once — the charge model every MOBA ability with a
+      // count uses, and the only reading of "2 charges" that does not need a
+      // second invented number beyond the one docs/09 already gives Dash.
+      if (boons.dashCooldown <= 0) {
+        boons.dashCooldown = BoonRuntime.dashCooldownSeconds;
+      }
+    } else {
+      boons.dashCooldown = BoonRuntime.dashCooldownSeconds;
+    }
+
+    if (boons.has(BoonBehaviour.ghostStep)) {
+      if (BoonRuntime.ghostStepSeconds > boons.invulnerableRemaining) {
+        boons.invulnerableRemaining = BoonRuntime.ghostStepSeconds;
+      }
+    }
+
+    events.emit(SimEventType.playerDashed, entityA: p, x: legalX, y: legalY);
   }
 
   /// Places the player. Returns the handle.

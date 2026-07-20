@@ -15,6 +15,15 @@ class InputSnapshot {
   double stickY = 0;
   bool ultimatePressed = false;
 
+  /// True on the tick a dash gesture was recognised.
+  ///
+  /// *Dash* (#49) says "double-tap the stick", but double-tap detection is a
+  /// gesture question for whatever produces this snapshot — a touch layer, a
+  /// recorded tape, or a scripted bot — not a simulation question. The
+  /// simulation's contract is only this flag: true for exactly one tick means
+  /// exactly one dash attempt, regardless of what recognised the gesture.
+  bool dashRequested = false;
+
   /// Squared magnitude of stick deflection. Squared to avoid a sqrt on a value
   /// that is only ever compared against a threshold.
   double get magnitudeSquared => stickX * stickX + stickY * stickY;
@@ -27,22 +36,25 @@ class InputSnapshot {
   bool get isMoving =>
       magnitudeSquared > SimConfig.stickDeadZone * SimConfig.stickDeadZone;
 
-  void set(double x, double y, {bool ultimate = false}) {
+  void set(double x, double y, {bool ultimate = false, bool dash = false}) {
     stickX = x;
     stickY = y;
     ultimatePressed = ultimate;
+    dashRequested = dash;
   }
 
   void clear() {
     stickX = 0;
     stickY = 0;
     ultimatePressed = false;
+    dashRequested = false;
   }
 
   void copyFrom(InputSnapshot other) {
     stickX = other.stickX;
     stickY = other.stickY;
     ultimatePressed = other.ultimatePressed;
+    dashRequested = other.dashRequested;
   }
 
   /// Quantises to a single byte for the replay input tape.

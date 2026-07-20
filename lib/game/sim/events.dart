@@ -35,6 +35,10 @@ enum SimEventType {
   roomCleared,
   ultimateReady,
   ultimateUsed,
+
+  /// *Dash* (#49) and its evolutions fired. Exists for audio and VFX; the
+  /// mechanic itself does not read it.
+  playerDashed,
 }
 
 /// Fixed-size event ring buffer.

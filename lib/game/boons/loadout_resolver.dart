@@ -161,6 +161,21 @@ abstract final class LoadoutResolver {
         final int p = world.player.index;
         world.entities.health[p] = world.entities.maxHealth[p];
       }
+
+      // *Bloodprice* (#110) — every Boon taken after it costs HP. Charged here
+      // rather than inside `take()`, for the same reason Vital Surge is: an
+      // inventory has no business writing to an entity store. Floored at 1 HP
+      // rather than allowed to zero — a card that could kill the player from
+      // the choice screen, with no combat to dodge it, has no counterplay at
+      // all, which is a different kind of cost than anything else Cursed asks.
+      if (inventory.pendingBloodpriceCost > 0 && !world.player.isNone) {
+        final int p = world.player.index;
+        final double cost =
+            world.entities.maxHealth[p] * inventory.pendingBloodpriceCost;
+        inventory.pendingBloodpriceCost = 0;
+        final double after = world.entities.health[p] - cost;
+        world.entities.health[p] = after < 1.0 ? 1.0 : after;
+      }
     }
   }
 

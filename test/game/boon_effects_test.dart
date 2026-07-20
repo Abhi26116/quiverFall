@@ -701,7 +701,7 @@ void main() {
       // is declared but inert.
       expect(
         pendingBehaviourWork.length,
-        lessThanOrEqualTo(13),
+        lessThanOrEqualTo(9),
         reason: 'a behaviour was added without being implemented',
       );
     });
@@ -716,13 +716,6 @@ void main() {
 /// one of them is currently true for these. Each one moves out of this list
 /// when its implementation and its own test land together.
 const Set<BoonBehaviour> pendingBehaviourWork = <BoonBehaviour>{
-  // ── Needs input plumbing ────────────────────────────────────────────────
-  // Double-tap detection is a view concern, and InputSnapshot has no notion of
-  // a gesture yet. These three land with the Boon choice UI.
-  BoonBehaviour.dash,
-  BoonBehaviour.blink,
-  BoonBehaviour.ghostStep,
-
   // ── Needs the element system extended ───────────────────────────────────
   // Reactions exist but have no spread, no chain, and no cooldown switch. All
   // three are edits to ElementSystem rather than new plumbing.
@@ -738,12 +731,22 @@ const Set<BoonBehaviour> pendingBehaviourWork = <BoonBehaviour>{
   BoonBehaviour.wardingLine,
 
   // ── Needs Momentum-gated chaining ───────────────────────────────────────
+  // Chain-hit infrastructure does not exist anywhere yet — not even for
+  // *Forked Arc* (#85), the plain elemental card that names the same idea.
+  // Building it for one Legendary card would be scope creep; it is real work
+  // for whichever Boon or boss mechanic needs it first.
   BoonBehaviour.stormfoot,
 
-  // ── Needs systems outside the simulation ────────────────────────────────
-  // Gold, room previews, and the draw's own rarity upgrade. All three land
-  // with the Shrine and the Boon choice UI.
+  // ── Needs a live in-run economy ──────────────────────────────────────────
+  // Gold today is a stage-clear formula (`Curves.stageGold`), not a live
+  // pickup ledger — nothing accumulates gold *during* a room. "5 % chance an
+  // arrow drops gold on hit" has nowhere to deposit that gold until Phase
+  // 13/14 build one.
   BoonBehaviour.goldenArrow,
+
+  // ── Needs a room-preview surface ─────────────────────────────────────────
+  // "Reveal room contents and Boon rarities before entering" is a screen that
+  // does not exist: StageRunner loads one room at a time with no lookahead
+  // UI. That screen is Phase 15's job, not a Boon behaviour's.
   BoonBehaviour.treasureSense,
-  BoonBehaviour.bloodprice,
 };
