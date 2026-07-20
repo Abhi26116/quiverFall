@@ -1,0 +1,1223 @@
+{
+  "_comment": [
+    "The 112 in-run Boons of docs/09 §9.2, authored verbatim from the catalogue.",
+    "",
+    "Rarity here follows the §9.2 table, not the count column in §9.1 — the two",
+    "disagree. See docs/decisions/0004-boon-rarity-distribution.md.",
+    "",
+    "'modifiers' values are PER COPY. A Common ×5 at three copies contributes",
+    "three times its value. Channels flagged multiplicative in StatChannel",
+    "compose by repeated multiplication instead; their values are multipliers",
+    "around 1.0, not bonuses around 0.",
+    "",
+    "Live-tunable via remote config (docs/09 §9.5): weights, values and",
+    "maxCopies may change without a client release. A new 'behaviour' may not."
+  ],
+  "boons": [
+    {
+      "id": 1,
+      "key": "sharpened_points",
+      "name": "Sharpened Points",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+8 % damage",
+      "modifiers": [{ "channel": "damage", "value": 0.08 }]
+    },
+    {
+      "id": 2,
+      "key": "keen_eye",
+      "name": "Keen Eye",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+5 % crit chance",
+      "modifiers": [{ "channel": "critChance", "value": 0.05 }],
+      "grants": ["crit"]
+    },
+    {
+      "id": 3,
+      "key": "cruel_edge",
+      "name": "Cruel Edge",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+15 % crit damage",
+      "modifiers": [{ "channel": "critDamage", "value": 0.15 }],
+      "requires": ["crit"]
+    },
+    {
+      "id": 4,
+      "key": "heavy_draw",
+      "name": "Heavy Draw",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+12 % Tier III damage",
+      "modifiers": [{ "channel": "tierThreeDamage", "value": 0.12 }]
+    },
+    {
+      "id": 5,
+      "key": "rapid_nock",
+      "name": "Rapid Nock",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+7 % fire rate",
+      "modifiers": [{ "channel": "fireRate", "value": 0.07 }]
+    },
+    {
+      "id": 6,
+      "key": "barbed_tips",
+      "name": "Barbed Tips",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+10 % damage to enemies below 50 % HP",
+      "modifiers": [{ "channel": "damageVsWounded", "value": 0.10 }]
+    },
+    {
+      "id": 7,
+      "key": "steady_aim",
+      "name": "Steady Aim",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+6 % damage while stationary",
+      "modifiers": [{ "channel": "damageWhileStationary", "value": 0.06 }]
+    },
+    {
+      "id": 8,
+      "key": "follow_through",
+      "name": "Follow Through",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+9 % damage to the last enemy you hit",
+      "modifiers": [{ "channel": "damageVsLastHit", "value": 0.09 }]
+    },
+    {
+      "id": 9,
+      "key": "bloodgroove",
+      "name": "Bloodgroove",
+      "category": "offence",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+12 % damage to burning, poisoned, or frozen targets",
+      "modifiers": [{ "channel": "damageVsAfflicted", "value": 0.12 }],
+      "requires": ["anyElement"]
+    },
+    {
+      "id": 10,
+      "key": "split_shot",
+      "name": "Split Shot",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "+1 arrow, −15 % damage each",
+      "modifiers": [
+        { "channel": "extraArrows", "value": 1 },
+        { "channel": "splitDamagePenalty", "value": -0.15 }
+      ]
+    },
+    {
+      "id": 11,
+      "key": "pierce_study",
+      "name": "Pierce Study",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "+1 pierce",
+      "modifiers": [{ "channel": "pierce", "value": 1 }],
+      "grants": ["pierce"]
+    },
+    {
+      "id": 12,
+      "key": "executioner",
+      "name": "Executioner",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "+40 % damage below 25 % enemy HP",
+      "modifiers": [{ "channel": "damageVsDying", "value": 0.40 }]
+    },
+    {
+      "id": 13,
+      "key": "overdraw",
+      "name": "Overdraw",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Tier III +35 %, Tier I −20 %",
+      "modifiers": [
+        { "channel": "tierThreeDamage", "value": 0.35 },
+        { "channel": "tierOneDamage", "value": -0.20 }
+      ]
+    },
+    {
+      "id": 14,
+      "key": "rend",
+      "name": "Rend",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "Hits reduce enemy armour 4 % (max 40 %)",
+      "modifiers": [
+        { "channel": "armourShredPerHit", "value": 0.04 },
+        { "channel": "armourShredMax", "value": 0.40 }
+      ],
+      "behaviour": "rend"
+    },
+    {
+      "id": 15,
+      "key": "crescendo",
+      "name": "Crescendo",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "+2 % damage per consecutive hit, max +40 %, resets on a miss",
+      "modifiers": [
+        { "channel": "damagePerHitStreak", "value": 0.02 },
+        { "channel": "damagePerHitStreakCap", "value": 0.40 }
+      ],
+      "behaviour": "crescendo"
+    },
+    {
+      "id": 16,
+      "key": "marksman",
+      "name": "Marksman",
+      "category": "offence",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "+4 % damage per unit of distance, cap +60 %",
+      "modifiers": [
+        { "channel": "damagePerDistance", "value": 0.04 },
+        { "channel": "damagePerDistanceCap", "value": 0.60 }
+      ]
+    },
+    {
+      "id": 17,
+      "key": "twin_nock",
+      "name": "Twin Nock",
+      "category": "offence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "+2 arrows, −25 % damage each",
+      "modifiers": [
+        { "channel": "extraArrows", "value": 2 },
+        { "channel": "splitDamagePenalty", "value": -0.25 }
+      ]
+    },
+    {
+      "id": 18,
+      "key": "deadeye",
+      "name": "Deadeye",
+      "category": "offence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Crits gain +2 pierce and full damage on pierce",
+      "behaviour": "deadeye",
+      "requires": ["crit"],
+      "grants": ["pierce"]
+    },
+    {
+      "id": 19,
+      "key": "hammerfall",
+      "name": "Hammerfall",
+      "category": "offence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Every 8th arrow deals 400 %",
+      "behaviour": "hammerfall"
+    },
+    {
+      "id": 20,
+      "key": "cull",
+      "name": "Cull",
+      "category": "offence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Instantly kill non-elite enemies below 8 % HP",
+      "behaviour": "cull"
+    },
+    {
+      "id": 21,
+      "key": "siege_draw",
+      "name": "Siege Draw",
+      "category": "offence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "+60 % damage to plated and shielded targets",
+      "modifiers": [{ "channel": "damageVsArmoured", "value": 0.60 }]
+    },
+    {
+      "id": 22,
+      "key": "rain_of_nocks",
+      "name": "Rain of Nocks",
+      "category": "offence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Tier III fires 3 extra arrows in a 40° fan at 70 %",
+      "behaviour": "rainOfNocks"
+    },
+    {
+      "id": 23,
+      "key": "perfect_form",
+      "name": "Perfect Form",
+      "category": "offence",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "All shots count as Tier III (Draw meter still shown)",
+      "behaviour": "perfectForm"
+    },
+    {
+      "id": 24,
+      "key": "ruin",
+      "name": "Ruin",
+      "category": "offence",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "+100 % damage, −50 % max HP",
+      "modifiers": [
+        { "channel": "damage", "value": 1.00 },
+        { "channel": "maxHealth", "value": -0.50 }
+      ]
+    },
+    {
+      "id": 25,
+      "key": "the_long_arrow",
+      "name": "The Long Arrow",
+      "category": "offence",
+      "rarity": "mythic",
+      "maxCopies": 1,
+      "description": "Arrows never despawn and never stop; infinite pierce, −40 % damage",
+      "modifiers": [{ "channel": "damage", "value": -0.40 }],
+      "behaviour": "theLongArrow",
+      "grants": ["pierce"]
+    },
+
+    {
+      "id": 26,
+      "key": "toughened_hide",
+      "name": "Toughened Hide",
+      "category": "defence",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+10 % max HP",
+      "modifiers": [{ "channel": "maxHealth", "value": 0.10 }]
+    },
+    {
+      "id": 27,
+      "key": "warded",
+      "name": "Warded",
+      "category": "defence",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+4 % damage reduction",
+      "modifiers": [{ "channel": "damageReduction", "value": 0.04 }]
+    },
+    {
+      "id": 28,
+      "key": "second_skin",
+      "name": "Second Skin",
+      "category": "defence",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "Heal 4 % max HP on room clear",
+      "modifiers": [{ "channel": "healOnRoomClear", "value": 0.04 }]
+    },
+    {
+      "id": 29,
+      "key": "bulwark_stance",
+      "name": "Bulwark Stance",
+      "category": "defence",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+8 % damage reduction while stationary",
+      "modifiers": [{ "channel": "damageReductionStationary", "value": 0.08 }]
+    },
+    {
+      "id": 30,
+      "key": "vital_surge",
+      "name": "Vital Surge",
+      "category": "defence",
+      "rarity": "common",
+      "maxCopies": 1,
+      "description": "+15 % max HP and heal to full",
+      "modifiers": [{ "channel": "maxHealth", "value": 0.15 }],
+      "behaviour": "vitalSurge"
+    },
+    {
+      "id": 31,
+      "key": "thorns",
+      "name": "Thorns",
+      "category": "defence",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "Reflect 15 % of contact damage",
+      "modifiers": [{ "channel": "thornsReflect", "value": 0.15 }]
+    },
+    {
+      "id": 32,
+      "key": "lifedraw",
+      "name": "Lifedraw",
+      "category": "defence",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "3 % lifesteal",
+      "modifiers": [{ "channel": "lifesteal", "value": 0.03 }]
+    },
+    {
+      "id": 33,
+      "key": "shieldweave",
+      "name": "Shieldweave",
+      "category": "defence",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "Each Momentum stack grants a 2 % max HP shield",
+      "modifiers": [{ "channel": "shieldPerMomentum", "value": 0.02 }]
+    },
+    {
+      "id": 34,
+      "key": "guardian_angel",
+      "name": "Guardian Angel",
+      "category": "defence",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Survive one lethal hit at 1 HP",
+      "behaviour": "guardianAngel"
+    },
+    {
+      "id": 35,
+      "key": "absorption",
+      "name": "Absorption",
+      "category": "defence",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "−35 % elemental damage taken",
+      "modifiers": [{ "channel": "elementalResist", "value": 0.35 }]
+    },
+    {
+      "id": 36,
+      "key": "regrowth",
+      "name": "Regrowth",
+      "category": "defence",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Heal 0.8 % max HP/s while moving",
+      "modifiers": [{ "channel": "regenWhileMoving", "value": 0.008 }]
+    },
+    {
+      "id": 37,
+      "key": "warding_line",
+      "name": "Warding Line",
+      "category": "defence",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Your Windlines block enemy projectiles",
+      "behaviour": "wardingLine"
+    },
+    {
+      "id": 38,
+      "key": "stonewall",
+      "name": "Stonewall",
+      "category": "defence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "+25 % damage reduction, −15 % move speed",
+      "modifiers": [
+        { "channel": "damageReduction", "value": 0.25 },
+        { "channel": "moveSpeed", "value": -0.15 }
+      ]
+    },
+    {
+      "id": 39,
+      "key": "aegis",
+      "name": "Aegis",
+      "category": "defence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Block the next 3 hits entirely; recharges each room",
+      "behaviour": "aegis"
+    },
+    {
+      "id": 40,
+      "key": "phoenix_heart",
+      "name": "Phoenix Heart",
+      "category": "defence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Revive once at 50 % HP",
+      "behaviour": "phoenixHeart"
+    },
+    {
+      "id": 41,
+      "key": "blood_pact",
+      "name": "Blood Pact",
+      "category": "defence",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "30 % of damage taken is delayed and dealt over 4 s (cancelled by a kill)",
+      "behaviour": "bloodPact"
+    },
+    {
+      "id": 42,
+      "key": "immortal_draw",
+      "name": "Immortal Draw",
+      "category": "defence",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "Invulnerable while at Tier III, −30 % damage",
+      "modifiers": [{ "channel": "damage", "value": -0.30 }],
+      "behaviour": "immortalDraw"
+    },
+    {
+      "id": 43,
+      "key": "covenant",
+      "name": "Covenant",
+      "category": "defence",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "Take no damage for the first 8 s of each room",
+      "behaviour": "covenant"
+    },
+    {
+      "id": 44,
+      "key": "the_unbroken",
+      "name": "The Unbroken",
+      "category": "defence",
+      "rarity": "mythic",
+      "maxCopies": 1,
+      "description": "No single hit may deal more than 8 % of your max HP",
+      "behaviour": "theUnbroken"
+    },
+
+    {
+      "id": 45,
+      "key": "fleetfoot",
+      "name": "Fleetfoot",
+      "category": "mobility",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+8 % move speed",
+      "modifiers": [{ "channel": "moveSpeed", "value": 0.08 }]
+    },
+    {
+      "id": 46,
+      "key": "gale_step",
+      "name": "Gale Step",
+      "category": "mobility",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+1 max Momentum stack",
+      "modifiers": [{ "channel": "maxMomentum", "value": 1 }]
+    },
+    {
+      "id": 47,
+      "key": "quick_recovery",
+      "name": "Quick Recovery",
+      "category": "mobility",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "Momentum decays 40 % slower",
+      "modifiers": [{ "channel": "momentumDecayRate", "value": 1.40 }]
+    },
+    {
+      "id": 48,
+      "key": "light_boots",
+      "name": "Light Boots",
+      "category": "mobility",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "Momentum builds 25 % faster",
+      "modifiers": [{ "channel": "momentumBuildRate", "value": 1.25 }]
+    },
+    {
+      "id": 49,
+      "key": "dash",
+      "name": "Dash",
+      "category": "mobility",
+      "rarity": "common",
+      "maxCopies": 1,
+      "description": "Double-tap the stick to dash 3 u (4 s cooldown)",
+      "behaviour": "dash",
+      "grants": ["dash"]
+    },
+    {
+      "id": 50,
+      "key": "slipstream",
+      "name": "Slipstream",
+      "category": "mobility",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "+3 % damage per Momentum stack",
+      "modifiers": [{ "channel": "damagePerMomentum", "value": 0.03 }]
+    },
+    {
+      "id": 51,
+      "key": "kiting",
+      "name": "Kiting",
+      "category": "mobility",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "+15 % damage for 2 s after moving 3 u",
+      "modifiers": [{ "channel": "damageAfterMoving", "value": 0.15 }]
+    },
+    {
+      "id": 52,
+      "key": "windwalk",
+      "name": "Windwalk",
+      "category": "mobility",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Immune to all slows and roots",
+      "behaviour": "windwalk"
+    },
+    {
+      "id": 53,
+      "key": "blink",
+      "name": "Blink",
+      "category": "mobility",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Dash becomes a teleport with 2 charges",
+      "behaviour": "blink",
+      "requires": ["dash"]
+    },
+    {
+      "id": 54,
+      "key": "momentum_engine",
+      "name": "Momentum Engine",
+      "category": "mobility",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Momentum never decays within a room",
+      "behaviour": "momentumEngine"
+    },
+    {
+      "id": 55,
+      "key": "runners_high",
+      "name": "Runner's High",
+      "category": "mobility",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "At max Momentum: +30 % fire rate",
+      "behaviour": "runnersHigh"
+    },
+    {
+      "id": 56,
+      "key": "ghost_step",
+      "name": "Ghost Step",
+      "category": "mobility",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Dash grants 0.8 s of invulnerability",
+      "behaviour": "ghostStep",
+      "requires": ["dash"]
+    },
+    {
+      "id": 57,
+      "key": "stormfoot",
+      "name": "Stormfoot",
+      "category": "mobility",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "At max Momentum, all arrows chain to 2 targets",
+      "behaviour": "stormfoot"
+    },
+    {
+      "id": 58,
+      "key": "perpetual",
+      "name": "Perpetual",
+      "category": "mobility",
+      "rarity": "mythic",
+      "maxCopies": 1,
+      "description": "Draw and Momentum build simultaneously, moving or not",
+      "behaviour": "perpetual"
+    },
+
+    {
+      "id": 59,
+      "key": "long_weave",
+      "name": "Long Weave",
+      "category": "windline",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+0.25 s Windline duration",
+      "modifiers": [{ "channel": "windlineDuration", "value": 0.25 }]
+    },
+    {
+      "id": 60,
+      "key": "bright_thread",
+      "name": "Bright Thread",
+      "category": "windline",
+      "rarity": "common",
+      "maxCopies": 5,
+      "description": "+8 % Confluence damage",
+      "modifiers": [{ "channel": "confluenceDamage", "value": 0.08 }]
+    },
+    {
+      "id": 61,
+      "key": "wide_thread",
+      "name": "Wide Thread",
+      "category": "windline",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+20 % Windline intersection width",
+      "modifiers": [{ "channel": "windlineWidth", "value": 0.20 }]
+    },
+    {
+      "id": 62,
+      "key": "lingering",
+      "name": "Lingering",
+      "category": "windline",
+      "rarity": "common",
+      "maxCopies": 1,
+      "description": "Windlines persist through room transitions",
+      "behaviour": "lingering"
+    },
+    {
+      "id": 63,
+      "key": "tangle",
+      "name": "Tangle",
+      "category": "windline",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "Windline slow 8 % → 16 %",
+      "modifiers": [{ "channel": "windlineSlow", "value": 0.08 }]
+    },
+    {
+      "id": 64,
+      "key": "thread_study",
+      "name": "Thread Study",
+      "category": "windline",
+      "rarity": "rare",
+      "maxCopies": 3,
+      "description": "+15 % Confluence damage",
+      "modifiers": [{ "channel": "confluenceDamage", "value": 0.15 }]
+    },
+    {
+      "id": 65,
+      "key": "deep_weave",
+      "name": "Deep Weave",
+      "category": "windline",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Confluence cap +1 (→4)",
+      "modifiers": [{ "channel": "confluenceStacks", "value": 1 }]
+    },
+    {
+      "id": 66,
+      "key": "cutting_lines",
+      "name": "Cutting Lines",
+      "category": "windline",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Windlines deal 1.5 % enemy max HP/s",
+      "modifiers": [{ "channel": "windlineDamage", "value": 0.015 }]
+    },
+    {
+      "id": 67,
+      "key": "crossbind",
+      "name": "Crossbind",
+      "category": "windline",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Confluence also applies your equipped element",
+      "behaviour": "crossbind",
+      "requires": ["anyElement"]
+    },
+    {
+      "id": 68,
+      "key": "anchor_line",
+      "name": "Anchor Line",
+      "category": "windline",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "A Windline is drawn at your position at room start",
+      "behaviour": "anchorLine"
+    },
+    {
+      "id": 69,
+      "key": "echo_thread",
+      "name": "Echo Thread",
+      "category": "windline",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Killing an enemy leaves a short Windline at its position",
+      "behaviour": "echoThread",
+      "stacksByCopies": true
+    },
+    {
+      "id": 70,
+      "key": "lattice",
+      "name": "Lattice",
+      "category": "windline",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Confluence cap +2 (→5)",
+      "modifiers": [{ "channel": "confluenceStacks", "value": 2 }]
+    },
+    {
+      "id": 71,
+      "key": "living_thread",
+      "name": "Living Thread",
+      "category": "windline",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Windlines drift slowly toward the nearest enemy",
+      "behaviour": "livingThread"
+    },
+    {
+      "id": 72,
+      "key": "resonant_weave",
+      "name": "Resonant Weave",
+      "category": "windline",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Each Confluence triggers a 1.5 u AoE at 80 % damage",
+      "behaviour": "resonantWeave"
+    },
+    {
+      "id": 73,
+      "key": "sunthread",
+      "name": "Sunthread",
+      "category": "windline",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Windlines damage and blind enemies that cross them",
+      "behaviour": "sunthread"
+    },
+    {
+      "id": 74,
+      "key": "weavers_grace",
+      "name": "Weaver's Grace",
+      "category": "windline",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "Every shot begins with 1 free Confluence stack",
+      "modifiers": [{ "channel": "confluenceHeadStart", "value": 1 }]
+    },
+    {
+      "id": 75,
+      "key": "the_loom",
+      "name": "The Loom",
+      "category": "windline",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "Windlines never expire within a room",
+      "behaviour": "theLoom"
+    },
+    {
+      "id": 76,
+      "key": "total_confluence",
+      "name": "Total Confluence",
+      "category": "windline",
+      "rarity": "mythic",
+      "maxCopies": 1,
+      "description": "Every shot is at max Confluence, −35 % base damage",
+      "modifiers": [{ "channel": "damage", "value": -0.35 }],
+      "behaviour": "totalConfluence"
+    },
+
+    {
+      "id": 77,
+      "key": "kindling",
+      "name": "Kindling",
+      "category": "elemental",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+12 % Ember damage",
+      "modifiers": [{ "channel": "emberDamage", "value": 0.12 }],
+      "requires": ["ember"]
+    },
+    {
+      "id": 78,
+      "key": "rime",
+      "name": "Rime",
+      "category": "elemental",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+12 % Frost effect",
+      "modifiers": [{ "channel": "frostEffect", "value": 0.12 }],
+      "requires": ["frost"]
+    },
+    {
+      "id": 79,
+      "key": "charge",
+      "name": "Charge",
+      "category": "elemental",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+12 % Storm damage",
+      "modifiers": [{ "channel": "stormDamage", "value": 0.12 }],
+      "requires": ["storm"]
+    },
+    {
+      "id": 80,
+      "key": "blight",
+      "name": "Blight",
+      "category": "elemental",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+12 % Toxin damage",
+      "modifiers": [{ "channel": "toxinDamage", "value": 0.12 }],
+      "requires": ["toxin"]
+    },
+    {
+      "id": 81,
+      "key": "elemental_tips",
+      "name": "Elemental Tips",
+      "category": "elemental",
+      "rarity": "common",
+      "maxCopies": 1,
+      "description": "Arrows gain a random element",
+      "behaviour": "elementalTips",
+      "excludes": ["anyElement"],
+      "grants": ["anyElement"]
+    },
+    {
+      "id": 82,
+      "key": "conductor",
+      "name": "Conductor",
+      "category": "elemental",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+15 % reaction damage",
+      "modifiers": [{ "channel": "reactionDamage", "value": 0.15 }],
+      "requires": ["anyElement"]
+    },
+    {
+      "id": 83,
+      "key": "wildfire",
+      "name": "Wildfire",
+      "category": "elemental",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Burn spreads to one nearby enemy on death",
+      "behaviour": "wildfire",
+      "requires": ["ember"]
+    },
+    {
+      "id": 84,
+      "key": "deep_freeze",
+      "name": "Deep Freeze",
+      "category": "elemental",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Freeze duration +0.8 s",
+      "modifiers": [{ "channel": "freezeDuration", "value": 0.8 }],
+      "requires": ["frost"]
+    },
+    {
+      "id": 85,
+      "key": "forked_arc",
+      "name": "Forked Arc",
+      "category": "elemental",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Storm chains +2 targets",
+      "modifiers": [{ "channel": "stormChainTargets", "value": 2 }],
+      "requires": ["storm"]
+    },
+    {
+      "id": 86,
+      "key": "virulence",
+      "name": "Virulence",
+      "category": "elemental",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "Toxin max stacks +5",
+      "modifiers": [{ "channel": "toxinMaxStacks", "value": 5 }],
+      "requires": ["toxin"]
+    },
+    {
+      "id": 87,
+      "key": "reactive",
+      "name": "Reactive",
+      "category": "elemental",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Reactions have no cooldown, −20 % reaction damage",
+      "modifiers": [{ "channel": "reactionDamage", "value": -0.20 }],
+      "behaviour": "reactive",
+      "requires": ["anyElement"]
+    },
+    {
+      "id": 88,
+      "key": "attunement",
+      "name": "Attunement",
+      "category": "elemental",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Choose one element: +35 % to it",
+      "behaviour": "attunement",
+      "requires": ["anyElement"]
+    },
+    {
+      "id": 89,
+      "key": "catalysis",
+      "name": "Catalysis",
+      "category": "elemental",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Reactions deal +60 %",
+      "modifiers": [{ "channel": "reactionDamage", "value": 0.60 }],
+      "requires": ["anyElement"]
+    },
+    {
+      "id": 90,
+      "key": "elemental_overload",
+      "name": "Elemental Overload",
+      "category": "elemental",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Every 6th arrow carries all four elements",
+      "behaviour": "elementalOverload",
+      "grants": ["anyElement"]
+    },
+    {
+      "id": 91,
+      "key": "frostfire",
+      "name": "Frostfire",
+      "category": "elemental",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Arrows carry both Ember and Frost",
+      "behaviour": "frostfire",
+      "grants": ["anyElement", "ember", "frost"]
+    },
+    {
+      "id": 92,
+      "key": "stormblight",
+      "name": "Stormblight",
+      "category": "elemental",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Arrows carry both Storm and Toxin",
+      "behaviour": "stormblight",
+      "grants": ["anyElement", "storm", "toxin"]
+    },
+    {
+      "id": 93,
+      "key": "the_fourfold",
+      "name": "The Fourfold",
+      "category": "elemental",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "All four elements on every arrow, each at 50 % potency",
+      "behaviour": "theFourfold",
+      "grants": ["anyElement", "ember", "frost", "storm", "toxin"]
+    },
+    {
+      "id": 94,
+      "key": "prismbreak",
+      "name": "Prismbreak",
+      "category": "elemental",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "Reactions chain to 3 nearby enemies",
+      "behaviour": "prismbreak",
+      "requires": ["anyElement"]
+    },
+
+    {
+      "id": 95,
+      "key": "prospector",
+      "name": "Prospector",
+      "category": "economy",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+15 % gold this run",
+      "modifiers": [{ "channel": "goldMultiplier", "value": 0.15 }]
+    },
+    {
+      "id": 96,
+      "key": "scavenger",
+      "name": "Scavenger",
+      "category": "economy",
+      "rarity": "common",
+      "maxCopies": 4,
+      "description": "+12 % material drops",
+      "modifiers": [{ "channel": "materialMultiplier", "value": 0.12 }]
+    },
+    {
+      "id": 97,
+      "key": "lucky_find",
+      "name": "Lucky Find",
+      "category": "economy",
+      "rarity": "common",
+      "maxCopies": 3,
+      "description": "+8 % chance of a 4th Boon card",
+      "modifiers": [{ "channel": "fourthCardChance", "value": 0.08 }]
+    },
+    {
+      "id": 98,
+      "key": "vigor_draught",
+      "name": "Vigor Draught",
+      "category": "economy",
+      "rarity": "common",
+      "maxCopies": 1,
+      "description": "Refund 2 Vigor on run completion",
+      "modifiers": [{ "channel": "vigorRefund", "value": 2 }]
+    },
+    {
+      "id": 99,
+      "key": "insightful",
+      "name": "Insightful",
+      "category": "economy",
+      "rarity": "common",
+      "maxCopies": 2,
+      "description": "+1 Insight per elite killed",
+      "modifiers": [{ "channel": "insightPerElite", "value": 1 }]
+    },
+    {
+      "id": 100,
+      "key": "bargainer",
+      "name": "Bargainer",
+      "category": "economy",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "−25 % Shrine prices",
+      "modifiers": [{ "channel": "shrineDiscount", "value": 0.25 }]
+    },
+    {
+      "id": 101,
+      "key": "shard_sense",
+      "name": "Shard Sense",
+      "category": "economy",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "+20 % hero shard drop",
+      "modifiers": [{ "channel": "shardDropRate", "value": 0.20 }]
+    },
+    {
+      "id": 102,
+      "key": "second_choice",
+      "name": "Second Choice",
+      "category": "economy",
+      "rarity": "rare",
+      "maxCopies": 2,
+      "description": "+1 Boon reroll",
+      "modifiers": [{ "channel": "boonRerolls", "value": 1 }]
+    },
+    {
+      "id": 103,
+      "key": "greed",
+      "name": "Greed",
+      "category": "economy",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "+50 % gold, −10 % max HP",
+      "modifiers": [
+        { "channel": "goldMultiplier", "value": 0.50 },
+        { "channel": "maxHealth", "value": -0.10 }
+      ]
+    },
+    {
+      "id": 104,
+      "key": "treasure_sense",
+      "name": "Treasure Sense",
+      "category": "economy",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "Reveal room contents and Boon rarities before entering",
+      "behaviour": "treasureSense"
+    },
+    {
+      "id": 105,
+      "key": "golden_arrow",
+      "name": "Golden Arrow",
+      "category": "economy",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "5 % chance an arrow drops gold on hit",
+      "behaviour": "goldenArrow"
+    },
+    {
+      "id": 106,
+      "key": "curator",
+      "name": "Curator",
+      "category": "economy",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Choose from 5 Boon cards instead of 3",
+      "modifiers": [{ "channel": "boonCardCount", "value": 2 }]
+    },
+
+    {
+      "id": 107,
+      "key": "glass_draw",
+      "name": "Glass Draw",
+      "category": "cursed",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "+45 % damage",
+      "downside": "−40 % max HP",
+      "modifiers": [
+        { "channel": "damage", "value": 0.45 },
+        { "channel": "maxHealth", "value": -0.40 }
+      ]
+    },
+    {
+      "id": 108,
+      "key": "blind_fury",
+      "name": "Blind Fury",
+      "category": "cursed",
+      "rarity": "rare",
+      "maxCopies": 1,
+      "description": "+35 % fire rate",
+      "downside": "Auto-aim assist disabled",
+      "modifiers": [{ "channel": "fireRate", "value": 0.35 }],
+      "behaviour": "blindFury"
+    },
+    {
+      "id": 109,
+      "key": "hollow_bones",
+      "name": "Hollow Bones",
+      "category": "cursed",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "+60 % move speed",
+      "downside": "+50 % damage taken",
+      "modifiers": [
+        { "channel": "moveSpeed", "value": 0.60 },
+        { "channel": "damageTakenMultiplier", "value": 1.50 }
+      ]
+    },
+    {
+      "id": 110,
+      "key": "bloodprice",
+      "name": "Bloodprice",
+      "category": "cursed",
+      "rarity": "epic",
+      "maxCopies": 1,
+      "description": "Every future Boon is upgraded one rarity",
+      "downside": "Every future Boon costs 12 % max HP",
+      "behaviour": "bloodprice"
+    },
+    {
+      "id": 111,
+      "key": "the_bargain",
+      "name": "The Bargain",
+      "category": "cursed",
+      "rarity": "legendary",
+      "maxCopies": 1,
+      "description": "+120 % damage",
+      "downside": "Start each room at 25 % HP",
+      "modifiers": [{ "channel": "damage", "value": 1.20 }],
+      "behaviour": "theBargain"
+    },
+    {
+      "id": 112,
+      "key": "quiverfall",
+      "name": "Quiverfall",
+      "category": "cursed",
+      "rarity": "mythic",
+      "maxCopies": 1,
+      "description": "Every 10th arrow deals 2,000 %",
+      "downside": "That arrow stuns you for 1 s",
+      "behaviour": "quiverfall"
+    }
+  ]
+}
