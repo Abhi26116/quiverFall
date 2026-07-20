@@ -30,6 +30,32 @@ wrong reasons.
 4. Charge the phone. Thermal throttling on a hot phone is itself a finding, but
    not one you want mixed into this measurement.
 
+## Getting the build to eight people
+
+`flutter build apk --release` → `build/app/outputs/flutter-apk/app-release.apk`,
+about 48 MB. Share the file; each tester enables "install from unknown sources"
+once. That is the whole procedure, and it is the *shipping* build.
+
+**Web was tried and rejected.** A link with no install is obviously lower
+friction, and `flutter build web` was attempted for exactly that. Two reasons it
+is the wrong tool, in increasing order of importance:
+
+1. **It does not compile.** `Rng` is xorshift128+ on 64-bit integers, and
+   dart2js has no 64-bit integer type. `--wasm` does not help: in Flutter 3.24
+   it always builds a dart2js fallback alongside, and there is no flag to skip
+   it. Web would need `Rng` rewritten onto 32-bit halves — a change to the most
+   foundational file in the project, shifting every seed and every determinism
+   golden, for a platform the game does not ship on.
+2. **It would measure the wrong game.** This gate is about frame timing and
+   thumb feel. On a laptop there is no thumb. On a phone browser there is a
+   thumb but the frame budget is not the one docs/19's quality tiers were built
+   against, so a "feels bad" result could not be told apart from "runs slower
+   than the real build". A feel gate on a degraded build produces false
+   negatives, which is worse than no gate.
+
+If a no-install link ever becomes necessary for something other than a feel
+measurement, revisit (1) — it is real work but it is only work.
+
 ## What to say to each tester
 
 Say exactly this, and nothing else:

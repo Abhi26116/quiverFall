@@ -8,7 +8,10 @@ plugins {
 android {
     namespace = "com.quiverfall.quiverfall"
     compileSdk = 35
-    ndkVersion = "25.1.8937393"
+    // Six plugins (audioplayers, device_info_plus, in_app_purchase,
+    // package_info_plus, path_provider, shared_preferences) all ask for 26.1.
+    // NDK versions are backward compatible, so the highest requirement wins.
+    ndkVersion = "26.1.10909125"
 
     // Java 17, not 8. AGP 8.6.0 on the JDK 21 bundled with Android Studio needs a
     // modern target, and Java 8 desugaring breaks several plugin deps.
