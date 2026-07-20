@@ -117,13 +117,12 @@ abstract final class DriftTree {
       cohY += ctx.entities.posY[other] - y;
     }
 
-    double dirX = ctx.playerX - x;
-    double dirY = ctx.playerY - y;
-    final double len = math.sqrt(dirX * dirX + dirY * dirY);
-    if (len > 1e-9) {
-      dirX /= len;
-      dirY /= len;
-    }
+    // Routed around any wall in the way, exactly as a seeking enemy is. A
+    // flock that ignored geometry would wedge itself behind a pillar and stall
+    // the room, which is the one failure a room can never recover from.
+    Steering.seekDirection(ctx, slot, ctx.playerX, ctx.playerY);
+    double dirX = Steering.dirX;
+    double dirY = Steering.dirY;
 
     if (neighbours > 0) {
       final double inv = 1.0 / neighbours;

@@ -117,8 +117,17 @@ abstract final class RiftbornTree {
 
     ctx.enemies.state[slot] = AiState.seek.index;
 
-    final double mirrorX = ctx.arena.width - ctx.playerX;
-    final double mirrorY = ctx.arena.height - ctx.playerY;
+    double mirrorX = ctx.arena.width - ctx.playerX;
+    double mirrorY = ctx.arena.height - ctx.playerY;
+
+    // The mirror of a reachable point is not always reachable — in a walled
+    // arena it can land inside geometry, and an Echo chasing a point inside a
+    // wall presses against it until the room ends. Falling back to the player
+    // keeps it in the fight; the mirror is the *flavour*, not the contract.
+    if (ctx.arena.circleHitsWall(mirrorX, mirrorY, ctx.entities.radius[slot])) {
+      mirrorX = ctx.playerX;
+      mirrorY = ctx.playerY;
+    }
 
     final double dx = mirrorX - ctx.entities.posX[slot];
     final double dy = mirrorY - ctx.entities.posY[slot];

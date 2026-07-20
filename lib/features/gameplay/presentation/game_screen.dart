@@ -5,13 +5,13 @@ import 'package:quiverfall/core/di/service_locator.dart';
 import 'package:quiverfall/core/routing/routes.dart';
 import 'package:quiverfall/core/theme/tokens.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
-import 'package:quiverfall/game/balance/curves.dart' as balance;
+import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/content_loader.dart';
 import 'package:quiverfall/game/feel/cues.dart';
-import 'package:quiverfall/game/sim/sim_config.dart';
+import 'package:quiverfall/game/level/level_generator.dart';
+import 'package:quiverfall/game/level/stage_blueprint.dart';
 import 'package:quiverfall/game/sim/world.dart';
-import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:quiverfall/services/audio/audio_port.dart';
 import 'package:quiverfall/services/device/quality_controller.dart';
 import 'package:quiverfall/services/haptics/haptic_service.dart';
@@ -34,13 +34,18 @@ import 'package:quiverfall/view/quiverfall_game.dart';
 class GameScreen extends StatefulWidget {
   const GameScreen({
     this.chapter = 1,
-    this.globalStage = 1,
+    this.stage = 1,
+    this.playerId = 'local',
     this.showTelemetry = true,
     super.key,
   });
 
   final int chapter;
-  final int globalStage;
+  final int stage;
+
+  /// Part of the stage seed, so two players on the same stage get different
+  /// rooms (docs/14 §14.2).
+  final String playerId;
 
   /// The playtest overlay. On by default in Phase 6 precisely because the
   /// numbers behind the gate have to be readable off the device by whoever is
@@ -54,6 +59,7 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen>
     with SingleTickerProviderStateMixin {
   QuiverfallGame? _game;
+  StageRunner? _runner;
   Object? _loadError;
 
   late final HapticService _haptics = HapticService();
@@ -89,34 +95,44 @@ class _GameScreenState extends State<GameScreen>
       final ContentLibrary content = await ContentLoader.load();
       if (!mounted) return;
 
-      final SimWorld sim = SimWorld(
-        seed: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
-        content: content,
-      );
-
-      sim
-        ..enemyHpBase = balance.Curves.enemyHp(widget.globalStage)
-        ..globalStage = widget.globalStage
-        // Design Law 1: a common enemy dies in 0.8-1.6 s for a
-        // correctly-progressed player, which is two Tier-III arrows. Phase 10
-        // computes this from the real loadout; until then it is solved from the
-        // curve so the playtest fights at the intended pace.
-        ..playerAttack =
-            balance.Curves.enemyHp(widget.globalStage) / (2.10 * 2);
-
-      sim.spawnPlayer(SimConfig.arenaWidth * 0.25, SimConfig.arenaHeight / 2);
-      sim.beginRoom(
-        RoomComposer.compose(
-          content: content,
-          rng: sim.rng,
+      // The whole stage is generated up front. That is what makes it
+      // reproducible from its seed, and what lets the room *after* this one be
+      // validated before the player ever reaches it (docs/14 §14.2).
+      final StageBlueprint blueprint = StageBlueprint.forStage(
+        chapter: widget.chapter,
+        stage: widget.stage,
+        seed: StageBlueprint.seedFor(
+          playerId: widget.playerId,
           chapter: widget.chapter,
-          globalStage: widget.globalStage,
+          stage: widget.stage,
+          // Phase 14 persists the attempt count. A wall-clock salt still gives
+          // the property that matters now: a retry is a different stage.
+          attemptSalt: DateTime.now().millisecondsSinceEpoch & 0xFFFF,
         ),
       );
 
+      final StagePlan plan = generateStage(
+        generator: LevelGenerator(content: content, arenas: content.arenas),
+        blueprint: blueprint,
+      );
+
+      final SimWorld sim = buildStageWorld(
+        blueprint: blueprint,
+        content: content,
+        plan: plan,
+      );
+
+      final StageRunner runner = StageRunner(
+        world: sim,
+        content: content,
+        plan: plan,
+      )..start();
+
       setState(() {
+        _runner = runner;
         _game = QuiverfallGame(
           sim: sim,
+          runner: runner,
           sinks: <CueSink>[_haptics, _audio],
           // Decided by the boot benchmark. Absent in tests and tools, where the
           // default tier is the right answer anyway.
@@ -162,6 +178,7 @@ class _GameScreenState extends State<GameScreen>
               world: game.sim,
               repaint: _hudFrame,
               telemetry: game.telemetry,
+              runner: _runner,
               showTelemetry: widget.showTelemetry,
             ),
             _ExitButton(telemetry: game.telemetry),

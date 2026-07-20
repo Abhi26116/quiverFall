@@ -74,6 +74,21 @@ class Arena {
   bool containsPoint(double x, double y) =>
       x >= 0 && y >= 0 && x <= width && y <= height;
 
+  /// Index of the first wall a circle overlaps, or -1.
+  ///
+  /// Used by the slide resolution, which needs to know *which* obstacle it is
+  /// pressed against in order to go round it the short way.
+  int wallHitBy(double x, double y, double r) {
+    for (int i = 0; i < wallCount; i++) {
+      final double cx = _clamp(x, _wallData[i * 4], _wallData[i * 4 + 2]);
+      final double cy = _clamp(y, _wallData[i * 4 + 1], _wallData[i * 4 + 3]);
+      final double dx = x - cx;
+      final double dy = y - cy;
+      if (dx * dx + dy * dy < r * r) return i;
+    }
+    return -1;
+  }
+
   /// True if a circle overlaps any wall.
   bool circleHitsWall(double x, double y, double r) {
     for (int i = 0; i < wallCount; i++) {

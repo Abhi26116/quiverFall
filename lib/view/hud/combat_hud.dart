@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:quiverfall/core/theme/tokens.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
+import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
 import 'package:quiverfall/game/sim/world.dart';
 
 /// The combat HUD.
@@ -18,12 +19,16 @@ class CombatHud extends StatelessWidget {
     required this.world,
     required this.repaint,
     this.telemetry,
+    this.runner,
     this.showTelemetry = false,
     super.key,
   });
 
   final SimWorld world;
   final Listenable repaint;
+
+  /// Room progression, for the `Room 4/7` counter.
+  final StageRunner? runner;
 
   /// Shown only in the playtest build. The gate is measured from these numbers,
   /// and the person running the session needs to read them off the device.
@@ -38,6 +43,7 @@ class CombatHud extends StatelessWidget {
           painter: _HudPainter(
             world: world,
             repaint: repaint,
+            runner: runner,
             telemetry: showTelemetry ? telemetry : null,
           ),
         ),
@@ -50,10 +56,12 @@ class _HudPainter extends CustomPainter {
   _HudPainter({
     required this.world,
     required Listenable repaint,
+    this.runner,
     this.telemetry,
   }) : super(repaint: repaint);
 
   final SimWorld world;
+  final StageRunner? runner;
   final FeelTelemetry? telemetry;
 
   /// The delayed white "damage taken" ghost bar (docs/10 §10.6).
@@ -135,8 +143,15 @@ class _HudPainter extends CustomPainter {
   }
 
   void _paintRoomCounter(Canvas canvas, Size size) {
+    final StageRunner? stage = runner;
     final int alive = _aliveEnemies();
-    final String text = alive == 0 ? 'CLEAR' : '$alive';
+
+    // `Room 4/7` (docs/10 §10.6). Falls back to a bare enemy count in a sandbox
+    // with no stage behind it — which is what the Phase 6 playtest build runs.
+    final String text = stage == null
+        ? (alive == 0 ? 'CLEAR' : '$alive')
+        : 'Room ${stage.roomIndex + 1}/${stage.roomTotal}'
+            '${alive == 0 ? '  CLEAR' : '  $alive'}';
 
     _text(
       canvas,

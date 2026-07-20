@@ -116,12 +116,22 @@ void main() {
         ..autoFire = true
         ..playerAttack = 1e6;
       world.spawnPlayer(2.0, 4.5);
-      world.spawnEnemy(EnemyArchetype.mote, 9.0, 4.5);
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 9.0, 4.5);
 
+      // A Mote walks toward the player, so it dies somewhere left of where it
+      // spawned. The assertion has to be "the trail reached the target", not
+      // "the trail reached x = 9" — the latter passed only by accident while
+      // arrows were travelling at double speed.
+      double diedAtX = 0;
       for (int i = 0; i < 120; i++) {
+        final double before = world.entities.posX[mote];
         world.tick(InputSnapshot());
-        if (world.events.countOf(SimEventType.entityDied) > 0) break;
+        if (world.events.countOf(SimEventType.entityDied) > 0) {
+          diedAtX = before;
+          break;
+        }
       }
+      expect(diedAtX, greaterThan(0), reason: 'nothing died');
 
       double furthest = 0;
       for (int i = 0; i < world.windlines.capacity; i++) {
@@ -133,8 +143,9 @@ void main() {
       // The trail must run to the enemy, not stop a segment-length short of it.
       expect(
         furthest,
-        greaterThan(9.0 - SimConfig.windlineSegmentLength * 0.5),
-        reason: 'the trail stopped short of the target it killed',
+        greaterThan(diedAtX - SimConfig.windlineSegmentLength * 0.5),
+        reason: 'the trail stopped short of the target it killed '
+            '(died at $diedAtX, trail reached $furthest)',
       );
     });
 

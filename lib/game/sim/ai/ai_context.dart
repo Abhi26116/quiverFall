@@ -48,7 +48,12 @@ class AiContext {
   final EnemyStore enemies;
   final StatusStore status;
   final SpatialHash spatial;
-  final Arena arena;
+
+  /// The room's collision geometry.
+  ///
+  /// Not final: a stage swaps arenas between rooms, and an AI holding the
+  /// previous room's walls would path against geometry that is no longer there.
+  Arena arena;
   final SimEventBuffer events;
   final TelegraphStore telegraphs;
   final HazardStore hazards;

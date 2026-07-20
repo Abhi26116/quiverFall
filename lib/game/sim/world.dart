@@ -114,7 +114,14 @@ class SimWorld {
   /// seed and the same input sequence are byte-identical.
   final int seed;
 
-  final Arena arena;
+  /// The room's collision geometry.
+  ///
+  /// Swappable, because a stage is several rooms and each has its own authored
+  /// arena. Replaced through [loadArena], which keeps the AI's copy in step —
+  /// walls that changed visually but not physically would be the worst kind of
+  /// bug, because the room would look right and play wrong.
+  Arena arena;
+
   final EntityStore entities;
 
   /// Per-enemy runtime state — plates, shields, cooldowns, AI state.
@@ -508,6 +515,15 @@ class SimWorld {
     entities.contentIndex[i] = contentIndex;
     events.emit(SimEventType.entitySpawned, entityA: i, x: x, y: y);
     return id;
+  }
+
+  /// Swaps in a new room's geometry.
+  ///
+  /// Call between rooms, not during one. Everything that reads the arena reads
+  /// it through this object or through [AiContext], and both are updated here.
+  void loadArena(Arena next) {
+    arena = next;
+    ai.arena = next;
   }
 
   /// Places an enemy from the content table, fully initialised.

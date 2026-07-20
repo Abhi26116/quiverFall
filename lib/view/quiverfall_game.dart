@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flame/game.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
+import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
 import 'package:quiverfall/game/device/quality_tier.dart';
 import 'package:quiverfall/game/feel/cues.dart';
 import 'package:quiverfall/game/feel/feedback_director.dart';
@@ -40,6 +41,7 @@ class QuiverfallGame extends FlameGame {
   QuiverfallGame({
     required this.sim,
     FeedbackDirector? director,
+    this.runner,
     List<CueSink>? sinks,
     FeelTelemetry? telemetry,
     QualityController? quality,
@@ -76,6 +78,9 @@ class QuiverfallGame extends FlameGame {
   /// Haptics and audio. Empty is a valid configuration — the game plays fine
   /// with neither, which is what lets the renderer ship before the sound does.
   final List<CueSink> sinks;
+
+  /// Room progression, or null for a single-room sandbox.
+  final StageRunner? runner;
 
   /// What the Phase 6 gate is measured from.
   final FeelTelemetry telemetry;
@@ -163,6 +168,10 @@ class QuiverfallGame extends FlameGame {
     director.drainEvents();
     telemetry.recordTick(sim);
     sim.events.clear();
+
+    // After the events are drained, so the room-cleared cue has already been
+    // raised for the room that just ended rather than for the one starting.
+    runner?.update();
   }
 
   @override

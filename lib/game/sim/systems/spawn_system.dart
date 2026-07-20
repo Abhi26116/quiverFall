@@ -153,7 +153,16 @@ abstract final class SpawnSystem {
 
   static void _queue(AiContext ctx, SpawnState state, PlannedEnemy planned) {
     final double radius = ctx.content.enemies[planned.contentIndex].radius;
-    EnemySpawner.findSpawnPoint(ctx, radius);
+
+    // An authored spawn point, if the level generator assigned one. Falling
+    // back to a search is what keeps hand-built test rooms and the Phase 5
+    // composer working without an arena behind them.
+    if (planned.isPlaced) {
+      EnemySpawner.pointX = planned.spawnX!;
+      EnemySpawner.pointY = planned.spawnY!;
+    } else {
+      EnemySpawner.findSpawnPoint(ctx, radius);
+    }
 
     for (int i = 0; i < state.capacity; i++) {
       if (state._pendingAlive[i] == 1) continue;

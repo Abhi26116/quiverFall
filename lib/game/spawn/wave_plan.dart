@@ -8,12 +8,33 @@ import 'package:quiverfall/game/content/enemy_definition.dart';
 /// logged with the run seed, and replayed. Nothing here may reference live
 /// simulation state.
 class PlannedEnemy {
-  const PlannedEnemy(this.contentIndex, [this.variant = EnemyVariant.none]);
+  const PlannedEnemy(
+    this.contentIndex, [
+    this.variant = EnemyVariant.none,
+    this.spawnX,
+    this.spawnY,
+  ]);
 
   /// Index into [ContentLibrary.enemies].
   final int contentIndex;
 
   final EnemyVariant variant;
+
+  /// Where the level generator placed this enemy, or null if it did not.
+  ///
+  /// A composed room is only a *list* of enemies; placing them needs an arena,
+  /// which the composer has never seen. When the generator has assigned an
+  /// authored spawn point — respecting the family placement rules in
+  /// docs/14 §14.4 — it travels here, and the spawn system uses it instead of
+  /// searching for a free spot.
+  final double? spawnX;
+  final double? spawnY;
+
+  bool get isPlaced => spawnX != null && spawnY != null;
+
+  /// The same enemy, placed at a point.
+  PlannedEnemy placedAt(double x, double y) =>
+      PlannedEnemy(contentIndex, variant, x, y);
 
   double threatIn(ContentLibrary content) =>
       content.enemies[contentIndex].threatCost * variant.threatMultiplier;

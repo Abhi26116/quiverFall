@@ -1,0 +1,2702 @@
+{
+  "_comment": "Authored arenas. Every arena is a 16x9 unit single screen (docs/14 \u00a714.1) \u2014 no scrolling, the whole fight visible at once. `walls` block movement and projectiles; `cover` blocks projectiles only and is the Longeye counter. Spawn points are tagged edge/interior/elite with a family whitelist, per the placement rules in docs/14 \u00a714.4. `latticeHints` mark wall pairs that make good Confluence geometry; the generator biases toward them from chapter 5.",
+  "schemaVersion": 1,
+  "arenas": [
+    {
+      "id": "open_field",
+      "tags": [
+        "open"
+      ],
+      "chapters": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "playerStart": {
+        "x": 2.4,
+        "y": 4.5
+      },
+      "spawnPoints": [
+        {
+          "x": 13.4,
+          "y": 1.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.2,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.4,
+          "y": 7.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.6,
+          "y": 1.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.6,
+          "y": 7.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.0,
+          "y": 2.9,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.0,
+          "y": 6.1,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.2,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "open_rise",
+      "tags": [
+        "open"
+      ],
+      "chapters": [
+        1,
+        2,
+        5,
+        7
+      ],
+      "playerStart": {
+        "x": 8.0,
+        "y": 7.6
+      },
+      "spawnPoints": [
+        {
+          "x": 2.2,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 1.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.8,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.2,
+          "y": 4.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.8,
+          "y": 4.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.4,
+          "y": 3.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.6,
+          "y": 3.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 2.6,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "open_shelf",
+      "tags": [
+        "open"
+      ],
+      "chapters": [
+        2,
+        3,
+        6,
+        10
+      ],
+      "playerStart": {
+        "x": 13.6,
+        "y": 4.5
+      },
+      "spawnPoints": [
+        {
+          "x": 1.4,
+          "y": 1.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.4,
+          "y": 7.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.4,
+          "y": 1.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.4,
+          "y": 7.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.0,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 7.2,
+          "y": 3.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 7.2,
+          "y": 6.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 5.6,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "enclosed_hold",
+      "tags": [
+        "enclosed"
+      ],
+      "chapters": [
+        3,
+        4,
+        5,
+        8,
+        11
+      ],
+      "playerStart": {
+        "x": 3.0,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 6.0,
+          "t": 0.0,
+          "r": 6.9,
+          "b": 3.0
+        },
+        {
+          "l": 6.0,
+          "t": 6.0,
+          "r": 6.9,
+          "b": 9.0
+        },
+        {
+          "l": 11.4,
+          "t": 2.2,
+          "r": 12.3,
+          "b": 6.8
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.6,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.6,
+          "y": 7.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.0,
+          "y": 1.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.0,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.4,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.4,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 6.9,
+          "ay": 3.0,
+          "bx": 11.4,
+          "by": 6.0
+        },
+        {
+          "ax": 6.9,
+          "ay": 6.0,
+          "bx": 11.4,
+          "by": 3.0
+        }
+      ]
+    },
+    {
+      "id": "enclosed_vault",
+      "tags": [
+        "enclosed",
+        "pillared"
+      ],
+      "chapters": [
+        5,
+        6,
+        9,
+        12
+      ],
+      "playerStart": {
+        "x": 8.0,
+        "y": 1.5
+      },
+      "walls": [
+        {
+          "l": 3.4,
+          "t": 3.6,
+          "r": 5.0,
+          "b": 5.4
+        },
+        {
+          "l": 11.0,
+          "t": 3.6,
+          "r": 12.6,
+          "b": 5.4
+        }
+      ],
+      "cover": [
+        {
+          "l": 7.2,
+          "t": 3.9,
+          "r": 8.8,
+          "b": 5.1
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 1.2,
+          "y": 7.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 8.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.8,
+          "y": 7.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.8,
+          "y": 6.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.2,
+          "y": 6.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 6.4,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 5.0,
+          "ay": 4.5,
+          "bx": 11.0,
+          "by": 4.5
+        },
+        {
+          "ax": 8.0,
+          "ay": 5.1,
+          "bx": 8.0,
+          "by": 8.2
+        }
+      ]
+    },
+    {
+      "id": "enclosed_stair",
+      "tags": [
+        "enclosed"
+      ],
+      "chapters": [
+        6,
+        7,
+        10,
+        12
+      ],
+      "playerStart": {
+        "x": 2.0,
+        "y": 7.4
+      },
+      "walls": [
+        {
+          "l": 4.6,
+          "t": 5.2,
+          "r": 9.2,
+          "b": 6.0
+        },
+        {
+          "l": 7.0,
+          "t": 2.4,
+          "r": 11.6,
+          "b": 3.2
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.4,
+          "y": 1.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 5.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.6,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.2,
+          "y": 1.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.6,
+          "y": 8.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 11.0,
+          "y": 4.4,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 5.6,
+          "y": 3.2,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.4,
+          "y": 4.4,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 9.2,
+          "ay": 5.6,
+          "bx": 7.0,
+          "by": 2.8
+        }
+      ]
+    },
+    {
+      "id": "corridor_long",
+      "tags": [
+        "corridor"
+      ],
+      "chapters": [
+        2,
+        3,
+        7,
+        11
+      ],
+      "playerStart": {
+        "x": 1.6,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 2.4
+        },
+        {
+          "l": 0.0,
+          "t": 6.6,
+          "r": 16.0,
+          "b": 9.0
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.8,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.0,
+          "y": 3.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.0,
+          "y": 5.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 3.2,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 5.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.2,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.8,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "corridor_cross",
+      "tags": [
+        "corridor",
+        "pillared"
+      ],
+      "chapters": [
+        4,
+        5,
+        8,
+        12
+      ],
+      "playerStart": {
+        "x": 1.8,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 4.8,
+          "b": 2.6
+        },
+        {
+          "l": 11.2,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 2.6
+        },
+        {
+          "l": 0.0,
+          "t": 6.4,
+          "r": 4.8,
+          "b": 9.0
+        },
+        {
+          "l": 11.2,
+          "t": 6.4,
+          "r": 16.0,
+          "b": 9.0
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.6,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 1.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 7.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.6,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.6,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 12.6,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 4.8,
+          "ay": 2.6,
+          "bx": 11.2,
+          "by": 6.4
+        },
+        {
+          "ax": 4.8,
+          "ay": 6.4,
+          "bx": 11.2,
+          "by": 2.6
+        }
+      ]
+    },
+    {
+      "id": "corridor_choke",
+      "tags": [
+        "corridor"
+      ],
+      "chapters": [
+        6,
+        9,
+        11
+      ],
+      "playerStart": {
+        "x": 14.4,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 1.8
+        },
+        {
+          "l": 0.0,
+          "t": 7.2,
+          "r": 16.0,
+          "b": 9.0
+        },
+        {
+          "l": 6.0,
+          "t": 3.9,
+          "r": 6.6,
+          "b": 5.1
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 1.2,
+          "y": 3.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.2,
+          "y": 6.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.2,
+          "y": 3.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 5.2,
+          "y": 6.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 4.4,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 6.0,
+          "ay": 3.9,
+          "bx": 6.6,
+          "by": 5.1
+        }
+      ]
+    },
+    {
+      "id": "pillared_grove",
+      "tags": [
+        "pillared"
+      ],
+      "chapters": [
+        3,
+        4,
+        5,
+        8,
+        10
+      ],
+      "playerStart": {
+        "x": 2.2,
+        "y": 4.5
+      },
+      "cover": [
+        {
+          "l": 6.0,
+          "t": 2.0,
+          "r": 6.9,
+          "b": 2.9
+        },
+        {
+          "l": 6.0,
+          "t": 6.1,
+          "r": 6.9,
+          "b": 7.0
+        },
+        {
+          "l": 9.6,
+          "t": 2.0,
+          "r": 10.5,
+          "b": 2.9
+        },
+        {
+          "l": 9.6,
+          "t": 6.1,
+          "r": 10.5,
+          "b": 7.0
+        },
+        {
+          "l": 7.8,
+          "t": 4.1,
+          "r": 8.7,
+          "b": 5.0
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.6,
+          "y": 1.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.6,
+          "y": 7.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.2,
+          "y": 1.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.2,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 11.8,
+          "y": 3.2,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.8,
+          "y": 5.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 12.4,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 6.9,
+          "ay": 2.9,
+          "bx": 9.6,
+          "by": 6.1
+        },
+        {
+          "ax": 6.9,
+          "ay": 7.0,
+          "bx": 9.6,
+          "by": 2.0
+        },
+        {
+          "ax": 8.7,
+          "ay": 4.5,
+          "bx": 14.6,
+          "by": 4.5
+        }
+      ]
+    },
+    {
+      "id": "pillared_court",
+      "tags": [
+        "pillared"
+      ],
+      "chapters": [
+        5,
+        6,
+        9,
+        12
+      ],
+      "playerStart": {
+        "x": 8.0,
+        "y": 8.0
+      },
+      "walls": [
+        {
+          "l": 4.0,
+          "t": 3.4,
+          "r": 5.2,
+          "b": 4.6
+        },
+        {
+          "l": 10.8,
+          "t": 3.4,
+          "r": 12.0,
+          "b": 4.6
+        }
+      ],
+      "cover": [
+        {
+          "l": 7.4,
+          "t": 1.6,
+          "r": 8.6,
+          "b": 2.8
+        },
+        {
+          "l": 2.2,
+          "t": 1.4,
+          "r": 3.2,
+          "b": 2.4
+        },
+        {
+          "l": 12.8,
+          "t": 1.4,
+          "r": 13.8,
+          "b": 2.4
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 1.2,
+          "y": 1.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 0.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.8,
+          "y": 1.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.0,
+          "y": 4.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 4.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.8,
+          "y": 2.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.2,
+          "y": 2.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 3.6,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 5.2,
+          "ay": 4.0,
+          "bx": 10.8,
+          "by": 4.0
+        },
+        {
+          "ax": 8.0,
+          "ay": 2.8,
+          "bx": 8.0,
+          "by": 8.0
+        }
+      ]
+    },
+    {
+      "id": "pillared_mill",
+      "tags": [
+        "pillared",
+        "enclosed"
+      ],
+      "chapters": [
+        7,
+        8,
+        11
+      ],
+      "playerStart": {
+        "x": 13.8,
+        "y": 7.8
+      },
+      "walls": [
+        {
+          "l": 6.4,
+          "t": 4.0,
+          "r": 9.6,
+          "b": 5.0
+        }
+      ],
+      "cover": [
+        {
+          "l": 3.0,
+          "t": 2.0,
+          "r": 4.0,
+          "b": 3.0
+        },
+        {
+          "l": 3.0,
+          "t": 6.0,
+          "r": 4.0,
+          "b": 7.0
+        },
+        {
+          "l": 11.8,
+          "t": 2.0,
+          "r": 12.8,
+          "b": 3.0
+        },
+        {
+          "l": 6.0,
+          "t": 7.2,
+          "r": 7.0,
+          "b": 8.2
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 1.4,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.4,
+          "y": 7.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 1.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.0,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 5.4,
+          "y": 2.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 9.0,
+          "y": 2.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 6.6,
+          "y": 2.4,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 6.4,
+          "ay": 4.5,
+          "bx": 9.6,
+          "by": 4.5
+        },
+        {
+          "ax": 4.0,
+          "ay": 2.5,
+          "bx": 11.8,
+          "by": 2.5
+        }
+      ]
+    },
+    {
+      "id": "arena_ring",
+      "tags": [
+        "arena",
+        "open"
+      ],
+      "chapters": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "playerStart": {
+        "x": 8.0,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 2.0,
+          "b": 2.0
+        },
+        {
+          "l": 14.0,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 2.0
+        },
+        {
+          "l": 0.0,
+          "t": 7.0,
+          "r": 2.0,
+          "b": 9.0
+        },
+        {
+          "l": 14.0,
+          "t": 7.0,
+          "r": 16.0,
+          "b": 9.0
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 13.6,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 12.53,
+          "y": 7.79,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.73,
+          "y": 8.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.27,
+          "y": 8.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 3.47,
+          "y": 7.79,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 2.4,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 3.47,
+          "y": 1.21,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.27,
+          "y": 0.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.73,
+          "y": 0.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 12.53,
+          "y": 1.21,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 2.4,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        },
+        {
+          "x": 11.6,
+          "y": 6.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 4.4,
+          "y": 2.4,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.6,
+          "y": 2.4,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arena_pit",
+      "tags": [
+        "arena",
+        "enclosed"
+      ],
+      "chapters": [
+        4,
+        7,
+        10
+      ],
+      "playerStart": {
+        "x": 3.0,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 1.2
+        },
+        {
+          "l": 0.0,
+          "t": 7.8,
+          "r": 16.0,
+          "b": 9.0
+        },
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 1.2,
+          "b": 9.0
+        },
+        {
+          "l": 14.8,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 9.0
+        }
+      ],
+      "cover": [
+        {
+          "l": 5.6,
+          "t": 4.0,
+          "r": 6.4,
+          "b": 4.9
+        },
+        {
+          "l": 9.6,
+          "t": 4.0,
+          "r": 10.4,
+          "b": 4.9
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.0,
+          "y": 2.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.2,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.0,
+          "y": 6.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 1.9,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 7.1,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.4,
+          "y": 3.2,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.4,
+          "y": 5.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.0,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 6.4,
+          "ay": 4.5,
+          "bx": 9.6,
+          "by": 4.5
+        }
+      ]
+    },
+    {
+      "id": "open_drift",
+      "tags": [
+        "open"
+      ],
+      "chapters": [
+        1,
+        4,
+        8
+      ],
+      "playerStart": {
+        "x": 2.6,
+        "y": 2.4
+      },
+      "spawnPoints": [
+        {
+          "x": 13.2,
+          "y": 7.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.4,
+          "y": 3.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.6,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 12.0,
+          "y": 1.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 2.4,
+          "y": 7.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 4.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.4,
+          "y": 6.4,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 9.2,
+          "y": 5.6,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "enclosed_spine",
+      "tags": [
+        "enclosed",
+        "corridor"
+      ],
+      "chapters": [
+        8,
+        10,
+        12
+      ],
+      "playerStart": {
+        "x": 8.0,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 3.6,
+          "t": 0.0,
+          "r": 4.4,
+          "b": 3.6
+        },
+        {
+          "l": 3.6,
+          "t": 5.4,
+          "r": 4.4,
+          "b": 9.0
+        },
+        {
+          "l": 11.6,
+          "t": 0.0,
+          "r": 12.4,
+          "b": 3.6
+        },
+        {
+          "l": 11.6,
+          "t": 5.4,
+          "r": 12.4,
+          "b": 9.0
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 1.4,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.4,
+          "y": 7.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.6,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.6,
+          "y": 7.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.2,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.8,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 2.6,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 13.4,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 13.0,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 4.4,
+          "ay": 4.5,
+          "bx": 11.6,
+          "by": 4.5
+        },
+        {
+          "ax": 4.4,
+          "ay": 3.6,
+          "bx": 11.6,
+          "by": 5.4
+        }
+      ]
+    },
+    {
+      "id": "pillared_gallery",
+      "tags": [
+        "pillared"
+      ],
+      "chapters": [
+        2,
+        6,
+        11
+      ],
+      "playerStart": {
+        "x": 1.8,
+        "y": 1.8
+      },
+      "cover": [
+        {
+          "l": 5.0,
+          "t": 1.4,
+          "r": 5.9,
+          "b": 2.3
+        },
+        {
+          "l": 5.0,
+          "t": 6.7,
+          "r": 5.9,
+          "b": 7.6
+        },
+        {
+          "l": 10.1,
+          "t": 1.4,
+          "r": 11.0,
+          "b": 2.3
+        },
+        {
+          "l": 10.1,
+          "t": 6.7,
+          "r": 11.0,
+          "b": 7.6
+        },
+        {
+          "l": 7.6,
+          "t": 4.05,
+          "r": 8.4,
+          "b": 4.95
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.6,
+          "y": 7.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.2,
+          "y": 1.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 8.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 2.0,
+          "y": 7.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 6.2,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.6,
+          "y": 4.5,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 12.2,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 5.9,
+          "ay": 1.85,
+          "bx": 10.1,
+          "by": 7.15
+        },
+        {
+          "ax": 5.9,
+          "ay": 7.15,
+          "bx": 10.1,
+          "by": 1.85
+        }
+      ]
+    },
+    {
+      "id": "corridor_switch",
+      "tags": [
+        "corridor"
+      ],
+      "chapters": [
+        5,
+        9,
+        12
+      ],
+      "playerStart": {
+        "x": 14.2,
+        "y": 1.8
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 3.0,
+          "r": 10.6,
+          "b": 3.9
+        },
+        {
+          "l": 5.4,
+          "t": 5.6,
+          "r": 16.0,
+          "b": 6.5
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 1.2,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.2,
+          "y": 4.8,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 1.4,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 8.2,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.0,
+          "y": 8.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 6.0,
+          "y": 1.6,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 3.0,
+          "y": 4.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 2.6,
+          "y": 4.8,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 10.6,
+          "ay": 3.45,
+          "bx": 5.4,
+          "by": 6.05
+        }
+      ]
+    },
+    {
+      "id": "arena_crucible",
+      "tags": [
+        "arena",
+        "pillared"
+      ],
+      "chapters": [
+        7,
+        10,
+        12
+      ],
+      "playerStart": {
+        "x": 2.6,
+        "y": 4.5
+      },
+      "walls": [
+        {
+          "l": 0.0,
+          "t": 0.0,
+          "r": 1.4,
+          "b": 9.0
+        },
+        {
+          "l": 14.6,
+          "t": 0.0,
+          "r": 16.0,
+          "b": 9.0
+        }
+      ],
+      "cover": [
+        {
+          "l": 4.4,
+          "t": 2.2,
+          "r": 5.3,
+          "b": 3.1
+        },
+        {
+          "l": 10.7,
+          "t": 2.2,
+          "r": 11.6,
+          "b": 3.1
+        },
+        {
+          "l": 4.4,
+          "t": 5.9,
+          "r": 5.3,
+          "b": 6.8
+        },
+        {
+          "l": 10.7,
+          "t": 5.9,
+          "r": 11.6,
+          "b": 6.8
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 13.6,
+          "y": 2.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.8,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 13.6,
+          "y": 7.0,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 0.9,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 8.1,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 3.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 9.4,
+          "y": 6.0,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 11.2,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 5.3,
+          "ay": 2.65,
+          "bx": 10.7,
+          "by": 6.35
+        },
+        {
+          "ax": 5.3,
+          "ay": 6.35,
+          "bx": 10.7,
+          "by": 2.65
+        }
+      ]
+    },
+    {
+      "id": "open_threshold",
+      "tags": [
+        "open"
+      ],
+      "chapters": [
+        1,
+        2,
+        3
+      ],
+      "playerStart": {
+        "x": 2.2,
+        "y": 4.5
+      },
+      "cover": [
+        {
+          "l": 3.6,
+          "t": 4.05,
+          "r": 4.4,
+          "b": 4.95
+        },
+        {
+          "l": 11.6,
+          "t": 4.05,
+          "r": 12.4,
+          "b": 4.95
+        }
+      ],
+      "spawnPoints": [
+        {
+          "x": 14.8,
+          "y": 1.4,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 14.8,
+          "y": 7.6,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 15.0,
+          "y": 4.5,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 0.9,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 8.0,
+          "y": 8.1,
+          "kind": "edge",
+          "families": [
+            "salvo",
+            "rush",
+            "drift",
+            "carapace"
+          ]
+        },
+        {
+          "x": 9.2,
+          "y": 3.2,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 9.2,
+          "y": 5.8,
+          "kind": "interior",
+          "families": [
+            "drift",
+            "choir",
+            "carapace",
+            "rush"
+          ]
+        },
+        {
+          "x": 10.4,
+          "y": 4.5,
+          "kind": "elite",
+          "families": [
+            "riftborn"
+          ]
+        }
+      ],
+      "latticeHints": [
+        {
+          "ax": 4.4,
+          "ay": 4.5,
+          "bx": 11.6,
+          "by": 4.5
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:quiverfall/game/content/enemy_definition.dart';
+import 'package:quiverfall/game/level/arena_definition.dart';
+import 'package:quiverfall/game/sim/sim_config.dart';
 
 /// A problem found while loading content.
 class ContentError {
@@ -34,6 +36,7 @@ class ContentLibrary {
     required this.enemies,
     required this.enemyIndexById,
     required List<int> enemyIndexByArchetype,
+    this.arenas = const <ArenaDefinition>[],
   }) : _byArchetype = enemyIndexByArchetype;
 
   /// Ordered enemy table. Entities reference definitions by *index* into this
@@ -42,6 +45,10 @@ class ContentLibrary {
   final List<EnemyDefinition> enemies;
 
   final Map<String, int> enemyIndexById;
+
+  /// Authored arenas. Empty is legal — the Phase 5 composer and every headless
+  /// test work without geometry, and only the level generator needs them.
+  final List<ArenaDefinition> arenas;
 
   /// Archetype ordinal to table index. The AI resolves a definition on every
   /// enemy on every tick, so this has to be an array read.
@@ -60,10 +67,16 @@ class ContentLibrary {
   /// report *every* problem in one run instead of one per invocation.
   static (ContentLibrary?, List<ContentError>) parse({
     required String enemiesJson,
+    String? arenasJson,
   }) {
     final List<ContentError> errors = <ContentError>[];
 
     final List<EnemyDefinition> enemies = _parseEnemies(enemiesJson, errors);
+    if (errors.isNotEmpty) return (null, errors);
+
+    final List<ArenaDefinition> arenas = arenasJson == null
+        ? <ArenaDefinition>[]
+        : _parseArenas(arenasJson, errors);
     if (errors.isNotEmpty) return (null, errors);
 
     final Map<String, int> byId = <String, int>{};
@@ -91,6 +104,7 @@ class ContentLibrary {
         enemies: enemies,
         enemyIndexById: byId,
         enemyIndexByArchetype: byArchetype,
+        arenas: arenas,
       ),
       const <ContentError>[],
     );
@@ -221,7 +235,8 @@ class ContentLibrary {
       bad('deathBlastDamage', 'must be in [0, 0.5)');
     }
     if (c.contactCooldown <= 0) {
-      bad('contactCooldown', 'must be > 0, or contact damage ticks every frame');
+      bad('contactCooldown',
+          'must be > 0, or contact damage ticks every frame');
     }
 
     // **Every damaging special has a telegraph.** This is the single rule the
@@ -312,6 +327,173 @@ class ContentLibrary {
         );
       }
     }
+  }
+
+  // ── Arenas ────────────────────────────────────────────────────────────────
+
+  static List<ArenaDefinition> _parseArenas(
+    String source,
+    List<ContentError> errors,
+  ) {
+    const String file = 'arenas.json';
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(source);
+    } catch (e) {
+      errors.add(ContentError(file, '<root>', 'not valid JSON: $e'));
+      return const <ArenaDefinition>[];
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      errors.add(const ContentError(file, '<root>', 'expected an object'));
+      return const <ArenaDefinition>[];
+    }
+
+    final Object? list = decoded['arenas'];
+    if (list is! List) {
+      errors.add(const ContentError(file, 'arenas', 'expected an array'));
+      return const <ArenaDefinition>[];
+    }
+
+    final List<ArenaDefinition> out = <ArenaDefinition>[];
+    final Set<String> seen = <String>{};
+
+    for (int i = 0; i < list.length; i++) {
+      final Object? raw = list[i];
+      if (raw is! Map<String, dynamic>) {
+        errors.add(ContentError(file, 'arenas[$i]', 'expected an object'));
+        continue;
+      }
+      try {
+        final ArenaDefinition arena = ArenaDefinition.fromJson(raw);
+        if (!seen.add(arena.id)) {
+          errors.add(
+            ContentError(file, 'arenas[$i].id', 'duplicate id "${arena.id}"'),
+          );
+          continue;
+        }
+        _validateArena(arena, i, errors);
+        out.add(arena);
+      } catch (e) {
+        errors.add(ContentError(file, 'arenas[$i]', 'malformed: $e'));
+      }
+    }
+    return out;
+  }
+
+  /// Geometry rules that are cheap to state and expensive to discover in play.
+  ///
+  /// A spawn point inside a wall produces an enemy that cannot move; one too
+  /// close to the player start produces unavoidable damage, which docs/14 §14.4
+  /// calls a hard rule. Both are authoring mistakes, and both are invisible
+  /// until the room that draws them comes up — so they fail the build instead.
+  static void _validateArena(
+    ArenaDefinition a,
+    int i,
+    List<ContentError> errors,
+  ) {
+    const String file = 'arenas.json';
+    void bad(String field, String message) =>
+        errors.add(ContentError(file, 'arenas[$i].$field', message));
+
+    if (a.id.isEmpty) bad('id', 'must not be empty');
+    if (a.tags.isEmpty) bad('tags', 'an arena needs at least one tag');
+    if (a.chapters.isEmpty) bad('chapters', 'an arena nobody can draw is dead');
+
+    for (final int chapter in a.chapters) {
+      if (chapter < 1 || chapter > 12) {
+        bad('chapters', 'chapter $chapter is outside [1, 12]');
+      }
+    }
+
+    if (!_insideArena(a.playerStartX, a.playerStartY)) {
+      bad('playerStart', 'outside the 16x9 arena');
+    }
+    for (final ArenaRect wall in a.walls) {
+      if (!wall.isValid) bad('walls', 'a wall must have positive extent');
+      if (wall.overlapsCircle(
+        a.playerStartX,
+        a.playerStartY,
+        SimConfig.playerRadius,
+      )) {
+        bad('playerStart', 'the player would start inside a wall');
+      }
+    }
+    for (final ArenaRect c in a.cover) {
+      if (!c.isValid) bad('cover', 'cover must have positive extent');
+    }
+
+    if (a.spawnPoints.isEmpty) {
+      bad('spawnPoints', 'an arena with no spawn points can never populate');
+      return;
+    }
+
+    // docs/14 §14.1: playerStart is always >= 4u from every spawn point. That
+    // is stricter than the 3.5u runtime rule on purpose — authored geometry
+    // should not sit on the boundary the simulation enforces.
+    const double authoredMinimum = 4.0;
+    for (final SpawnPoint point in a.spawnPoints) {
+      if (!_insideArena(point.x, point.y)) {
+        bad('spawnPoints', 'a spawn point is outside the arena');
+        continue;
+      }
+      if (point.families.isEmpty) {
+        bad('spawnPoints', 'a spawn point no family may use is dead data');
+      }
+      final double dx = point.x - a.playerStartX;
+      final double dy = point.y - a.playerStartY;
+      final double distance = _distance(dx, dy);
+      if (distance < authoredMinimum) {
+        bad(
+          'spawnPoints',
+          'a spawn point is ${distance.toStringAsFixed(2)}u from the player '
+              'start; the authored minimum is ${authoredMinimum}u, which is '
+              'deliberately stricter than the runtime rule',
+        );
+      }
+      for (final ArenaRect wall in a.walls) {
+        if (wall.overlapsCircle(point.x, point.y, 0.4)) {
+          bad('spawnPoints', 'a spawn point sits inside a wall');
+          break;
+        }
+      }
+    }
+
+    // Every family must have somewhere legal to stand, or a room that draws one
+    // is unplaceable and the generator burns all eight attempts on it.
+    for (final EnemyFamily family in EnemyFamily.values) {
+      if (a.pointsFor(family).isEmpty) {
+        bad('spawnPoints', 'no point accepts ${family.name}');
+      }
+    }
+  }
+
+  static bool _insideArena(double x, double y) =>
+      x >= 0 &&
+      y >= 0 &&
+      x <= SimConfig.arenaWidth &&
+      y <= SimConfig.arenaHeight;
+
+  static double _distance(double dx, double dy) {
+    final double sq = dx * dx + dy * dy;
+    if (sq <= 0) return 0;
+    double g = sq > 1 ? sq : 1.0;
+    for (int i = 0; i < 24; i++) {
+      g = 0.5 * (g + sq / g);
+    }
+    return g;
+  }
+
+  /// Arenas a chapter may draw from.
+  List<ArenaDefinition> arenasForChapter(int chapter) => arenas
+      .where((ArenaDefinition a) => a.allowsChapter(chapter))
+      .toList(growable: false);
+
+  ArenaDefinition? arenaById(String id) {
+    for (final ArenaDefinition a in arenas) {
+      if (a.id == id) return a;
+    }
+    return null;
   }
 
   EnemyDefinition? enemyById(String id) {

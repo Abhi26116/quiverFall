@@ -361,8 +361,15 @@ void main() {
       expect(peak, greaterThan(0));
 
       // Stop producing, then let them age out.
+      //
+      // Turning off auto-fire stops new *arrows*, not the ones already in the
+      // air — and an arrow keeps laying trail for as long as it flies. The wait
+      // therefore has to cover the arrow lifetime as well as the Windline
+      // duration, or the test is really asserting that arrows despawn quickly.
       world.autoFire = false;
-      for (int i = 0; i < 60; i++) {
+      final int settle =
+          ((world.arrowLifetime + world.windlineDuration) * 60).ceil() + 10;
+      for (int i = 0; i < settle; i++) {
         world.tick(idle);
       }
       expect(world.windlines.liveCount, 0);

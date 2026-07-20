@@ -1,4 +1,5 @@
 import 'package:quiverfall/core/rng.dart';
+import 'package:quiverfall/game/balance/clear_time.dart';
 import 'package:quiverfall/game/balance/curves.dart';
 import 'package:quiverfall/game/balance/enemy_tuning.dart';
 import 'package:quiverfall/game/content/content_library.dart';
@@ -34,6 +35,14 @@ abstract final class RoomComposer {
 
   /// Probability an enemy in a chapter-9+ room carries a variant.
   static const double variantChance = 0.35;
+
+  /// Enemies a single room may contain, across all its waves.
+  ///
+  /// Distinct from [SimConfig.maxContactEnemies], which is the *simultaneous*
+  /// ceiling docs/14 §14.4 sets for readability. A room may hold more than that
+  /// in total because waves arrive in sequence — the spawn system is what keeps
+  /// the on-screen count under the cap.
+  static const int maxRoomEnemies = 40;
 
   /// Bound on the packing loop. A pool of cheap fodder against a late-game
   /// budget could otherwise iterate a long way; the cap is far above any
@@ -160,6 +169,16 @@ class _Packing {
   final List<PlannedEnemy> picks = <PlannedEnemy>[];
 
   double spent = 0;
+
+  /// Estimated seconds to clear what has been picked so far.
+  ///
+  /// The threat budget is the binding constraint in early chapters and stops
+  /// binding entirely later: `TB = 100 · 1.04^(G-1)` reaches six figures by
+  /// chapter 12 while enemy threat costs stay fixed. From roughly chapter 4
+  /// onward it is **clear time** that decides how big a room is, which is what
+  /// docs/14 §14.2 actually cares about.
+  double seconds = 0;
+
   int choirCount = 0;
   bool hasScreecher = false;
   bool hasLongeye = false;
@@ -167,7 +186,16 @@ class _Packing {
   bool canTake(int index, double remaining) {
     final EnemyDefinition def = content.enemies[index];
     if (def.threatCost > remaining) return false;
-    if (picks.length >= SimConfig.maxContactEnemies) return false;
+    if (picks.length >= RoomComposer.maxRoomEnemies) return false;
+
+    // Stop short of the 55 s rejection ceiling rather than at it: greedy
+    // packing cannot see the enemy it is about to add, so a composer aiming at
+    // the ceiling overshoots it routinely and gets rejected by its own
+    // validator.
+    if (seconds + ClearTimeModel.secondsForOne(def) >
+        ClearTimeModel.packingTarget) {
+      return false;
+    }
 
     if (def.family == EnemyFamily.choir &&
         choirCount >= CompositionValidator.maxChoirPerRoom) {
@@ -190,6 +218,7 @@ class _Packing {
 
     picks.add(PlannedEnemy(index, variant));
     spent += def.threatCost * variant.threatMultiplier;
+    seconds += ClearTimeModel.secondsForOne(def);
 
     if (def.family == EnemyFamily.choir) choirCount++;
     if (def.archetype == EnemyArchetype.screecher) hasScreecher = true;
@@ -263,6 +292,7 @@ class _Packing {
       // premium here could push the room back over its budget.
       picks.add(PlannedEnemy(cheapest));
       spent += content.enemies[cheapest].threatCost;
+      seconds += ClearTimeModel.secondsForOne(content.enemies[cheapest]);
     }
   }
 

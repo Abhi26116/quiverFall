@@ -23,9 +23,11 @@ abstract final class ContentLoader {
 
     final String enemies =
         await rootBundle.loadString('assets/data/enemies.json');
+    final String arenas =
+        await rootBundle.loadString('assets/data/arenas.json');
 
     final (ContentLibrary?, List<ContentError>) parsed =
-        ContentLibrary.parse(enemiesJson: enemies);
+        ContentLibrary.parse(enemiesJson: enemies, arenasJson: arenas);
 
     final ContentLibrary? library = parsed.$1;
     if (library == null) {
