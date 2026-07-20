@@ -3,6 +3,9 @@ import 'dart:math' as math;
 import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/ai/steering.dart';
+import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/hazard_store.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
@@ -36,13 +39,90 @@ abstract final class EnemyAttack {
     final double buff = source >= 0 ? ctx.enemies.attackBuff[source] : 0;
     final double raw = ctx.playerMaxHealth * fraction * (1.0 + buff);
 
+    final BoonRuntime? boons = ctx.boons;
+
+    // ── Ignore the hit entirely ────────────────────────────────────────────
+    // Covenant's opening grace, Ghost Step's dash window, and Immortal Draw's
+    // Tier III. Checked before mitigation, because "no damage" is not "very
+    // little damage" — a card that promises invulnerability and lets a single
+    // point through has broken its promise.
+    if (boons != null) {
+      if (boons.isInvulnerable) return 0;
+      if (boons.has(BoonBehaviour.immortalDraw) &&
+          ctx.playerDraw?.tier == DrawTier.three) {
+        return 0;
+      }
+      // Aegis absorbs whole hits, not partial ones, and spends a charge per
+      // hit regardless of size. That is what makes holding it for a big hit a
+      // real decision.
+      if (boons.aegisCharges > 0) {
+        boons.aegisCharges--;
+        return 0;
+      }
+    }
+
     // Momentum is mitigation, so moving is a *defensive* option as well as an
     // offensive one — the other half of the trade the Draw sets up.
     final double reduction = ctx.playerDraw?.damageReduction ?? 0;
-    final double dealt = DamageResolver.applyDamageReduction2(raw, reduction, 0);
+    double dealt = DamageResolver.applyDamageReduction2(raw, reduction, 0);
+
+    // The build's own mitigation, already combined multiplicatively and capped
+    // by LoadoutResolver. Applied as one factor so no source reaches the total
+    // twice.
+    dealt *= ctx.incomingDamageFactor;
 
     final int p = ctx.player;
+
+    if (boons != null) {
+      // The Unbroken caps a single hit. Applied after mitigation, so it is a
+      // floor under a bad moment rather than a second layer of reduction.
+      if (boons.has(BoonBehaviour.theUnbroken)) {
+        final double cap =
+            ctx.entities.maxHealth[p] * BoonRuntime.unbrokenCap;
+        if (dealt > cap) dealt = cap;
+      }
+
+      // Blood Pact defers part of the hit. Cancelled by a kill, which is what
+      // makes it an aggressive card rather than a defensive one.
+      if (boons.has(BoonBehaviour.bloodPact)) {
+        final double deferred = dealt * BoonRuntime.bloodPactFraction;
+        dealt -= deferred;
+        boons.deferredDamage += deferred;
+        boons.deferredRemaining = BoonRuntime.bloodPactSeconds;
+      }
+
+      // Shieldweave's shield sits outside the body and is spent first.
+      if (boons.shield > 0) {
+        final double absorbed = dealt < boons.shield ? dealt : boons.shield;
+        boons.shield -= absorbed;
+        dealt -= absorbed;
+      }
+    }
+
     ctx.entities.health[p] -= dealt;
+
+    // ── Refuse to die ──────────────────────────────────────────────────────
+    // Both are once per run. Guardian Angel leaves the player at 1 HP; Phoenix
+    // Heart is a full revive at half. Checked in that order so a player holding
+    // both spends the cheaper one first.
+    if (boons != null && ctx.entities.health[p] <= 0) {
+      if (boons.has(BoonBehaviour.guardianAngel) && !boons.guardianAngelSpent) {
+        boons.guardianAngelSpent = true;
+        ctx.entities.health[p] = BoonRuntime.guardianAngelHealth;
+        ctx.events.emit(
+          SimEventType.playerHit,
+          entityA: p,
+          entityB: source,
+          x: ctx.entities.posX[p],
+          y: ctx.entities.posY[p],
+        );
+      } else if (boons.has(BoonBehaviour.phoenixHeart) &&
+          !boons.phoenixHeartSpent) {
+        boons.phoenixHeartSpent = true;
+        ctx.entities.health[p] =
+            ctx.entities.maxHealth[p] * BoonRuntime.phoenixHeartFraction;
+      }
+    }
 
     ctx.events.emit(
       SimEventType.playerHit,

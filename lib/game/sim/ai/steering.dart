@@ -24,6 +24,10 @@ abstract final class Steering {
     if (ctx.enemies.slowRemaining[slot] > 0) {
       speed *= 1.0 - SimConfig.windlineSlow;
     }
+    // *Tangle* (#63) and *Sunthread* (#73) deepen the Windline slow. Recomputed
+    // every tick by the Windline field pass, so it lapses the moment the enemy
+    // steps off the line and needs no timer of its own.
+    speed *= ctx.enemies.windlineSlowFactor[slot];
     return speed;
   }
 

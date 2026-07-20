@@ -49,6 +49,10 @@ abstract final class EnemySpawner {
         : 0;
 
     ctx.enemies.reset(slot);
+    // Denormalised so the hit loop can ask "is this an elite?" without a
+    // content lookup — *Cull* (#20) asks on every hit.
+    ctx.enemies.elite[slot] =
+        def.family == EnemyFamily.riftborn ? 1 : 0;
     ctx.enemies.variant[slot] = variant.index;
     ctx.enemies.speedScale[slot] = 1.0 + variant.speedBonus;
     ctx.enemies.spawnerSlot[slot] = spawnerSlot;

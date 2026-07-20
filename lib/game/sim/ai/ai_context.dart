@@ -5,6 +5,8 @@ import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
+import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -108,6 +110,29 @@ class AiContext {
   /// The player's Draw and Momentum state. Read for damage reduction, written
   /// by the Screecher's Draw-lock.
   DrawState? playerDraw;
+
+  /// Which Boon behaviours are live, and their state.
+  ///
+  /// Null in a world with no Boons at all, which is every test that predates
+  /// Phase 9. [EnemyAttack.damagePlayer] treats null as "no Boons" rather than
+  /// requiring every caller to construct one.
+  BoonRuntime? boons;
+
+  /// Composed mitigation and modifiers. Same nullability contract as [boons].
+  CombatModifiers? combat;
+
+  /// Multiplier on incoming damage from the player's own build — mitigation
+  /// already combined and capped. 1.0 means unmodified.
+  double incomingDamageFactor = 1.0;
+
+  /// How long an *Echo Thread* (#69) line lasts.
+  double echoLineDuration = 1.0;
+
+  /// Serial source for trails a Boon lays, kept distinct from the player's
+  /// arrows so Confluence still dedupes correctly.
+  int _echoTrailId = -1;
+
+  int nextEchoTrailId() => _echoTrailId--;
 
   /// True on ticks the player released an arrow. The Echo fires when the player
   /// fires, which is the only enemy in the game driven by the player's input

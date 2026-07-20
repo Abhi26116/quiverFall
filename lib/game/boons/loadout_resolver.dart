@@ -1,4 +1,4 @@
-import 'package:quiverfall/game/balance/damage.dart';
+import 'package:quiverfall/game/boons/boon_inventory.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_stats.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
@@ -35,6 +35,7 @@ abstract final class LoadoutResolver {
     SimWorld world,
     BoonStats stats, {
     required double baseAttack,
+    BoonInventory? inventory,
     double baseFireRateMultiplier = 1.0,
     double baseMaxHealth = 100.0,
     double baseMoveSpeed = SimConfig.playerMoveSpeed,
@@ -140,7 +141,49 @@ abstract final class LoadoutResolver {
 
     // ── Per-hit conditionals ────────────────────────────────────────────────
     world.combat.composeFrom(stats);
+
+    // ── Behaviours ──────────────────────────────────────────────────────────
+    // Optional, because a great many tests and the balance harness compose a
+    // stat block directly without ever building an inventory. A build with
+    // behaviours must pass one, and `applyBuild` is the call that cannot forget.
+    if (inventory != null) {
+      world.boons
+        ..setActive(inventory.behaviourFlags)
+        ..attunedElement = inventory.attunedElement
+        ..echoThreadCopies = inventory.copiesOf(_echoThreadId);
+
+      // *Vital Surge* (#30) heals to full **once**, at pickup. The inventory
+      // flags it and this consumes the flag, because an inventory has no
+      // business writing to an entity store and this runs on every room start.
+      if (inventory.healToFullPending && !world.player.isNone) {
+        inventory.healToFullPending = false;
+        final int p = world.player.index;
+        world.entities.health[p] = world.entities.maxHealth[p];
+      }
+    }
   }
+
+  /// Applies a whole build — stats *and* behaviours.
+  ///
+  /// The call to prefer. [apply] takes a bare [BoonStats] for the harness and
+  /// for tests that only care about numbers, and a caller who reaches for it
+  /// with a real inventory silently gets a build with no behaviours at all.
+  static void applyBuild(
+    SimWorld world,
+    BoonInventory inventory, {
+    required double baseAttack,
+    double baseMaxHealth = 100.0,
+  }) =>
+      apply(
+        world,
+        inventory.stats,
+        inventory: inventory,
+        baseAttack: baseAttack,
+        baseMaxHealth: baseMaxHealth,
+      );
+
+  /// *Echo Thread* — the one behaviour that reads its own copy count.
+  static const int _echoThreadId = 69;
 
   /// Changes max HP while preserving the *fraction* the player is standing at.
   ///
@@ -161,23 +204,10 @@ abstract final class LoadoutResolver {
 
   /// The mitigation the player has right now, as a single factor.
   ///
-  /// Combined multiplicatively and capped at
-  /// [DamageResolver.maxDamageReduction] — never summed.
-  static double incomingDamageFactor(SimWorld world) {
-    final double momentum = world.playerDraw.damageReduction;
-    final double stationary =
-        world.combat.playerStationary ? world.stationaryDamageReduction : 0.0;
-
-    final double remaining = (1.0 - _clamp01(world.boonDamageReduction)) *
-        (1.0 - _clamp01(stationary)) *
-        (1.0 - _clamp01(momentum));
-
-    double total = 1.0 - remaining;
-    if (total > DamageResolver.maxDamageReduction) {
-      total = DamageResolver.maxDamageReduction;
-    }
-    return (1.0 - total) * world.damageTakenMultiplier;
-  }
-
-  static double _clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+  /// Delegates to [SimWorld.incomingDamageFactor]: the combine lives in the
+  /// simulation because the simulation is what applies it, and `lib/game/sim/`
+  /// cannot import this file without a cycle. Kept here as the name callers
+  /// already reach for.
+  static double incomingDamageFactor(SimWorld world) =>
+      world.incomingDamageFactor;
 }

@@ -1,11 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:quiverfall/core/rng.dart';
+import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
@@ -19,6 +22,7 @@ import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/spatial_hash.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/ai_system.dart';
+import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
@@ -58,7 +62,7 @@ enum SystemOrder {
   // lie.
   hazard,
   spawn,
-  // boon            <- Phase 9
+  boon,
   cleanup,
 }
 
@@ -215,6 +219,9 @@ class SimWorld {
   // harness swap a whole build by writing one object, and what keeps "does
   // Boon X apply here?" from becoming a question asked in forty places.
 
+  /// Which Boon behaviours are live, and their state. See [BoonRuntime].
+  final BoonRuntime boons = BoonRuntime();
+
   /// Per-hit conditional terms — the ones that cannot be resolved until a
   /// target and a distance are known. See [CombatModifiers].
   final CombatModifiers combat = CombatModifiers();
@@ -262,6 +269,27 @@ class SimWorld {
   /// Auto-fire is on whenever a target exists — the player never taps to shoot.
   bool autoFire = true;
 
+  /// Incoming damage multiplier from the player's own build, right now.
+  ///
+  /// Mitigation sources are combined **multiplicatively and capped**, never
+  /// summed: three 40 % sources summed would reach 120 % and heal the player
+  /// (docs/04 §4.1 rule 2). Momentum and the stationary bonus are live, so this
+  /// is a getter rather than a stored field — caching it would go stale the
+  /// moment the player moved.
+  double get incomingDamageFactor {
+    final double remaining = (1.0 - _clamp01(boonDamageReduction)) *
+        (1.0 - _clamp01(combat.playerStationary ? stationaryDamageReduction : 0)) *
+        (1.0 - _clamp01(playerDraw.damageReduction));
+
+    double total = 1.0 - remaining;
+    if (total > DamageResolver.maxDamageReduction) {
+      total = DamageResolver.maxDamageReduction;
+    }
+    return (1.0 - total) * damageTakenMultiplier;
+  }
+
+  static double _clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+
   // ── Room context ──────────────────────────────────────────────────────────
 
   /// Absolute HP of a x1.0 enemy in this room, from `Curves.enemyHp`. Resolved
@@ -286,6 +314,9 @@ class SimWorld {
   /// [CombatModifiers.movedRecentlyDistance].
   double _movedDistance = 0;
 
+  /// Seconds the player is rooted by their own *Quiverfall* (#112) arrow.
+  double _stunRemaining = 0;
+
   double _fireCooldown = 0;
 
   /// Monotonic per-arrow trail id. Confluence dedupes by trail, so every arrow
@@ -298,6 +329,12 @@ class SimWorld {
   int get tickCount => _tickCount;
 
   double get elapsedSeconds => _elapsed;
+
+  /// Crit rolls draw from their own stream, so adding a Boon that crits never
+  /// shifts the enemy compositions a seeded run produces.
+  late final Rng _critRng = _rng.split(_critRngLabel);
+
+  static const int _critRngLabel = 0xC217;
 
   /// Sub-generator access, so each subsystem draws from an independent stream.
   ///
@@ -327,7 +364,13 @@ class SimWorld {
     // ── draw / momentum ────────────────────────────────────────────────────
     // After movement, so the Draw responds to motion that actually happened.
     // A player pinned against a wall is standing still and should ramp.
-    DrawSystem.update(playerDraw, wantsToMove, dt, events);
+    DrawSystem.update(
+      playerDraw,
+      wantsToMove,
+      dt,
+      events,
+      perpetual: boons.has(BoonBehaviour.perpetual),
+    );
 
     // ── build state that changes every tick ────────────────────────────────
     // Read by the hit path. Updated here, right after Draw, so a hit resolved
@@ -351,6 +394,7 @@ class SimWorld {
     if (combat.movedRecentlyRemaining > 0) {
       combat.movedRecentlyRemaining -= dt;
     }
+    if (_stunRemaining > 0) _stunRemaining -= dt;
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -382,10 +426,17 @@ class SimWorld {
       enemies: enemies,
       status: status,
       combat: combat,
+      boons: boons,
+      confluenceDamageMultiplier: confluenceDamageMultiplier,
     );
 
     // ── windline expiry ────────────────────────────────────────────────────
-    windlines.expire(_elapsed);
+    // *The Loom* (#75) — trails never expire inside a room. Skipping the pass
+    // rather than setting an enormous expiry, so lines still clear at the room
+    // boundary without needing to be found and fixed up.
+    if (!boons.has(BoonBehaviour.theLoom)) {
+      windlines.expire(_elapsed);
+    }
 
     // ── elements ───────────────────────────────────────────────────────────
     // Before the AI, so a DoT kills on the tick it should rather than one late,
@@ -409,6 +460,39 @@ class SimWorld {
 
     // ── spawning ───────────────────────────────────────────────────────────
     SpawnSystem.update(ai, spawnState);
+
+    // ── boons ──────────────────────────────────────────────────────────────
+    // The Windline field first: Tangle's slow has to land before the AI reads
+    // it next tick, and Cutting Lines' damage has to land before the death pass.
+    for (int i = 0; i < entities.highWater; i++) {
+      enemies.windlineSlowFactor[i] = 1.0;
+    }
+    BoonSystem.applyWindlineField(
+      boons: boons,
+      entities: entities,
+      enemies: enemies,
+      lines: windlines,
+      index: windlineIndex,
+      slow: windlineSlow,
+      damageFraction: windlineDamageFraction,
+      dt: dt,
+    );
+
+    // After everything that could have changed the player's state this frame,
+    // so a Momentum shield is sized from this tick's stacks and a Blood Pact
+    // instalment lands on health the AI has already touched.
+    BoonSystem.update(
+      boons: boons,
+      entities: entities,
+      draw: playerDraw,
+      events: events,
+      player: player.isNone ? -1 : player.index,
+      isMoving: playerDraw.wasMovingLastTick,
+      maxHealth: player.isNone ? 1 : entities.maxHealth[player.index],
+      shieldPerMomentum: shieldPerMomentum,
+      regenWhileMoving: regenWhileMoving,
+      dt: dt,
+    );
 
     // ── cleanup ────────────────────────────────────────────────────────────
     telegraphs.expire(_elapsed);
@@ -444,7 +528,12 @@ class SimWorld {
       ..playerVelX = entities.velX[p]
       ..playerVelY = entities.velY[p]
       ..playerRadius = entities.radius[p]
-      ..playerMaxHealth = entities.maxHealth[p];
+      ..playerMaxHealth = entities.maxHealth[p]
+      ..boons = boons
+      ..combat = combat
+      ..incomingDamageFactor = incomingDamageFactor
+      ..now = _elapsed
+      ..echoLineDuration = windlineDuration;
   }
 
   void _updateFiring(double dt) {
@@ -477,9 +566,21 @@ class SimWorld {
       return;
     }
 
-    final DrawTier tier = playerDraw.tier;
-    final double interval =
-        FiringSystem.intervalFor(tier, fireRateMultiplier);
+    // *Perfect Form* (#23) resolves every shot as Tier III. The Draw meter still
+    // animates — removing it would make the player think the mechanic broke.
+    final DrawTier tier = boons.has(BoonBehaviour.perfectForm)
+        ? DrawTier.three
+        : playerDraw.tier;
+
+    // *Runner's High* (#55) pays out only at max Momentum, so it is read here
+    // rather than composed into fireRateMultiplier — the multiplier is settled
+    // once per room and this changes several times a second.
+    double rate = fireRateMultiplier;
+    if (boons.has(BoonBehaviour.runnersHigh) && playerDraw.isAtMaxMomentum) {
+      rate *= BoonRuntime.runnersHighFireRate;
+    }
+
+    final double interval = FiringSystem.intervalFor(tier, rate);
 
     // Accumulator, not a reset-to-zero timer: at very high fire rates one tick
     // can legitimately owe more than one arrow, and clamping would silently cap
@@ -488,13 +589,18 @@ class SimWorld {
     if (shots > _maxShotsPerTick) shots = _maxShotsPerTick;
     _fireCooldown += interval * shots;
 
+    // *Blind Fury* (#108) buys fire rate by switching aim assist off. The cost
+    // is the point and it is printed on the card — docs/09 §9.2 G.
+    final AimAssist assist =
+        boons.has(BoonBehaviour.blindFury) ? AimAssist.off : aimAssist;
+
     final double angle = FiringSystem.aimAngle(
       entities,
       target,
       fromX,
       fromY,
       entities.facing[p],
-      aimAssist,
+      assist,
       projectileSpeed,
     );
 
@@ -512,6 +618,26 @@ class SimWorld {
   /// though it is aiming correctly.
   void _spawnVolley(double x, double y, double angle, DrawTier tier) {
     final int extra = extraArrows;
+
+    // *Rain of Nocks* (#22) adds a wide, weaker fan on Tier III only. It is a
+    // separate release rather than more arrows in the main fan, because its
+    // arrows are worth less — folding them in would quietly cheapen the
+    // Split Shot arrows beside them.
+    if (boons.has(BoonBehaviour.rainOfNocks) && tier == DrawTier.three) {
+      const int n = BoonRuntime.rainArrows;
+      const double step = BoonRuntime.rainSpreadRadians / (n - 1);
+      final double start = angle - BoonRuntime.rainSpreadRadians * 0.5;
+      for (int i = 0; i < n; i++) {
+        _spawnArrow(
+          x,
+          y,
+          start + step * i,
+          tier,
+          volleyDamageMultiplier * BoonRuntime.rainDamageShare,
+        );
+      }
+    }
+
     if (extra <= 0) {
       _spawnArrow(x, y, angle, tier, volleyDamageMultiplier);
       return;
@@ -561,20 +687,10 @@ class SimWorld {
     projectiles.pierceRemaining[i] = basePierce + tier.bonusPierce;
     projectiles.drawTier[i] = tier.index;
     projectiles.lifetime[i] = arrowLifetime;
-    projectiles.element[i] = arrowElement?.index ?? -1;
+    projectiles.element[i] = _arrowElementIndex();
 
-    // *Weaver's Grace* (#74) — every shot begins already threaded. Applied at
-    // spawn rather than at the first crossing so the arrow renders with its
-    // Confluence glow from the moment it leaves the bow, which is the whole
-    // point of a card that costs a Legendary slot.
-    if (confluenceHeadStart > 0) {
-      final int start = confluenceHeadStart > maxConfluenceStacks
-          ? maxConfluenceStacks
-          : confluenceHeadStart;
-      projectiles.confluenceStacks[i] = start;
-      projectiles.confluenceBonus[i] =
-          ConfluenceTuning.bonusFor(start) * confluenceDamageMultiplier;
-    }
+    _applyArrowBoons(i, tier);
+
 
     events.emit(
       SimEventType.arrowFired,
@@ -585,9 +701,121 @@ class SimWorld {
     );
   }
 
+  /// The element the next arrow carries.
+  ///
+  /// *Attunement* (#88) and *Elemental Tips* (#81) both settle on one element
+  /// at pickup and store it on the runtime, so this is a read rather than a
+  /// roll — an element that changed per arrow would make every elemental rider
+  /// unpredictable.
+  int _arrowElementIndex() =>
+      boons.attunedElement?.index ?? arrowElement?.index ?? -1;
+
+  /// Everything a Boon does to an arrow at the moment it is released.
+  void _applyArrowBoons(int i, DrawTier tier) {
+    boons.arrowsFired++;
+
+    // ── Crit ───────────────────────────────────────────────────────────────
+    // Rolled once per arrow, not per target: an arrow that crit its first
+    // victim and not its second would make crit unreadable on a piercing shot,
+    // and would put an RNG call inside the hit loop.
+    if (combat.critChance > 0 && _critRng.nextDouble() < combat.critChance) {
+      projectiles.wasCrit[i] = 1;
+      projectiles.damage[i] *= combat.critMultiplier;
+      // *Deadeye* (#18) — crits punch through. The falloff exemption is applied
+      // at the hit, where the pierce index is known.
+      if (boons.has(BoonBehaviour.deadeye)) {
+        projectiles.pierceRemaining[i] += BoonRuntime.deadeyePierce;
+      }
+    }
+
+    // ── The big arrows ─────────────────────────────────────────────────────
+    // Counted per run rather than per room so the player can feel the count
+    // approaching. A counter that silently reset at every door would make both
+    // cards read as random damage.
+    if (boons.has(BoonBehaviour.hammerfall) &&
+        boons.arrowsFired % BoonRuntime.hammerfallEvery == 0) {
+      projectiles.damage[i] *= BoonRuntime.hammerfallMultiplier;
+    }
+    if (boons.has(BoonBehaviour.quiverfall) &&
+        boons.arrowsFired % BoonRuntime.quiverfallEvery == 0) {
+      projectiles.damage[i] *= BoonRuntime.quiverfallMultiplier;
+      // The stun is the downside, and it is printed on the card. Implemented as
+      // a Draw-lock plus a halt so it reads as *being staggered by your own
+      // shot* rather than as input being dropped.
+      playerDraw.applyDrawLock(BoonRuntime.quiverfallStunSeconds);
+      _stunRemaining = BoonRuntime.quiverfallStunSeconds;
+    }
+
+    // ── The Long Arrow (#25) ───────────────────────────────────────────────
+    // Never despawns, never stops, infinite pierce. The lifetime is large
+    // rather than infinite because an arrow that literally never retires would
+    // never lay its terminal Windline stub and would hold an entity slot for
+    // the whole run.
+    if (boons.has(BoonBehaviour.theLongArrow)) {
+      projectiles.lifetime[i] = _longArrowLifetime;
+      projectiles.pierceRemaining[i] = _longArrowPierce;
+    }
+
+    // ── Confluence ─────────────────────────────────────────────────────────
+    // *Total Confluence* (#76) starts every arrow at the cap; *Weaver's Grace*
+    // (#74) gives one free stack. Total Confluence wins where both are held,
+    // which is what the player expects from the stronger card.
+    int startStacks = 0;
+    if (boons.has(BoonBehaviour.totalConfluence)) {
+      startStacks = maxConfluenceStacks;
+    } else if (confluenceHeadStart > 0) {
+      startStacks = confluenceHeadStart > maxConfluenceStacks
+          ? maxConfluenceStacks
+          : confluenceHeadStart;
+    }
+    if (startStacks > 0) {
+      projectiles.confluenceStacks[i] = startStacks;
+      projectiles.confluenceBonus[i] =
+          ConfluenceTuning.bonusFor(startStacks) * confluenceDamageMultiplier;
+    }
+
+    // ── Multi-element arrows ───────────────────────────────────────────────
+    int mask = 0;
+    if (boons.has(BoonBehaviour.frostfire)) {
+      mask |= (1 << SimElement.ember.index) | (1 << SimElement.frost.index);
+    }
+    if (boons.has(BoonBehaviour.stormblight)) {
+      mask |= (1 << SimElement.storm.index) | (1 << SimElement.toxin.index);
+    }
+    if (boons.has(BoonBehaviour.theFourfold)) {
+      mask = _allElements;
+    }
+    // *Elemental Overload* (#90) is periodic rather than constant, which is why
+    // it is an Epic and The Fourfold is a Legendary.
+    if (boons.has(BoonBehaviour.elementalOverload) &&
+        boons.arrowsFired % BoonRuntime.overloadEvery == 0) {
+      mask = _allElements;
+    }
+    if (mask != 0) projectiles.elementMask[i] = mask;
+  }
+
+  /// Long enough to cross any arena several times, short enough that the slot
+  /// is eventually returned and the trail eventually laid.
+  static const double _longArrowLifetime = 30.0;
+
+  /// Effectively infinite. A real infinity would need a sentinel every pierce
+  /// check has to know about.
+  static const int _longArrowPierce = 1 << 20;
+
+  static const int _allElements = 0xF;
+
   void _applyInput(InputSnapshot input) {
     if (player.isNone || !entities.isAlive(player)) return;
     final int i = player.index;
+
+    // *Quiverfall* stuns the player with the recoil of their own shot. Rooting
+    // rather than dropping the input, so the stick still reads and the player
+    // can see that the game heard them.
+    if (_stunRemaining > 0) {
+      entities.velX[i] = 0;
+      entities.velY[i] = 0;
+      return;
+    }
 
     if (!input.isMoving) {
       entities.velX[i] = 0;
@@ -683,6 +911,40 @@ class SimWorld {
   void beginRoom(RoomPlan plan) {
     spawnState.begin(plan);
     globalStage = plan.globalStage;
+    beginRoomForTest();
+  }
+
+  /// Half the length of the trail *Anchor Line* lays. Long enough to be worth
+  /// threading, short enough to sit under the player rather than across the room.
+  static const double _anchorLineHalfLength = 1.5;
+
+  /// Begins a room without a [RoomPlan].
+  ///
+  /// Exists for tests and for the balance harness, which drive combat directly
+  /// and still need the per-room Boon state — Aegis charges, Covenant's grace,
+  /// Anchor Line's trail — to be set up exactly as a real room would.
+  void beginRoomForTest() {
+    boons.beginRoom();
+    combat.resetLive();
+
+    if (boons.has(BoonBehaviour.anchorLine) && !player.isNone) {
+      final int p = player.index;
+      windlines.add(
+        fromX: entities.posX[p] - _anchorLineHalfLength,
+        fromY: entities.posY[p],
+        toX: entities.posX[p] + _anchorLineHalfLength,
+        toY: entities.posY[p],
+        expiresAt: _elapsed + windlineDuration,
+        ownerIndex: 0,
+        trailId: _nextTrailId++,
+      );
+    }
+
+    if (boons.has(BoonBehaviour.theBargain) && !player.isNone) {
+      final int p = player.index;
+      entities.health[p] =
+          entities.maxHealth[p] * BoonRuntime.bargainStartFraction;
+    }
   }
 
   /// Resets to an empty room, preserving the seed stream position.
@@ -692,8 +954,12 @@ class SimWorld {
     spatial.clear();
     events.clear();
     playerDraw.reset();
-    windlines.clear();
-    windlineIndex.clear();
+    // *Lingering* (#62) — trails survive the door. Everything else about the
+    // room is torn down; this is the one thing the player carries through.
+    if (!boons.has(BoonBehaviour.lingering)) {
+      windlines.clear();
+      windlineIndex.clear();
+    }
     status.clear();
     telegraphs.clear();
     hazards.clear();

@@ -8,10 +8,13 @@ import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
 import 'package:quiverfall/game/sim/ai/riftborn_tree.dart';
 import 'package:quiverfall/game/sim/ai/rush_tree.dart';
 import 'package:quiverfall/game/sim/ai/salvo_tree.dart';
+import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
+import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 
 /// Runs every enemy, every tick.
@@ -417,6 +420,34 @@ abstract final class AiSystem {
     }
 
     EnemyAttack.endTelegraph(ctx, slot);
+
+    final BoonRuntime? boons = ctx.boons;
+    if (boons != null) {
+      // *Blood Pact* (#41) — a kill cancels the deferred damage. That is what
+      // makes it an aggressive card rather than a defensive one: the answer to
+      // the debt is to keep killing.
+      BoonSystem.cancelDeferred(boons);
+
+      // *Echo Thread* (#69) — the corpse leaves a trail. The one behaviour in
+      // the catalogue authored to scale with copies, so the line grows rather
+      // than the card doing nothing at ×2.
+      if (boons.has(BoonBehaviour.echoThread)) {
+        final double half = BoonRuntime.echoLengthPerCopy *
+            (boons.echoThreadCopies < 1 ? 1 : boons.echoThreadCopies) *
+            0.5;
+        final double x = ctx.entities.posX[slot];
+        final double y = ctx.entities.posY[slot];
+        ctx.lines.add(
+          fromX: x - half,
+          fromY: y,
+          toX: x + half,
+          toY: y,
+          expiresAt: ctx.now + ctx.echoLineDuration,
+          ownerIndex: 0,
+          trailId: ctx.nextEchoTrailId(),
+        );
+      }
+    }
 
     final int spawner = ctx.enemies.spawnerSlot[slot];
     if (spawner >= 0 && ctx.enemies.liveAdds[spawner] > 0) {

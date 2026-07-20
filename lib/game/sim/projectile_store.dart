@@ -83,6 +83,22 @@ class ProjectileStore {
   /// Gates Confluence eligibility. See [ConfluenceTuning.minThreadDistance].
   final Float64List distanceFlown = Float64List(SimConfig.maxEntities);
 
+  /// Every element this arrow carries, as a bitmask over [SimElement.index].
+  ///
+  /// Almost every arrow carries zero or one element, which [element] already
+  /// says. The mask exists for the four Boons that carry several at once —
+  /// *Frostfire* (#91), *Stormblight* (#92), *The Fourfold* (#93) and
+  /// *Elemental Overload* (#90). A mask rather than a list because it costs one
+  /// byte per arrow and nothing at all on the arrows that do not use it.
+  final Uint8List elementMask = Uint8List(SimConfig.maxEntities);
+
+  /// Whether this arrow rolled a critical hit.
+  ///
+  /// Rolled once, at release, rather than per target. An arrow that crit its
+  /// first victim and not its second would make crit unreadable on a piercing
+  /// shot, and would put an RNG call in the hit loop.
+  final Uint8List wasCrit = Uint8List(SimConfig.maxEntities);
+
   /// Distance flown since the last Windline segment was emitted.
   ///
   /// Segments are emitted per distance travelled rather than per tick. Per-tick
@@ -103,6 +119,8 @@ class ProjectileStore {
   static const int maxTrackedCrossings = 8;
 
   void reset(int slot) {
+    elementMask[slot] = 0;
+    wasCrit[slot] = 0;
     damage[slot] = 0;
     pierceRemaining[slot] = 0;
     drawTier[slot] = 0;

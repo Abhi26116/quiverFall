@@ -34,7 +34,7 @@ import 'enemy_test_support.dart';
 ///     end against a live world for each channel that has a home.
 ///  3. **Behaviour cards.** The 49 that change a rule rather than a number.
 ///     Registration is asserted here for all of them; the gameplay assertion
-///     lives with each behaviour's implementation.
+///     lives in `boon_behaviour_test.dart`, beside the implementation.
 ///
 /// [pendingBehaviourWork] is the honest ledger of layer 3. It is a list of
 /// cards whose *behaviour* is declared and registered but not yet implemented,
@@ -701,7 +701,7 @@ void main() {
       // is declared but inert.
       expect(
         pendingBehaviourWork.length,
-        lessThanOrEqualTo(48),
+        lessThanOrEqualTo(13),
         reason: 'a behaviour was added without being implemented',
       );
     });
@@ -716,52 +716,34 @@ void main() {
 /// one of them is currently true for these. Each one moves out of this list
 /// when its implementation and its own test land together.
 const Set<BoonBehaviour> pendingBehaviourWork = <BoonBehaviour>{
-  BoonBehaviour.rend,
-  BoonBehaviour.deadeye,
-  BoonBehaviour.hammerfall,
-  BoonBehaviour.cull,
-  BoonBehaviour.rainOfNocks,
-  BoonBehaviour.perfectForm,
-  BoonBehaviour.theLongArrow,
-  BoonBehaviour.vitalSurge,
-  BoonBehaviour.guardianAngel,
-  BoonBehaviour.wardingLine,
-  BoonBehaviour.aegis,
-  BoonBehaviour.phoenixHeart,
-  BoonBehaviour.bloodPact,
-  BoonBehaviour.immortalDraw,
-  BoonBehaviour.covenant,
-  BoonBehaviour.theUnbroken,
+  // ── Needs input plumbing ────────────────────────────────────────────────
+  // Double-tap detection is a view concern, and InputSnapshot has no notion of
+  // a gesture yet. These three land with the Boon choice UI.
   BoonBehaviour.dash,
-  BoonBehaviour.windwalk,
   BoonBehaviour.blink,
-  BoonBehaviour.momentumEngine,
-  BoonBehaviour.runnersHigh,
   BoonBehaviour.ghostStep,
-  BoonBehaviour.stormfoot,
-  BoonBehaviour.perpetual,
-  BoonBehaviour.lingering,
-  BoonBehaviour.crossbind,
-  BoonBehaviour.anchorLine,
-  BoonBehaviour.echoThread,
-  BoonBehaviour.livingThread,
-  BoonBehaviour.resonantWeave,
-  BoonBehaviour.sunthread,
-  BoonBehaviour.theLoom,
-  BoonBehaviour.totalConfluence,
-  BoonBehaviour.elementalTips,
+
+  // ── Needs the element system extended ───────────────────────────────────
+  // Reactions exist but have no spread, no chain, and no cooldown switch. All
+  // three are edits to ElementSystem rather than new plumbing.
   BoonBehaviour.wildfire,
   BoonBehaviour.reactive,
-  BoonBehaviour.attunement,
-  BoonBehaviour.elementalOverload,
-  BoonBehaviour.frostfire,
-  BoonBehaviour.stormblight,
-  BoonBehaviour.theFourfold,
   BoonBehaviour.prismbreak,
-  BoonBehaviour.treasureSense,
+
+  // ── Needs a Windline mutation pass ──────────────────────────────────────
+  // Windlines are immutable once laid. Drifting them and detonating around a
+  // crossing both need the store to support moving a segment.
+  BoonBehaviour.livingThread,
+  BoonBehaviour.resonantWeave,
+  BoonBehaviour.wardingLine,
+
+  // ── Needs Momentum-gated chaining ───────────────────────────────────────
+  BoonBehaviour.stormfoot,
+
+  // ── Needs systems outside the simulation ────────────────────────────────
+  // Gold, room previews, and the draw's own rarity upgrade. All three land
+  // with the Shrine and the Boon choice UI.
   BoonBehaviour.goldenArrow,
-  BoonBehaviour.blindFury,
+  BoonBehaviour.treasureSense,
   BoonBehaviour.bloodprice,
-  BoonBehaviour.theBargain,
-  BoonBehaviour.quiverfall,
 };

@@ -66,6 +66,10 @@ class EnemyStore {
         plateJustBroke = Uint8List(capacity),
         adaptSeconds = Float64List(capacity),
         shield = Float64List(capacity),
+        armourShred = Float64List(capacity),
+        elite = Uint8List(capacity),
+        windlineSlowFactor = Float64List(capacity),
+        blindRemaining = Float64List(capacity),
         shieldedBy = Int32List(capacity),
         attackBuff = Float64List(capacity),
         elementSuppressed = Uint8List(capacity),
@@ -130,6 +134,30 @@ class EnemyStore {
 
   /// Absorbs damage before health does. Granted by a Weaver.
   final Float64List shield;
+
+  /// How much of this enemy's armour *Rend* (#14) has worn away, as a fraction
+  /// in [0, 1].
+  ///
+  /// Per enemy and persistent for its life, which is why Rend cannot be a plain
+  /// stat channel: the shred belongs to the target, not to the build.
+  final Float64List armourShred;
+
+  /// Speed multiplier from standing on a Windline, in (0, 1].
+  ///
+  /// Reset to 1.0 every tick and re-applied by the Windline field pass, so it
+  /// expires the moment the enemy steps off rather than needing its own timer.
+  final Float64List windlineSlowFactor;
+
+  /// Seconds this enemy cannot aim, from *Sunthread* (#73).
+  final Float64List blindRemaining;
+
+  /// Whether this enemy is an elite (the Riftborn family).
+  ///
+  /// Denormalised from the content table at spawn. The hit loop asks this
+  /// question on every hit, and threading a [ContentLibrary] into the projectile
+  /// system to answer it would drag content lookups onto the hottest path in
+  /// the game.
+  final Uint8List elite;
 
   /// Entity slot of the Weaver maintaining [shield], or -1. Kept so a Weaver
   /// does not double-shield and so the tether can be drawn — the tether is a
@@ -204,6 +232,8 @@ class EnemyStore {
 
   bool isPlated(int slot) => plateHealth[slot] > 0;
 
+  bool isElite(int slot) => elite[slot] == 1;
+
   bool isUntargetable(int slot) => untargetable[slot] == 1;
 
   bool isEnraged(int slot) => enrageRemaining[slot] > 0;
@@ -258,6 +288,10 @@ class EnemyStore {
   }
 
   void reset(int slot) {
+    armourShred[slot] = 0;
+    elite[slot] = 0;
+    windlineSlowFactor[slot] = 1.0;
+    blindRemaining[slot] = 0;
     state[slot] = AiState.idle.index;
     stateTimer[slot] = 0;
     attackCooldown[slot] = 0;

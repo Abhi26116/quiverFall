@@ -16,8 +16,9 @@ abstract final class DrawSystem {
     DrawState state,
     bool isMoving,
     double dt,
-    SimEventBuffer events,
-  ) {
+    SimEventBuffer events, {
+    bool perpetual = false,
+  }) {
     final DrawTier tierBefore = state.tier;
     final int momentumBefore = state.momentumStacks;
 
@@ -27,7 +28,7 @@ abstract final class DrawSystem {
     }
 
     if (isMoving) {
-      _updateMoving(state, dt);
+      _updateMoving(state, dt, perpetual);
     } else {
       _updateStationary(state, dt);
     }
@@ -51,11 +52,20 @@ abstract final class DrawSystem {
     }
   }
 
-  static void _updateMoving(DrawState state, double dt) {
+  static void _updateMoving(DrawState state, double dt, bool perpetual) {
     // Moving drops the Draw immediately and completely. No partial retention —
     // the decision to move must cost the whole ramp, or the trade is not a
     // trade.
-    state.drawSeconds = 0;
+    //
+    // Unless *Perpetual* (#58) is held, which is the one card in the game that
+    // deletes this rule. It has to be handled *here*, by not resetting, rather
+    // than by adding the time back afterwards: this line runs every tick, so
+    // anything downstream would only ever see a single frame's worth.
+    if (perpetual) {
+      if (!state.isDrawLocked) state.drawSeconds += dt;
+    } else {
+      state.drawSeconds = 0;
+    }
     state.sinceStoppedSeconds = 0;
 
     if (state.momentumStacks < state.maxMomentum) {

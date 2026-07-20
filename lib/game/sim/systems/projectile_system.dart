@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
@@ -38,6 +40,8 @@ abstract final class ProjectileSystem {
     required double segmentLength,
     required double dt,
     required CombatModifiers combat,
+    required BoonRuntime boons,
+    required double confluenceDamageMultiplier,
     EnemyStore? enemies,
     StatusStore? status,
   }) {
@@ -96,6 +100,9 @@ abstract final class ProjectileSystem {
         toY: toY,
         maxStacks: maxConfluenceStacks,
         hitWidth: windlineHitWidth,
+        boons: boons,
+        confluenceDamageMultiplier: confluenceDamageMultiplier,
+        arrowElementIndex: projectiles.element[i],
       );
 
       final bool consumed = _resolveHits(
@@ -114,6 +121,7 @@ abstract final class ProjectileSystem {
         toX: toX,
         toY: toY,
         combat: combat,
+        boons: boons,
       );
 
       if (consumed) continue;
@@ -160,6 +168,9 @@ abstract final class ProjectileSystem {
     required double toY,
     required int maxStacks,
     required double hitWidth,
+    required BoonRuntime boons,
+    required double confluenceDamageMultiplier,
+    required int arrowElementIndex,
   }) {
     if (projectiles.confluenceStacks[slot] >= maxStacks) return;
 
@@ -197,7 +208,15 @@ abstract final class ProjectileSystem {
     int stacks = projectiles.confluenceStacks[slot] + found.stacks;
     if (stacks > maxStacks) stacks = maxStacks;
     projectiles.confluenceStacks[slot] = stacks;
-    projectiles.confluenceBonus[slot] = ConfluenceTuning.bonusFor(stacks);
+    projectiles.confluenceBonus[slot] =
+        ConfluenceTuning.bonusFor(stacks) * confluenceDamageMultiplier;
+
+    // *Crossbind* (#67) — a threaded arrow also carries the player's element.
+    // Applied to the *mask* rather than to `element`, so it composes with the
+    // multi-element Boons instead of overwriting them.
+    if (boons.has(BoonBehaviour.crossbind) && arrowElementIndex >= 0) {
+      projectiles.elementMask[slot] |= 1 << arrowElementIndex;
+    }
 
     events.emit(
       SimEventType.confluenceTriggered,
@@ -244,6 +263,7 @@ abstract final class ProjectileSystem {
     required double toX,
     required double toY,
     required CombatModifiers combat,
+    required BoonRuntime boons,
   }) {
     final double arrowRadius = store.radius[slot];
     final int candidates =
@@ -282,6 +302,7 @@ abstract final class ProjectileSystem {
         fromX: fromX,
         fromY: fromY,
         combat: combat,
+        boons: boons,
       );
 
       if (projectiles.pierceRemaining[slot] < 0) {
@@ -308,6 +329,7 @@ abstract final class ProjectileSystem {
     required double fromX,
     required double fromY,
     required CombatModifiers combat,
+    required BoonRuntime boons,
   }) {
     final int pierceIndex = projectiles.hitCount[slot];
     projectiles.recordHit(slot, targetId);
@@ -316,8 +338,27 @@ abstract final class ProjectileSystem {
 
     // Armour is resolved here, not at fire time: the arrow carries the tier it
     // was fired at, and the plate state is read from the target now.
-    final double armour =
-        _armourFor(store, enemies, target, tier, fromX, fromY);
+    double armour = _armourFor(store, enemies, target, tier, fromX, fromY);
+
+    // *Rend* (#14) wears the plate down permanently, converging to a floor
+    // rather than removing it — an enemy whose armour reached zero would stop
+    // being the enemy the Draw mechanic exists to teach.
+    if (enemies != null && combat.armourShredPerHit > 0) {
+      final double shredded = enemies.armourShred[target] +
+          combat.armourShredPerHit;
+      enemies.armourShred[target] =
+          shredded > combat.armourShredMax ? combat.armourShredMax : shredded;
+      // Shred lifts the *factor* toward 1.0, so it helps most where armour
+      // hurts most.
+      armour += (1.0 - armour) * enemies.armourShred[target];
+      if (armour > 1.0) armour = 1.0;
+    }
+
+    // *Deadeye* (#18) — crits skip the pierce-falloff curve entirely. Applied
+    // as a pierce index of zero rather than by removing the term, so the
+    // falloff maths stays in one place.
+    final bool deadeye = boons.has(BoonBehaviour.deadeye) && projectiles.wasCrit[slot] == 1;
+    final int effectivePierceIndex = deadeye ? 0 : pierceIndex;
 
     // The build's conditional terms, resolved against *this* target and *this*
     // shot. They sum into one `boonDamageSum` rather than each multiplying the
@@ -348,7 +389,7 @@ abstract final class ProjectileSystem {
       confluenceBonus: projectiles.confluenceBonus[slot],
       elementalBonus: projectiles.elementalBonus[slot],
       boonDamageSum: boonSum,
-      pierceIndex: pierceIndex,
+      pierceIndex: effectivePierceIndex,
       armourFactor: armour,
     );
 
@@ -357,6 +398,18 @@ abstract final class ProjectileSystem {
     // *Crescendo* counts this hit toward the next.
     combat.hitStreak++;
     combat.lastHitTarget = targetId;
+
+    // *Cull* (#20) finishes anything left below its threshold. Non-elites only:
+    // an execute that worked on Riftborn would delete the roster's mechanics
+    // rather than reward clearing fodder.
+    if (boons.has(BoonBehaviour.cull) &&
+        enemies != null &&
+        !enemies.isElite(target) &&
+        store.health[target] > 0 &&
+        store.health[target] <
+            store.maxHealth[target] * BoonRuntime.cullThreshold) {
+      store.health[target] = 0;
+    }
 
     double toHealth = damage;
     if (enemies != null) {
@@ -427,10 +480,36 @@ abstract final class ProjectileSystem {
     required double y,
   }) {
     if (status == null) return;
+
+    // Almost every arrow carries one element or none. The mask is for the four
+    // Boons that carry several — and it is what beats the Nullborn, whose
+    // adaptation counters one element at a time (docs/05 §5.6).
+    final int mask = projectiles.elementMask[slot];
+    if (mask != 0) {
+      for (final SimElement element in SimElement.values) {
+        if (mask & (1 << element.index) == 0) continue;
+        _applyOneElement(
+            enemies, status, events, slot, target, element, x, y);
+      }
+      return;
+    }
+
     final int index = projectiles.element[slot];
     if (index < 0) return;
+    _applyOneElement(enemies, status, events, slot, target,
+        SimElement.values[index], x, y);
+  }
 
-    final SimElement element = SimElement.values[index];
+  static void _applyOneElement(
+    EnemyStore? enemies,
+    StatusStore status,
+    SimEventBuffer events,
+    int slot,
+    int target,
+    SimElement element,
+    double x,
+    double y,
+  ) {
     if (enemies != null && enemies.resistsElement(target, element)) return;
 
     status.apply(target, element);
@@ -438,7 +517,7 @@ abstract final class ProjectileSystem {
       SimEventType.elementApplied,
       entityA: target,
       entityB: slot,
-      valueA: index.toDouble(),
+      valueA: element.index.toDouble(),
       x: x,
       y: y,
     );

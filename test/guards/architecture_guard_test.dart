@@ -90,6 +90,16 @@ void main() {
           'ai',
           'hazard',
           'spawn',
+          // Phase 9. Inserted at the slot SystemOrder had reserved for it since
+          // Phase 3, immediately before cleanup: after everything that could
+          // have changed the player's state this frame, so a Momentum shield is
+          // sized from this tick's stacks rather than last tick's.
+          //
+          // **No replay or balance number was voided by this.** BoonSystem
+          // returns immediately unless a Boon behaviour is live, and nothing
+          // before Phase 9 could hold one — so every pre-existing seeded run
+          // produces byte-identical output with the slot occupied.
+          'boon',
           'cleanup',
         ],
       );

@@ -1,3 +1,4 @@
+import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
@@ -54,6 +55,12 @@ class BoonInventory {
   bool hasBehaviour(BoonBehaviour behaviour) =>
       _behaviourActive[behaviour.index];
 
+  /// The live behaviour flags, for [BoonRuntime.setActive].
+  ///
+  /// Exposed as the raw list rather than a Set so the copy into the runtime is
+  /// an array walk. Read-only by contract; the inventory owns it.
+  List<bool> get behaviourFlags => _behaviourActive;
+
   /// Whether this card can still be offered. docs/09 §9.1: a Boon at max copies
   /// is removed from the pool entirely.
   bool isExhausted(BoonDefinition def) => copiesOf(def.id) >= def.maxCopies;
@@ -90,7 +97,12 @@ class BoonInventory {
   }
 
   /// Takes a card. Returns false if it was already at max copies.
-  bool take(BoonDefinition def) {
+  ///
+  /// [rng] is needed only by the cards that choose something at pickup —
+  /// *Elemental Tips* (#81) rolls an element, *Attunement* (#88) picks one.
+  /// Both settle **once**, here, rather than per arrow: an element that changed
+  /// shot to shot would make every elemental rider unpredictable.
+  bool take(BoonDefinition def, {Rng? rng}) {
     if (isExhausted(def)) return false;
 
     _copies[def.id]++;
@@ -103,8 +115,53 @@ class BoonInventory {
 
     tags.addAll(def.grants);
     _recompose();
+    _resolveOnPickup(def, rng);
     return true;
   }
+
+  /// The three cards that decide something the moment they are taken.
+  ///
+  /// Kept out of `_recompose`, which runs again on every later pick: healing to
+  /// full once is *Vital Surge*, and healing to full on every subsequent pick
+  /// is a different and far stronger card.
+  void _resolveOnPickup(BoonDefinition def, Rng? rng) {
+    switch (def.behaviour) {
+      case BoonBehaviour.elementalTips:
+        attunedElement ??=
+            SimElement.values[(rng ?? Rng(def.id)).nextInt(SimElement.values.length)];
+        tags.addAll(<BuildTag>[
+          BuildTag.anyElement,
+          _tagFor(attunedElement!),
+        ]);
+      case BoonBehaviour.attunement:
+        // Picks whichever element the build already leans on, falling back to a
+        // roll. A card that says "choose one" and chooses badly is worse than
+        // one that never asked.
+        attunedElement ??= _preferredElement(rng);
+      case BoonBehaviour.vitalSurge:
+        healToFullPending = true;
+      default:
+        break;
+    }
+  }
+
+  /// Set by *Vital Surge* (#30). Consumed by whoever owns the player's health,
+  /// because an inventory has no business writing to an entity store.
+  bool healToFullPending = false;
+
+  SimElement _preferredElement(Rng? rng) {
+    for (final SimElement e in SimElement.values) {
+      if (tags.contains(_tagFor(e))) return e;
+    }
+    return SimElement.values[(rng ?? Rng(88)).nextInt(SimElement.values.length)];
+  }
+
+  static BuildTag _tagFor(SimElement e) => switch (e) {
+        SimElement.ember => BuildTag.ember,
+        SimElement.frost => BuildTag.frost,
+        SimElement.storm => BuildTag.storm,
+        SimElement.toxin => BuildTag.toxin,
+      };
 
   /// Recomputes [stats] and [behaviours] from the copy counts.
   ///
@@ -147,6 +204,7 @@ class BoonInventory {
     _recentCategories.clear();
     tags.clear();
     attunedElement = null;
+    healToFullPending = false;
     _recompose();
   }
 
