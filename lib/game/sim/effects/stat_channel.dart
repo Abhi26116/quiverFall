@@ -123,6 +123,15 @@ enum StatChannel {
   /// Reduction applied to elemental damage only, before general DR.
   elementalResist,
 
+  /// Raises the hard mitigation ceiling above
+  /// `DamageResolver.maxDamageReduction`.
+  ///
+  /// The only channel allowed to move that cap, and it moves it by a *little*:
+  /// *The Fortress* set takes 75 % to 82 %. docs/04 §4.1 rule 2 exists because
+  /// additive DR reaches 100 % and heals the player, and a channel that could
+  /// lift the cap freely would reintroduce exactly that.
+  damageReductionCap,
+
   /// Fraction of max HP per second, while moving.
   regenWhileMoving,
 

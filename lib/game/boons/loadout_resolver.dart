@@ -122,6 +122,7 @@ abstract final class LoadoutResolver {
     world.stationaryDamageReduction =
         stats[StatChannel.damageReductionStationary];
     world.elementalResist = stats[StatChannel.elementalResist];
+    world.damageReductionCapBonus = stats[StatChannel.damageReductionCap];
     world.damageTakenMultiplier =
         stats.multiplierFor(StatChannel.damageTakenMultiplier);
 

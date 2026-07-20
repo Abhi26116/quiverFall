@@ -1,6 +1,7 @@
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
 import 'package:quiverfall/game/boons/boon_inventory.dart';
+import 'package:quiverfall/game/boons/synergy_catalogue.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
@@ -80,25 +81,33 @@ void main() {
       }
     });
 
-    test('every declared behaviour is reachable from some card', () {
+    test('every declared behaviour is reachable from something', () {
       // The inverse of the check above, and the more useful direction: a
-      // BoonBehaviour with no card is dead code that the switch arms still pay
-      // for, and it usually means a card was renamed and the enum was not.
-      final Set<BoonBehaviour> used = catalogue.all
-          .map((BoonDefinition b) => b.behaviour)
-          .whereType<BoonBehaviour>()
-          .toSet();
+      // BoonBehaviour that nothing can grant is dead code the switch arms still
+      // pay for, and it usually means a card was renamed and the enum was not.
+      //
+      // Reachability is checked against *all three* sources rather than against
+      // the catalogue with a hardcoded exemption list, because an exemption list
+      // is itself a thing that goes stale — it would happily keep excusing a
+      // behaviour whose set was later deleted.
+      final SynergyCatalogue synergies = loadSynergies(catalogue);
+
+      final Set<BoonBehaviour> reachable = <BoonBehaviour>{
+        for (final BoonDefinition b in catalogue.all)
+          if (b.behaviour != null) b.behaviour!,
+        for (final BoonEvolution e in synergies.evolutions)
+          if (e.behaviour != null) e.behaviour!,
+        for (final SynergySet s in synergies.sets)
+          if (s.behaviour != null) s.behaviour!,
+      };
 
       final Iterable<BoonBehaviour> orphans = BoonBehaviour.values
-          .where((BoonBehaviour b) => !used.contains(b))
-          // Evolutions are granted by docs/09 §9.4's upgrade paths, not by a
-          // card in the catalogue, so they are expected to be absent here.
-          .where((BoonBehaviour b) => !_evolutionBehaviours.contains(b));
+          .where((BoonBehaviour b) => !reachable.contains(b));
 
       expect(
         orphans,
         isEmpty,
-        reason: 'behaviours declared but never authored: '
+        reason: 'declared but granted by no card, set or evolution: '
             '${orphans.map((BoonBehaviour b) => b.name).join(', ')}',
       );
     });
@@ -417,16 +426,6 @@ void main() {
   });
 }
 
-/// docs/09 §9.4's six evolutions. Granted by upgrade paths mid-run rather than
-/// drawn, so they have no catalogue entry.
-const Set<BoonBehaviour> _evolutionBehaviours = <BoonBehaviour>{
-  BoonBehaviour.stormOfNocks,
-  BoonBehaviour.eternalWeave,
-  BoonBehaviour.bloodwell,
-  BoonBehaviour.windborn,
-  BoonBehaviour.everburn,
-  BoonBehaviour.firstLight,
-};
 
 /// A minimal single-card document with [extra] spliced in, for parse tests.
 String _oneCard(String extra) => '''

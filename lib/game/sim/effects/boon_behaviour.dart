@@ -206,7 +206,31 @@ enum BoonBehaviour {
   everburn,
 
   /// Every shot starts at max Confluence, with no penalty.
-  firstLight;
+  firstLight,
+
+  // ── Synergy set bonuses ───────────────────────────────────────────────────
+  // docs/09 §9.3. Granted by holding three members of a set, never by a card,
+  // which is why none of these appears in `boons.json` — the catalogue
+  // validator would reject an unreachable behaviour, so the test that checks
+  // for orphans exempts these explicitly.
+
+  /// *The Furnace* — burn ignites the ground beneath the target.
+  furnaceGround,
+
+  /// *The Deep Winter* — frozen enemies shatter for an area hit.
+  winterShatter,
+
+  /// *The Conduit* — chains travel along Windlines at full damage.
+  conduitChains,
+
+  /// *The Rot* — Toxin stacks are never lost and transfer on death.
+  rotPersists,
+
+  /// *The Executioner* — crits below 30 % instantly kill non-elites.
+  executionerCrits,
+
+  /// *The Sacrifice* — every Cursed downside is halved.
+  sacrificeHalved;
 
   /// Whether this behaviour fires once at pickup rather than during play.
   ///

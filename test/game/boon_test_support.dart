@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
+import 'package:quiverfall/game/boons/synergy_catalogue.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 
 /// Loads the **shipping** Boon catalogue from disk.
@@ -17,6 +18,19 @@ BoonCatalogue loadBoons() {
   final BoonCatalogue? catalogue = result.$1;
   if (catalogue == null) {
     throw StateError('boons.json failed to load:\n${result.$2.join('\n')}');
+  }
+  return catalogue;
+}
+
+/// Loads the **shipping** synergy sets and evolution paths.
+SynergyCatalogue loadSynergies(BoonCatalogue boons) {
+  final String json = File('assets/data/synergies.json').readAsStringSync();
+  final (SynergyCatalogue?, List<ContentError>) result =
+      SynergyCatalogue.parse(json, boons: boons);
+
+  final SynergyCatalogue? catalogue = result.$1;
+  if (catalogue == null) {
+    throw StateError('synergies.json failed to load:\n${result.$2.join('\n')}');
   }
   return catalogue;
 }

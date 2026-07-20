@@ -1,0 +1,151 @@
+{
+  "_comment": [
+    "docs/09 §9.3 synergy sets and §9.4 evolution paths.",
+    "",
+    "A set fires when the run holds 'threshold' DISTINCT members — copies do not",
+    "count. Three copies of Long Weave is one Weaver member, not three, or every",
+    "set would fire off a single stacked Common.",
+    "",
+    "Sets are discovered, not listed (§9.3). The collection screen fills a set's",
+    "name and members in as the player meets them, so nothing here is shown up",
+    "front.",
+    "",
+    "Evolutions replace their base card rather than adding to it. 'requires' is",
+    "read as: every listed id at the listed number of copies."
+  ],
+  "sets": [
+    {
+      "id": "weaver",
+      "name": "The Weaver",
+      "members": [59, 60, 63, 64, 65, 69, 70],
+      "bonusText": "Confluence cap +1 and +25 % Confluence damage",
+      "modifiers": [
+        { "channel": "confluenceStacks", "value": 1 },
+        { "channel": "confluenceDamage", "value": 0.25 }
+      ]
+    },
+    {
+      "id": "storm",
+      "name": "The Storm",
+      "members": [45, 46, 47, 48, 50, 51, 55],
+      "bonusText": "Momentum stacks are permanent for the room",
+      "behaviour": "momentumEngine"
+    },
+    {
+      "id": "furnace",
+      "name": "The Furnace",
+      "members": [77, 83, 89, 91, 9],
+      "bonusText": "Burn ignites the ground beneath the target",
+      "behaviour": "furnaceGround"
+    },
+    {
+      "id": "deep_winter",
+      "name": "The Deep Winter",
+      "members": [78, 84, 91, 35],
+      "bonusText": "Frozen enemies shatter for 200 % AoE",
+      "behaviour": "winterShatter"
+    },
+    {
+      "id": "conduit",
+      "name": "The Conduit",
+      "members": [79, 85, 92, 57],
+      "bonusText": "Chains travel along Windlines at full damage",
+      "behaviour": "conduitChains"
+    },
+    {
+      "id": "rot",
+      "name": "The Rot",
+      "members": [80, 86, 92, 6],
+      "bonusText": "Toxin stacks are never lost and transfer on death",
+      "behaviour": "rotPersists"
+    },
+    {
+      "id": "executioner",
+      "name": "The Executioner",
+      "members": [3, 12, 18, 20, 2],
+      "bonusText": "Crits below 30 % enemy HP instantly kill non-elites",
+      "behaviour": "executionerCrits"
+    },
+    {
+      "id": "fortress",
+      "name": "The Fortress",
+      "members": [26, 27, 29, 38, 39],
+      "bonusText": "Damage reduction cap raised 75 % to 82 %",
+      "modifiers": [{ "channel": "damageReductionCap", "value": 0.07 }]
+    },
+    {
+      "id": "sacrifice",
+      "name": "The Sacrifice",
+      "category": "cursed",
+      "bonusText": "Downsides reduced by half",
+      "behaviour": "sacrificeHalved"
+    },
+    {
+      "id": "prism",
+      "name": "The Prism",
+      "members": [90, 93, 94, 82, 89],
+      "bonusText": "Every reaction becomes Prismbreak",
+      "behaviour": "prismbreak"
+    }
+  ],
+  "evolutions": [
+    {
+      "id": "storm_of_nocks",
+      "name": "Storm of Nocks",
+      "replaces": 10,
+      "requires": [{ "id": 10, "copies": 3 }, { "id": 17, "copies": 1 }],
+      "description": "7 arrows, −30 % each, all lay Windlines",
+      "behaviour": "stormOfNocks",
+      "_math": [
+        "Split Shot's own +3 is removed when the evolution replaces it, so the",
+        "total is Twin Nock's +2 plus this +4 = 6 extra = 7 arrows in the air.",
+        "The penalty works the same way: Twin Nock's -0.25 plus this -0.05 is",
+        "the -30 % per arrow docs/09 §9.4 specifies."
+      ],
+      "modifiers": [
+        { "channel": "extraArrows", "value": 4 },
+        { "channel": "splitDamagePenalty", "value": -0.05 }
+      ]
+    },
+    {
+      "id": "eternal_weave",
+      "name": "Eternal Weave",
+      "replaces": 59,
+      "requires": [{ "id": 59, "copies": 5 }, { "id": 75, "copies": 1 }],
+      "description": "Windlines persist for the entire stage",
+      "behaviour": "eternalWeave"
+    },
+    {
+      "id": "bloodwell",
+      "name": "Bloodwell",
+      "replaces": 32,
+      "requires": [{ "id": 32, "copies": 3 }, { "id": 36, "copies": 2 }],
+      "description": "Lifesteal heals a shield above max HP",
+      "behaviour": "bloodwell"
+    },
+    {
+      "id": "windborn",
+      "name": "Windborn",
+      "replaces": 45,
+      "requires": [{ "id": 45, "copies": 5 }, { "id": 55, "copies": 1 }],
+      "description": "Leave a damaging trail while moving",
+      "behaviour": "windborn"
+    },
+    {
+      "id": "everburn",
+      "name": "Everburn",
+      "replaces": 77,
+      "requires": [{ "id": 77, "copies": 4 }, { "id": 89, "copies": 1 }],
+      "description": "Burn never expires",
+      "behaviour": "everburn"
+    },
+    {
+      "id": "first_light",
+      "name": "First Light",
+      "replaces": 60,
+      "requires": [{ "id": 60, "copies": 5 }, { "id": 74, "copies": 1 }],
+      "description": "Every shot starts at max Confluence, no penalty",
+      "behaviour": "firstLight"
+    }
+  ]
+}

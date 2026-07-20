@@ -249,6 +249,9 @@ class SimWorld {
   double stationaryDamageReduction = 0;
   double elementalResist = 0;
 
+  /// Added to `DamageResolver.maxDamageReduction`. Only *The Fortress* moves it.
+  double damageReductionCapBonus = 0;
+
   /// Above 1.0 means the player takes *more*. *Hollow Bones* (#109) pays for
   /// its speed here.
   double damageTakenMultiplier = 1.0;
@@ -282,9 +285,12 @@ class SimWorld {
         (1.0 - _clamp01(playerDraw.damageReduction));
 
     double total = 1.0 - remaining;
-    if (total > DamageResolver.maxDamageReduction) {
-      total = DamageResolver.maxDamageReduction;
-    }
+    // *The Fortress* set is the only thing in the game allowed to lift this,
+    // and it lifts it by seven points. docs/04 §4.1 rule 2 exists because
+    // additive DR reaches 100 % and heals the player.
+    final double cap =
+        DamageResolver.maxDamageReduction + damageReductionCapBonus;
+    if (total > cap) total = cap;
     return (1.0 - total) * damageTakenMultiplier;
   }
 

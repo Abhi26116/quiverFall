@@ -1,6 +1,7 @@
 import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
+import 'package:quiverfall/game/boons/synergy_catalogue.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_stats.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
@@ -14,11 +15,22 @@ import 'package:quiverfall/game/sim/elements.dart';
 /// the inventory changes, so the simulation reads a settled snapshot rather
 /// than walking the inventory per tick.
 class BoonInventory {
-  BoonInventory({required this.catalogue})
+  BoonInventory({required this.catalogue, this.synergies = SynergyCatalogue.empty})
       : _copies = List<int>.filled(catalogue.length + 1, 0),
         _behaviourActive = List<bool>.filled(BoonBehaviour.values.length, false);
 
   final BoonCatalogue catalogue;
+
+  /// Sets and evolutions. Empty by default, so a test that only cares about
+  /// cards need not construct one.
+  final SynergyCatalogue synergies;
+
+  /// Sets currently complete. Recomputed on every change; the UI announces the
+  /// ones that were not here last time.
+  final Set<String> activeSets = <String>{};
+
+  /// Evolutions currently triggered.
+  final Set<String> activeEvolutions = <String>{};
 
   /// `_copies[id]`. Index 0 unused, mirroring the catalogue's 1-based ids.
   final List<int> _copies;
@@ -193,6 +205,88 @@ class BoonInventory {
       final BoonBehaviour? behaviour = def.behaviour;
       if (behaviour != null) _behaviourActive[behaviour.index] = true;
     }
+
+    _composeEvolutions();
+    _composeSets();
+  }
+
+  /// docs/09 §9.4. An evolution **replaces** its base card.
+  ///
+  /// Composed before sets, and after the plain cards, so that the base card's
+  /// own contribution can be subtracted before anything else reads the totals.
+  /// Adding on top instead would let a run hold both halves of the trade —
+  /// *Storm of Nocks* is seven arrows at −30 % each, not seven arrows plus the
+  /// three Split Shots that paid for it.
+  void _composeEvolutions() {
+    activeEvolutions.clear();
+
+    for (final BoonEvolution evo in synergies.evolutions) {
+      bool met = true;
+      for (final EvolutionRequirement req in evo.requirements) {
+        if (copiesOf(req.id) < req.copies) {
+          met = false;
+          break;
+        }
+      }
+      if (!met) continue;
+
+      activeEvolutions.add(evo.id);
+
+      // Undo the base card. Its behaviour stays live where the evolution is a
+      // strict upgrade of it, which is why only modifiers are subtracted.
+      final BoonDefinition? base = catalogue.byId(evo.replaces);
+      if (base != null) {
+        final int copies = copiesOf(base.id);
+        for (final BoonModifier mod in base.modifiers) {
+          if (mod.channel.isMultiplicative) {
+            for (int c = 0; c < copies; c++) {
+              stats.multiplyBy(mod.channel, 1.0 / mod.value);
+            }
+          } else {
+            stats.add(mod.channel, -mod.value * copies);
+          }
+        }
+      }
+
+      for (final BoonModifier mod in evo.modifiers) {
+        if (mod.channel.isMultiplicative) {
+          stats.multiplyBy(mod.channel, mod.value);
+        } else {
+          stats.add(mod.channel, mod.value);
+        }
+      }
+      final BoonBehaviour? behaviour = evo.behaviour;
+      if (behaviour != null) _behaviourActive[behaviour.index] = true;
+    }
+  }
+
+  /// docs/09 §9.3. Three **distinct** members and the set fires.
+  ///
+  /// Copies deliberately do not count: three Long Weaves is one Weaver member.
+  /// Counting them would let a single stacked Common complete a set alone,
+  /// which turns "my build became a thing" into "I took the same card thrice".
+  void _composeSets() {
+    activeSets.clear();
+
+    for (final SynergySet set in synergies.sets) {
+      int distinct = 0;
+      for (final BoonDefinition def in catalogue.all) {
+        if (_copies[def.id] == 0) continue;
+        if (set.countsMember(def)) distinct++;
+      }
+      if (distinct < set.threshold) continue;
+
+      activeSets.add(set.id);
+      for (final BoonModifier mod in set.modifiers) {
+        if (mod.channel.isMultiplicative) {
+          stats.multiplyBy(mod.channel, mod.value);
+        } else {
+          stats.add(mod.channel, mod.value);
+        }
+      }
+      final BoonBehaviour? behaviour = set.behaviour;
+      if (behaviour != null) _behaviourActive[behaviour.index] = true;
+    }
   }
 
   /// Clears the run. The catalogue is kept; everything else resets.
@@ -205,6 +299,8 @@ class BoonInventory {
     tags.clear();
     attunedElement = null;
     healToFullPending = false;
+    activeSets.clear();
+    activeEvolutions.clear();
     _recompose();
   }
 
