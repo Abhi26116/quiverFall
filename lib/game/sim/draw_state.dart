@@ -83,6 +83,16 @@ class DrawState {
 
   bool wasMovingLastTick = false;
 
+  /// Seconds of movement per Momentum stack. *Light Boots* (#48) shortens it.
+  ///
+  /// An instance field rather than a read of [secondsPerMomentumStack] so a
+  /// build can retune it, exactly as [maxMomentum] and [drawSpeedMultiplier]
+  /// already do.
+  double stackChargeSeconds = secondsPerMomentumStack;
+
+  /// How long stacks survive after stopping. *Quick Recovery* (#47) extends it.
+  double graceSeconds = momentumGraceSeconds;
+
   /// Multiplier on the time needed to reach each tier.
   ///
   /// Below 1.0 means faster. Kestrel's *Hummingbird* passive sets 0.70, and the
@@ -126,6 +136,16 @@ class DrawState {
     sinceStoppedSeconds = 0;
     wasMovingLastTick = false;
     drawLockRemaining = 0;
+  }
+
+  /// Restores the tunables to their unmodified values. Separate from [reset],
+  /// which clears *state* — a run keeps its Boons across rooms but not its
+  /// accumulated Draw.
+  void resetTuning() {
+    maxMomentum = baseMaxMomentum;
+    stackChargeSeconds = secondsPerMomentumStack;
+    graceSeconds = momentumGraceSeconds;
+    drawSpeedMultiplier = 1.0;
   }
 
   void applyDrawLock(double seconds) {

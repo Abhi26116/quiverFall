@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
@@ -36,6 +37,7 @@ abstract final class ProjectileSystem {
     required double windlineDuration,
     required double segmentLength,
     required double dt,
+    required CombatModifiers combat,
     EnemyStore? enemies,
     StatusStore? status,
   }) {
@@ -47,6 +49,7 @@ abstract final class ProjectileSystem {
 
       projectiles.lifetime[i] -= dt;
       if (projectiles.lifetime[i] <= 0) {
+        _missed(projectiles, combat, i);
         _retire(store, projectiles, lines, i, store.posX[i], store.posY[i], now,
             windlineDuration);
         continue;
@@ -61,6 +64,7 @@ abstract final class ProjectileSystem {
       // which is what makes "break line of sight" a real answer to Longeye.
       if (arena.circleHitsWall(toX, toY, store.radius[i]) ||
           !arena.containsPoint(toX, toY)) {
+        _missed(projectiles, combat, i);
         _retire(
             store, projectiles, lines, i, fromX, fromY, now, windlineDuration);
         continue;
@@ -109,6 +113,7 @@ abstract final class ProjectileSystem {
         fromY: fromY,
         toX: toX,
         toY: toY,
+        combat: combat,
       );
 
       if (consumed) continue;
@@ -238,6 +243,7 @@ abstract final class ProjectileSystem {
     required double fromY,
     required double toX,
     required double toY,
+    required CombatModifiers combat,
   }) {
     final double arrowRadius = store.radius[slot];
     final int candidates =
@@ -275,6 +281,7 @@ abstract final class ProjectileSystem {
         targetId: targetId,
         fromX: fromX,
         fromY: fromY,
+        combat: combat,
       );
 
       if (projectiles.pierceRemaining[slot] < 0) {
@@ -300,6 +307,7 @@ abstract final class ProjectileSystem {
     required int targetId,
     required double fromX,
     required double fromY,
+    required CombatModifiers combat,
   }) {
     final int pierceIndex = projectiles.hitCount[slot];
     projectiles.recordHit(slot, targetId);
@@ -311,15 +319,44 @@ abstract final class ProjectileSystem {
     final double armour =
         _armourFor(store, enemies, target, tier, fromX, fromY);
 
+    // The build's conditional terms, resolved against *this* target and *this*
+    // shot. They sum into one `boonDamageSum` rather than each multiplying the
+    // total — docs/04 §4.1 rule 1, and the reason a twenty-Boon run is linear.
+    double boonSum = 0;
+    if (!combat.isInert) {
+      final double maxHp = store.maxHealth[target];
+      boonSum = combat.damageSumFor(
+        targetHealthFraction: maxHp > 0 ? store.health[target] / maxHp : 1.0,
+        // Distance the arrow has actually flown, not the length of this tick's
+        // sweep. *Marksman* rewards a long shot, and a long shot is long at the
+        // moment it lands, not at the moment it was fired.
+        shotDistance: projectiles.distanceFlown[slot],
+        targetId: targetId,
+        targetAfflicted: status != null &&
+            (status.burnStacks[target] > 0 ||
+                status.toxinStacks[target] > 0 ||
+                status.isFrozen(target)),
+        targetArmoured: enemies != null &&
+            (enemies.isPlated(target) || enemies.shield[target] > 0),
+      );
+    }
+
     final double damage = DamageResolver.resolve(
       attack: projectiles.damage[slot],
       arrowBaseMultiplier: 1.0,
       drawTierMultiplier: tier.damageMultiplier,
       confluenceBonus: projectiles.confluenceBonus[slot],
       elementalBonus: projectiles.elementalBonus[slot],
+      boonDamageSum: boonSum,
       pierceIndex: pierceIndex,
       armourFactor: armour,
     );
+
+    // Streak and last-target are updated after the hit is resolved, so
+    // *Follow Through* rewards the arrow *after* the one that landed and
+    // *Crescendo* counts this hit toward the next.
+    combat.hitStreak++;
+    combat.lastHitTarget = targetId;
 
     double toHealth = damage;
     if (enemies != null) {
@@ -460,6 +497,21 @@ abstract final class ProjectileSystem {
   ///
   /// A trail is the path an arrow flew. Rounding it down to the last whole
   /// segment was an artefact of distance-based emission, not a decision.
+  /// An arrow that ends without ever connecting breaks the streak.
+  ///
+  /// *Crescendo* (#15) says "resets on a miss", and a miss has to be defined
+  /// somewhere: it is an arrow retiring with no hits, whether it expired or hit
+  /// a wall. Defining it as "a tick with no damage" would break the streak
+  /// between two arrows in the same volley, and defining it as "the shot was
+  /// aimed badly" is not something the simulation can know.
+  static void _missed(
+    ProjectileStore projectiles,
+    CombatModifiers combat,
+    int slot,
+  ) {
+    if (projectiles.hitCount[slot] == 0) combat.hitStreak = 0;
+  }
+
   static void _retire(
     EntityStore store,
     ProjectileStore projectiles,

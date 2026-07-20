@@ -43,6 +43,14 @@ abstract final class ConfluenceTuning {
   static const int defaultMaxStacks = 3;
   static const int irisMaxStacks = 5;
 
+  /// The highest stack count [bonusByStacks] has an entry for.
+  ///
+  /// Boons 65 (*Deep Weave*, +1) and 70 (*Lattice*, +2) raise the cap, and Iris
+  /// starts at 5, so a Boon stack on top of her would index past the end of the
+  /// table. Clamped here rather than at each call site, because a table this
+  /// small is exactly the kind that gets extended without every reader noticing.
+  static const int maxStacks = 5;
+
   /// Extra pierce granted at maximum stacks — the arrow becomes a lance.
   static const int pierceAtMaxStacks = 1;
 

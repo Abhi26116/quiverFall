@@ -60,9 +60,9 @@ abstract final class DrawSystem {
 
     if (state.momentumStacks < state.maxMomentum) {
       state.momentumChargeSeconds += dt;
-      while (state.momentumChargeSeconds >= DrawState.secondsPerMomentumStack &&
+      while (state.momentumChargeSeconds >= state.stackChargeSeconds &&
           state.momentumStacks < state.maxMomentum) {
-        state.momentumChargeSeconds -= DrawState.secondsPerMomentumStack;
+        state.momentumChargeSeconds -= state.stackChargeSeconds;
         state.momentumStacks++;
       }
     } else {
@@ -82,7 +82,7 @@ abstract final class DrawSystem {
     // is what lets a player tap-stop to fire without immediately losing their
     // defensive layer — and the hard cliff afterwards is what makes the loss
     // legible when it happens.
-    if (state.sinceStoppedSeconds >= DrawState.momentumGraceSeconds &&
+    if (state.sinceStoppedSeconds >= state.graceSeconds &&
         state.momentumStacks > 0) {
       state.momentumStacks = 0;
       state.momentumChargeSeconds = 0;

@@ -6,6 +6,7 @@ import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
@@ -204,6 +205,60 @@ class SimWorld {
   /// Distance between Windline segments. See [SimConfig.windlineSegmentLength].
   double windlineSegmentLength = SimConfig.windlineSegmentLength;
 
+  /// Base move speed before Momentum. Boons scale this; Momentum multiplies it
+  /// at the point of use.
+  double playerMoveSpeed = SimConfig.playerMoveSpeed;
+
+  // ── Boon-composed loadout ─────────────────────────────────────────────────
+  // Written only by `LoadoutResolver.apply`, read by the systems. Nothing in
+  // `lib/game/sim/` knows a Boon exists — that seam is what lets the balance
+  // harness swap a whole build by writing one object, and what keeps "does
+  // Boon X apply here?" from becoming a question asked in forty places.
+
+  /// Per-hit conditional terms — the ones that cannot be resolved until a
+  /// target and a distance are known. See [CombatModifiers].
+  final CombatModifiers combat = CombatModifiers();
+
+  /// Scales the Confluence bonus. Clamped by
+  /// `DamageResolver.maxConfluenceBonus` at resolve time like every other
+  /// Confluence term.
+  double confluenceDamageMultiplier = 1.0;
+
+  /// Free Confluence stacks every arrow starts with. *Weaver's Grace* (#74).
+  int confluenceHeadStart = 0;
+
+  /// Movement penalty applied to enemies standing on a Windline. *Tangle*
+  /// (#63) raises the base 8 %.
+  double windlineSlow = 0;
+
+  /// Fraction of an enemy's max HP per second while it stands on a Windline.
+  /// *Cutting Lines* (#66).
+  double windlineDamageFraction = 0;
+
+  /// Mitigation sources, kept separate on purpose. `DamageResolver` combines
+  /// them multiplicatively and caps the product; summing them here would reach
+  /// 100 % and make the player invulnerable (docs/04 §4.1 rule 2).
+  double boonDamageReduction = 0;
+  double stationaryDamageReduction = 0;
+  double elementalResist = 0;
+
+  /// Above 1.0 means the player takes *more*. *Hollow Bones* (#109) pays for
+  /// its speed here.
+  double damageTakenMultiplier = 1.0;
+
+  double thornsReflect = 0;
+  double lifesteal = 0;
+  double shieldPerMomentum = 0;
+  double regenWhileMoving = 0;
+  double healOnRoomClear = 0;
+
+  /// Arrows added to each shot by *Split Shot* (#10) and *Twin Nock* (#17).
+  int extraArrows = 0;
+
+  /// What each arrow in a multi-arrow volley is worth. Below 1.0 whenever
+  /// [extraArrows] is above zero — the volley pays for itself per arrow.
+  double volleyDamageMultiplier = 1.0;
+
   /// Auto-fire is on whenever a target exists — the player never taps to shoot.
   bool autoFire = true;
 
@@ -226,6 +281,10 @@ class SimWorld {
   /// Ceiling on arrows released in a single tick, so a pathological fire-rate
   /// multiplier cannot exhaust the entity pool in one frame.
   static const int _maxShotsPerTick = 4;
+
+  /// Distance covered since the last *Kiting* trigger. See
+  /// [CombatModifiers.movedRecentlyDistance].
+  double _movedDistance = 0;
 
   double _fireCooldown = 0;
 
@@ -270,6 +329,29 @@ class SimWorld {
     // A player pinned against a wall is standing still and should ramp.
     DrawSystem.update(playerDraw, wantsToMove, dt, events);
 
+    // ── build state that changes every tick ────────────────────────────────
+    // Read by the hit path. Updated here, right after Draw, so a hit resolved
+    // later this tick sees the movement the player made *this* tick rather
+    // than last tick's.
+    combat
+      ..playerStationary = !wantsToMove
+      ..momentumStacks = playerDraw.momentumStacks;
+
+    if (wantsToMove) {
+      _movedDistance += playerMoveSpeed * (1.0 + playerDraw.moveSpeedBonus) * dt;
+      if (_movedDistance >= CombatModifiers.movedRecentlyDistance) {
+        _movedDistance = 0;
+        combat.movedRecentlyRemaining = CombatModifiers.movedRecentlyWindow;
+      }
+    } else {
+      // *Kiting* pays for ground covered, so the odometer resets when the
+      // player stops rather than banking a part-completed run across a pause.
+      _movedDistance = 0;
+    }
+    if (combat.movedRecentlyRemaining > 0) {
+      combat.movedRecentlyRemaining -= dt;
+    }
+
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
     // tick's. Every later system's neighbour lookups depend on that ordering.
@@ -299,6 +381,7 @@ class SimWorld {
       dt: dt,
       enemies: enemies,
       status: status,
+      combat: combat,
     );
 
     // ── windline expiry ────────────────────────────────────────────────────
@@ -416,12 +499,46 @@ class SimWorld {
     );
 
     for (int s = 0; s < shots; s++) {
-      _spawnArrow(fromX, fromY, angle, tier);
+      _spawnVolley(fromX, fromY, angle, tier);
     }
     _playerFiredThisTick = true;
   }
 
-  void _spawnArrow(double x, double y, double angle, DrawTier tier) {
+  /// Releases one shot, which may be several arrows.
+  ///
+  /// *Split Shot* (#10) and *Twin Nock* (#17) widen a shot into a fan. The fan
+  /// is centred on the aim angle so the middle arrow still goes where the
+  /// player is looking — an off-centre fan makes auto-aim feel broken even
+  /// though it is aiming correctly.
+  void _spawnVolley(double x, double y, double angle, DrawTier tier) {
+    final int extra = extraArrows;
+    if (extra <= 0) {
+      _spawnArrow(x, y, angle, tier, volleyDamageMultiplier);
+      return;
+    }
+
+    final int total = 1 + extra;
+    final double spread = volleySpreadRadians * (total - 1);
+    final double step = spread / (total - 1);
+    final double start = angle - spread * 0.5;
+
+    for (int i = 0; i < total; i++) {
+      _spawnArrow(x, y, start + step * i, tier, volleyDamageMultiplier);
+    }
+  }
+
+  /// Angle between adjacent arrows in a fan. Narrow on purpose: a wide fan
+  /// stops being "more arrows at the target" and becomes "arrows near the
+  /// target", which reads as a downgrade.
+  static const double volleySpreadRadians = 0.14;
+
+  void _spawnArrow(
+    double x,
+    double y,
+    double angle,
+    DrawTier tier,
+    double damageScale,
+  ) {
     final EntityId id = entities.spawn(EntityKind.projectile);
     if (id.isNone) return;
 
@@ -440,11 +557,24 @@ class SimWorld {
     // segments, so this is what stops an arrow threading its own trail.
     projectiles.windlineSerial[i] = windlines.nextSerial;
     projectiles.trailId[i] = _nextTrailId++;
-    projectiles.damage[i] = playerAttack;
+    projectiles.damage[i] = playerAttack * damageScale;
     projectiles.pierceRemaining[i] = basePierce + tier.bonusPierce;
     projectiles.drawTier[i] = tier.index;
     projectiles.lifetime[i] = arrowLifetime;
     projectiles.element[i] = arrowElement?.index ?? -1;
+
+    // *Weaver's Grace* (#74) — every shot begins already threaded. Applied at
+    // spawn rather than at the first crossing so the arrow renders with its
+    // Confluence glow from the moment it leaves the bow, which is the whole
+    // point of a card that costs a Legendary slot.
+    if (confluenceHeadStart > 0) {
+      final int start = confluenceHeadStart > maxConfluenceStacks
+          ? maxConfluenceStacks
+          : confluenceHeadStart;
+      projectiles.confluenceStacks[i] = start;
+      projectiles.confluenceBonus[i] =
+          ConfluenceTuning.bonusFor(start) * confluenceDamageMultiplier;
+    }
 
     events.emit(
       SimEventType.arrowFired,
@@ -470,8 +600,19 @@ class SimWorld {
     final double magSq = input.magnitudeSquared;
     final double inv = magSq > 1.0 ? 1.0 / math.sqrt(magSq) : 1.0;
 
-    entities.velX[i] = input.stickX * inv * SimConfig.playerMoveSpeed;
-    entities.velY[i] = input.stickY * inv * SimConfig.playerMoveSpeed;
+    // Momentum's speed reward, applied here and nowhere else.
+    //
+    // `DrawState.moveSpeedBonus` existed from Phase 3 and was referenced by
+    // nothing until Phase 9 — so half of Momentum had never worked. Its
+    // mitigation half did, which is why nothing looked broken: the trade
+    // docs/01 §1.1 rests on was paying out at roughly half its stated rate, and
+    // every balance measurement taken before this was of a game where moving
+    // was quietly worse than the design says.
+    final double speed =
+        playerMoveSpeed * (1.0 + playerDraw.moveSpeedBonus);
+
+    entities.velX[i] = input.stickX * inv * speed;
+    entities.velY[i] = input.stickY * inv * speed;
     entities.facing[i] = math.atan2(entities.velY[i], entities.velX[i]);
   }
 
