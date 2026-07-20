@@ -20,6 +20,26 @@ abstract final class ConfluenceTuning {
     3.20, // 5  — Iris, plus a 2u AoE
   ];
 
+  /// How far an arrow must have flown before it may thread anything.
+  ///
+  /// **This is the rule that keeps Confluence a skill rather than a tax on
+  /// standing still.** Every arrow leaves the same point — the player — so
+  /// consecutive shots at different targets cross each other *immediately*, a
+  /// centimetre from the bow. Measured without this gate, a rooted player got
+  /// 45 Confluences a minute with a mean crossing distance of 0.2 u: under
+  /// their own feet, invisible, unaimable, and unlearnable. Standing still was
+  /// simply correct again, which is the exact Archero failure docs/01 §1.1
+  /// exists to avoid.
+  ///
+  /// Threading a trail *out in the field* is the mechanic. Crossing at your own
+  /// origin is an artefact of having one.
+  ///
+  /// Swept from 0 to 2.5 u against six play styles. Zero leaves the artefact;
+  /// 2.5 u is harsh enough that a panicky player never finds the mechanic at
+  /// all. At 0.8 u a rooted player gets nothing, every moving style finds it
+  /// within seconds, and crossings land 1.0–2.8 u out where they can be seen.
+  static const double minThreadDistance = 0.8;
+
   static const int defaultMaxStacks = 3;
   static const int irisMaxStacks = 5;
 

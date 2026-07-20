@@ -78,6 +78,11 @@ class ProjectileStore {
   /// arrow crossing the trail counts it once.
   final Int32List trailId = Int32List(SimConfig.maxEntities);
 
+  /// Total distance this arrow has flown.
+  ///
+  /// Gates Confluence eligibility. See [ConfluenceTuning.minThreadDistance].
+  final Float64List distanceFlown = Float64List(SimConfig.maxEntities);
+
   /// Distance flown since the last Windline segment was emitted.
   ///
   /// Segments are emitted per distance travelled rather than per tick. Per-tick
@@ -111,6 +116,7 @@ class ProjectileStore {
     element[slot] = -1;
     trailId[slot] = 0;
     sinceLastSegment[slot] = 0;
+    distanceFlown[slot] = 0;
     crossedCount[slot] = 0;
   }
 

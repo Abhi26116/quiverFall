@@ -66,6 +66,17 @@ abstract final class ProjectileSystem {
         continue;
       }
 
+      // This tick's travel is banked *before* anything else reads it.
+      //
+      // Two things depend on that. The terminal stub (ADR 0002) spans from the
+      // last emitted segment to wherever the arrow died, so counting the
+      // killing tick afterwards left it a tick short — and zero-long whenever a
+      // segment had just been emitted. And Confluence eligibility is measured
+      // in distance flown, which has to include the tick being resolved.
+      final double step = _length(toX - fromX, toY - fromY);
+      projectiles.sinceLastSegment[i] += step;
+      projectiles.distanceFlown[i] += step;
+
       // Confluence is resolved on the swept path *before* hits, so an arrow
       // that threads a line and strikes an enemy in the same tick carries the
       // bonus into that hit rather than the one after.
@@ -106,11 +117,6 @@ abstract final class ProjectileSystem {
       // [SimConfig.windlineSegmentLength] flown rather than one per tick. The
       // segment spans the whole accumulated stretch, so the polyline is
       // continuous — it is emitted less often, not made of gaps.
-      final double stepX = toX - fromX;
-      final double stepY = toY - fromY;
-      final double step = _length(stepX, stepY);
-      projectiles.sinceLastSegment[i] += step;
-
       if (projectiles.sinceLastSegment[i] >= segmentLength) {
         final double back = projectiles.sinceLastSegment[i];
         final double dirX = store.velX[i];
@@ -151,6 +157,12 @@ abstract final class ProjectileSystem {
     required double hitWidth,
   }) {
     if (projectiles.confluenceStacks[slot] >= maxStacks) return;
+
+    // An arrow may not thread anything until it has left the bow behind. See
+    // [ConfluenceTuning.minThreadDistance].
+    if (projectiles.distanceFlown[slot] < ConfluenceTuning.minThreadDistance) {
+      return;
+    }
 
     final ConfluenceResult found = ConfluenceSystem.sweep(
       lines: lines,

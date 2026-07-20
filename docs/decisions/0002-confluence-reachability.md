@@ -1,9 +1,11 @@
 # ADR 0002 — Confluence reachability
 
-**Phase** 4 (found) → 5 (resolved)
-**Date** 2026-07-19, resolved 2026-07-20
-**Status** **Resolved in code.** Reachability is fixed and measured; *legibility*
-remains a Phase 6 question — see "Resolution" at the end.
+**Phase** 4 (found) → 5 (resolved) → 8 (re-opened and re-resolved)
+**Date** 2026-07-19, resolved 2026-07-20, revised 2026-07-20
+**Status** **Resolved in code, twice.** The Phase 5 resolution was measuring the
+wrong thing; read "Second finding" at the end before trusting the middle of this
+document. Reachability is now fixed and measured; *legibility* remains a
+Phase 6 question.
 **Severity** High. This is the game's USP.
 
 ---
@@ -172,3 +174,83 @@ as noise", and that remains untested — it needs the VFX, the bell chord, and
 eight people who have not seen the game. **The Phase 6 gate is unchanged.** What
 has changed is that the gate can now actually be run: at 0 % there was nothing
 for a playtester to notice.
+
+---
+
+## Second finding (Phase 8): the 6.9 % was mostly an artefact
+
+**Status of the first resolution: half right.** Confluence was firing. It was
+not firing where — or for the reason — the design intends.
+
+`tool/discovery_probe.dart` runs the real game against six plausible play
+styles for seven minutes each and records, among other things, **how far from
+the player each crossing happens**. That column is the finding:
+
+| play style | first | /min | thread | mean crossing distance |
+|---|---|---|---|---|
+| never stops | 1 s | 32.1 | 12.9 % | **2.8 u** |
+| never moves | 3 s | **47.6** | **25.4 %** | **0.2 u** |
+| panicky | 4 s | 40.6 | 23.7 % | 0.3 u |
+| oscillating | 3 s | 32.7 | 16.1 % | 0.5 u |
+| roaming | 3 s | 35.0 | 16.7 % | 0.4 u |
+| circling | 3 s | 15.4 | 9.8 % | 0.9 u |
+
+Every arrow leaves from the same point — the player. Consecutive shots at
+different targets therefore cross each other *immediately*, a few centimetres
+from the bow. Almost all measured Confluence was that, not a lattice.
+
+Two things follow, and both are bad:
+
+1. **Standing still was the best Confluence style in the game** — 47.6 per
+   minute at 94 % Tier III. Rooting gave the most damage *and* the most
+   Confluence, so standing still was simply correct again. That is the exact
+   Archero failure docs/01 §1.1 exists to invert.
+2. **It was invisible.** A crossing under the player's own sprite cannot be
+   seen, aimed, or learned. It reads as random damage spikes — which is
+   precisely the "Confluence is noise" risk docs/01 §1.5 names, arrived at from
+   an unexpected direction.
+
+### The fix
+
+`ConfluenceTuning.minThreadDistance` — an arrow may not thread anything until
+it has flown that far. Threading a trail out in the field is the mechanic;
+crossing at your own origin is an artefact of having one.
+
+Swept against all six styles:
+
+| threshold | rooted | moving styles | crossing distance | verdict |
+|---|---|---|---|---|
+| 0.0 u | 47.6/min | 15–41/min | 0.2–0.9 u | the artefact |
+| **0.8 u** | **0** | **1.7–4.6/min** | **1.0–1.7 u** | **chosen** |
+| 1.2 u | 0 | 0.9–4.1/min | 1.5–2.0 u | fine |
+| 1.5 u | 0 | 0.3–4.6/min | 1.7–2.3 u | fine |
+| 2.5 u | 0 | 0–1.0/min | 2.7–4.2 u | panicky never finds it |
+
+At **0.8 u**: a rooted player gets nothing, every moving style finds the
+mechanic within seconds, and crossings land out where they are visible. The
+overall rate across real rooms is 4.0 %, and x2 and x3 stacks now appear
+regularly where before it was almost entirely x1 — real lattices rather than
+incidental overlaps.
+
+`never stops` sits at ~32/min and 2.8 u at *every* threshold, untouched by the
+gate. That is the genuine mechanic, and it was always working; it was simply
+buried under forty times as much noise.
+
+### What this changes about the trade
+
+Rooting now buys **damage** (Tier III, 2.10x) and moving buys **Confluence**
+(up to 2.6x at x3). Two real paths, which is a cleaner statement of the design's
+intent than the original framing.
+
+Worth watching in playtest: the intended *oscillating* rhythm scores lower on
+Confluence (2.2 %) than constant movement (12.6 %). If that proves to be the
+wrong incentive, `minThreadDistance` and the Windline duration are the levers.
+
+### Honesty note
+
+The first attempt at this fix silently did not apply — a patch matched nothing,
+`distanceFlown` was never incremented, and the gate blocked *everything*. The
+resulting "0 % for all six styles" was briefly mistaken for a finding. It was a
+bug in the change, not a property of the game. The Phase 8 commit message also
+claims the ADR-0002 terminal-stub off-by-one was fixed; that patch had failed
+the same way and only landed here.
