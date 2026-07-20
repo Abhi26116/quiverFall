@@ -2,12 +2,16 @@ import 'dart:ui';
 
 import 'package:flame/game.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
+import 'package:quiverfall/game/device/quality_tier.dart';
 import 'package:quiverfall/game/feel/cues.dart';
 import 'package:quiverfall/game/feel/feedback_director.dart';
 import 'package:quiverfall/game/feel/joystick_model.dart';
+import 'package:quiverfall/game/pools/pool_report.dart';
 import 'package:quiverfall/game/sim/fixed_step_driver.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
+import 'package:quiverfall/services/device/quality_controller.dart';
+import 'package:quiverfall/view/pools/pool_registry.dart';
 import 'package:quiverfall/view/render/world_painter.dart';
 
 /// The arena, as a Flame game.
@@ -38,11 +42,26 @@ class QuiverfallGame extends FlameGame {
     FeedbackDirector? director,
     List<CueSink>? sinks,
     FeelTelemetry? telemetry,
+    QualityController? quality,
   })  : director = director ?? FeedbackDirector(world: sim),
         sinks = sinks ?? <CueSink>[],
-        telemetry = telemetry ?? FeelTelemetry() {
+        telemetry = telemetry ?? FeelTelemetry(),
+        quality = quality ?? QualityController() {
     painter = WorldPainter(world: sim, director: this.director);
     driver = FixedStepDriver(sim, onTick: _afterTick);
+    watchdog = ThermalWatchdog(controller: this.quality);
+
+    // Every pool in the game, so saturation is visible rather than inferred
+    // from a player saying combat "felt weird" (docs/12 §12.11).
+    pools.registerAll(<PoolReport>[
+      sim.entities,
+      sim.windlines,
+      sim.telegraphs,
+      sim.hazards,
+      this.director.particles,
+    ]);
+
+    _applyQuality();
   }
 
   /// The simulation.
@@ -60,6 +79,16 @@ class QuiverfallGame extends FlameGame {
 
   /// What the Phase 6 gate is measured from.
   final FeelTelemetry telemetry;
+
+  /// The active graphics tier and everything allowed to change it.
+  final QualityController quality;
+
+  late final ThermalWatchdog watchdog;
+
+  /// Saturation reporting for every fixed-size store in the game.
+  final PoolRegistry pools = PoolRegistry();
+
+  QualityTier _appliedTier = QualityTier.high;
 
   late final WorldPainter painter;
   late final FixedStepDriver driver;
@@ -86,6 +115,11 @@ class QuiverfallGame extends FlameGame {
   void update(double dt) {
     super.update(dt);
 
+    // A device that was fine and then got hot drops a tier, once
+    // (docs/19 §19.6). Fed real frame time, not simulation time.
+    watchdog.recordFrame(dt);
+    if (quality.tier != _appliedTier) _applyQuality();
+
     // Presentation runs regardless — a frozen frame still animates.
     director.update(dt);
 
@@ -103,6 +137,25 @@ class QuiverfallGame extends FlameGame {
     // Once per frame, not per tick: a frame containing two steps must not ring
     // the same bell twice, and 16 ms is beneath perception anyway.
     dispatchCues(director.cues, sinks);
+  }
+
+  /// Pushes the active tier into everything that scales with it.
+  ///
+  /// One place, called only when the tier actually changes. Reading the tier
+  /// per frame in five different renderers is how a setting ends up half
+  /// applied.
+  void _applyQuality() {
+    final QualityTier tier = quality.tier;
+    _appliedTier = tier;
+
+    painter.quality = tier;
+    sim
+      ..enemyCap = tier.enemyCap
+      ..windlines.budget = tier.windlineBudget;
+
+    // Reduce Motion is an accessibility setting and Battery is a performance
+    // tier, but they want the same thing, so the camera reads one number.
+    director.shake.enabled = tier.shake != ShakeLevel.off;
   }
 
   /// Runs after every simulation step, from inside the driver's catch-up loop.

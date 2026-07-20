@@ -76,6 +76,14 @@ class AiContext {
   /// which is how one number per enemy covers all 240 stages (docs/05 §5.0).
   double enemyHpBase = 44.0;
 
+  /// Contact-capable enemies allowed on screen at once.
+  ///
+  /// A quality setting (docs/19 §19.4: 60 on Battery, 90 otherwise) rather than
+  /// a constant, and therefore a *gameplay* difference between tiers as well as
+  /// a performance one. It caps concurrency, never total room threat — a
+  /// Battery player fights the same room, arriving in more waves.
+  int enemyCap = SimConfig.maxContactEnemies;
+
   /// Global stage index, 1-based. Drives variant availability and nothing else
   /// in this layer — the curves are pre-resolved into [enemyHpBase].
   int globalStage = 1;

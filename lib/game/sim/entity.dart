@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:quiverfall/game/pools/pool_report.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 
 /// A safe handle to an entity.
@@ -53,7 +54,7 @@ enum EntityKind {
 ///
 /// The cost is ergonomics: there is no `Entity` object to hold. That is the
 /// trade, and it is why this class carries the accessors it does.
-class EntityStore {
+class EntityStore implements PoolReport {
   EntityStore({int capacity = SimConfig.maxEntities})
       : _capacity = capacity,
         alive = Uint8List(capacity),
@@ -113,6 +114,21 @@ class EntityStore {
 
   int _liveCount = 0;
 
+  /// Spawns refused because the pool was full. See [PoolReport.poolMisses].
+  int refusedSpawns = 0;
+
+  @override
+  String get poolName => 'entities';
+
+  @override
+  int get poolCapacity => _capacity;
+
+  @override
+  int get poolLive => _liveCount;
+
+  @override
+  int get poolMisses => refusedSpawns;
+
   int get capacity => _capacity;
 
   int get liveCount => _liveCount;
@@ -134,7 +150,13 @@ class EntityStore {
   /// store means the spawn system tried to exceed a documented cap, which is a
   /// bug in the caller.
   EntityId spawn(EntityKind entityKind) {
-    if (_freeCount == 0) return EntityId.none;
+    if (_freeCount == 0) {
+      // Counted, not just refused. A silent miss here is an enemy that never
+      // spawned or an arrow that never fired, which the player experiences as
+      // the game being broken.
+      refusedSpawns++;
+      return EntityId.none;
+    }
 
     final int index = _freeList[--_freeCount];
     alive[index] = 1;

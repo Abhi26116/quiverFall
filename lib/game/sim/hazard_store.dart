@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:quiverfall/game/pools/pool_report.dart';
+
 /// What an enemy has put into the world.
 enum HazardKind {
   /// Travels in a straight line at a fixed speed and hits the first thing it
@@ -27,7 +29,7 @@ enum HazardKind {
 /// share.
 ///
 /// Struct-of-arrays with a fixed capacity, like everything else in the sim.
-class HazardStore {
+class HazardStore implements PoolReport {
   HazardStore({this.capacity = 96})
       : _kind = Uint8List(capacity),
         _alive = Uint8List(capacity),
@@ -99,6 +101,18 @@ class HazardStore {
   int _liveCount = 0;
 
   int get liveCount => _liveCount;
+
+  @override
+  String get poolName => 'hazards';
+
+  @override
+  int get poolCapacity => capacity;
+
+  @override
+  int get poolLive => _liveCount;
+
+  @override
+  int get poolMisses => dropped;
 
   /// Hazards dropped because the store was full. Surfaced rather than hidden:
   /// a dropped shell is an attack the player dodged for no reason, which reads

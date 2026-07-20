@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:quiverfall/game/pools/pool_report.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 
 /// The trails arrows leave behind.
@@ -18,7 +19,7 @@ import 'package:quiverfall/game/sim/sim_config.dart';
 /// Segments are stored newest-last in insertion order, which is what makes the
 /// age filter in [ConfluenceSystem] a cheap index comparison instead of a
 /// timestamp sort.
-class WindlineStore {
+class WindlineStore implements PoolReport {
   WindlineStore({this.capacity = SimConfig.maxWindlineSegments})
       : _x0 = Float64List(capacity),
         _y0 = Float64List(capacity),
@@ -69,12 +70,66 @@ class WindlineStore {
   int _liveCount = 0;
   int _nextSerial = 1;
 
+  /// Live-segment ceiling for the active quality tier.
+  ///
+  /// The ring wraps at this rather than at [capacity], so a Battery-tier device
+  /// allocates the full buffer once at boot and then simply uses less of it —
+  /// no reallocation on a tier change, and no branch in the hot path.
+  ///
+  /// **The budget scales, the per-player Windline *duration* does not.** That
+  /// distinction is the whole compromise in docs/19 §19.4: a solo player never
+  /// notices a smaller global budget, and it only bites in the densest
+  /// multishot builds. Capping duration instead would break the mechanic
+  /// rather than scale it.
+  late int _budget = capacity;
+
+  int get budget => _budget;
+
+  /// Slots a consumer needs to scan. Everything at or beyond this is
+  /// guaranteed dead, so index loops can stop here instead of at [capacity] —
+  /// which matters most on the tier that can least afford the wasted scan.
+  int get activeSlots => _budget;
+
+  set budget(int value) {
+    final int clamped = value < 1 ? 1 : (value > capacity ? capacity : value);
+    if (clamped == _budget) return;
+
+    // Lowering the budget strands live segments above the new ceiling. They
+    // are retired rather than left in place: a segment nothing will ever expire
+    // is a permanent Confluence target that the player cannot see fading.
+    if (clamped < _budget) {
+      for (int i = clamped; i < _budget; i++) {
+        if (_alive[i] == 1) {
+          _alive[i] = 0;
+          _liveCount--;
+        }
+      }
+    }
+
+    _budget = clamped;
+    if (_head >= _budget) _head = 0;
+  }
+
   /// Segments evicted while still alive, since the last [clear]. Non-zero means
   /// the player is generating lines faster than the cap allows; surfaced rather
   /// than hidden because it changes how the mechanic feels.
   int evictedWhileAlive = 0;
 
   int get liveCount => _liveCount;
+
+  @override
+  String get poolName => 'windlines';
+
+  @override
+  int get poolCapacity => _budget;
+
+  @override
+  int get poolLive => _liveCount;
+
+  /// Evicting a *live* segment is a miss: it is a trail the player laid and can
+  /// no longer thread, which makes the mechanic feel arbitrary.
+  @override
+  int get poolMisses => evictedWhileAlive;
 
   int get nextSerial => _nextSerial;
 
@@ -136,7 +191,7 @@ class WindlineStore {
     _trail[slot] = trailId;
     _alive[slot] = 1;
 
-    _head = (_head + 1) % capacity;
+    _head = (_head + 1) % _budget;
     return slot;
   }
 

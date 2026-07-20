@@ -6,7 +6,6 @@ import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
-import 'package:quiverfall/game/sim/sim_config.dart';
 
 /// The single place an enemy comes into existence.
 ///
@@ -169,9 +168,10 @@ abstract final class EnemySpawner {
     pointY = y;
   }
 
-  /// True if the room is already at the entity ceiling for contact-capable
-  /// enemies. Beyond this a phone screen is unreadable regardless of frame rate
-  /// (docs/19 §19.1).
+  /// True if the room is already at the ceiling for contact-capable enemies.
+  ///
+  /// Beyond this a phone screen is unreadable regardless of frame rate
+  /// (docs/19 §19.1), and on Battery tier the ceiling is lower still.
   static bool atEnemyCap(AiContext ctx) {
     int enemies = 0;
     final int high = ctx.entities.highWater;
@@ -179,7 +179,7 @@ abstract final class EnemySpawner {
       if (ctx.entities.alive[i] == 0) continue;
       if (ctx.entities.kind[i] != EntityKind.enemy.index) continue;
       enemies++;
-      if (enemies >= SimConfig.maxContactEnemies) return true;
+      if (enemies >= ctx.enemyCap) return true;
     }
     return false;
   }

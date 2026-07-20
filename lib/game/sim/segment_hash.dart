@@ -59,7 +59,8 @@ class SegmentHash {
   /// Rebuilds from every live segment. Called once per tick.
   void rebuild(WindlineStore lines) {
     clear();
-    for (int i = 0; i < lines.capacity; i++) {
+    // Only the active prefix can hold live segments — see WindlineStore.budget.
+    for (int i = 0; i < lines.activeSlots; i++) {
       if (!lines.isAlive(i)) continue;
       _insertSegment(i, lines.x0(i), lines.y0(i), lines.x1(i), lines.y1(i));
     }

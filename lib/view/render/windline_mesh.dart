@@ -43,7 +43,7 @@ class WindlineMesh {
   void rebuild(WindlineStore lines, double now, double duration) {
     _segmentsBuilt = 0;
 
-    for (int i = 0; i < lines.capacity; i++) {
+    for (int i = 0; i < lines.activeSlots; i++) {
       if (!lines.isAlive(i)) continue;
       if (_segmentsBuilt >= capacity) break;
 

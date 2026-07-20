@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/feel/juice.dart';
+import 'package:quiverfall/game/pools/pool_report.dart';
 
 /// Impact particles, pooled and struct-of-arrays.
 ///
@@ -15,7 +16,7 @@ import 'package:quiverfall/game/feel/juice.dart';
 /// Fixed capacity, oldest-wins on overflow. Beyond [Juice.maxParticles] the
 /// arena stops being readable, which is a gameplay failure before it is a
 /// performance one — so overflowing is a *design* boundary, not an accident.
-class ParticlePool {
+class ParticlePool implements PoolReport {
   ParticlePool({this.capacity = Juice.maxParticles, int seed = 0xC0FFEE})
       : x = Float64List(capacity),
         y = Float64List(capacity),
@@ -48,6 +49,21 @@ class ParticlePool {
   int _liveCount = 0;
 
   int get liveCount => _liveCount;
+
+  /// Live particles overwritten because the pool was full.
+  int overwritten = 0;
+
+  @override
+  String get poolName => 'particles';
+
+  @override
+  int get poolCapacity => capacity;
+
+  @override
+  int get poolLive => _liveCount;
+
+  @override
+  int get poolMisses => overwritten;
 
   bool isAlive(int i) => _alive[i] == 1;
 
@@ -121,6 +137,7 @@ class ParticlePool {
     }
     _liveCount = 0;
     _cursor = 0;
+    overwritten = 0;
   }
 
   /// Round-robin allocation. When full, the oldest particle is overwritten —
@@ -137,6 +154,9 @@ class ParticlePool {
         return i;
       }
     }
+    // Full. The oldest particle is overwritten rather than the newest dropped —
+    // losing the event the player just caused is the wrong one to lose.
+    overwritten++;
     final int i = _cursor;
     _cursor = (i + 1) % capacity;
     return i;

@@ -146,7 +146,7 @@ abstract final class SpawnSystem {
 
     for (final PlannedEnemy planned in wave.enemies) {
       if (state.pendingCount >= state.capacity) break;
-      if (alive + state.pendingCount >= SimConfig.maxContactEnemies) break;
+      if (alive + state.pendingCount >= ctx.enemyCap) break;
       _queue(ctx, state, planned);
     }
   }

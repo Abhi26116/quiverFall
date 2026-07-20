@@ -15,6 +15,8 @@ import 'package:quiverfall/data/models/player_save.dart';
 import 'package:quiverfall/data/models/run_snapshot.dart';
 import 'package:quiverfall/data/repositories/player_repository.dart';
 import 'package:quiverfall/features/gameplay/application/run_coordinator.dart';
+import 'package:quiverfall/services/device/device_benchmark.dart';
+import 'package:quiverfall/services/device/quality_controller.dart';
 
 /// How far bootstrap got, for error reporting.
 enum BootstrapStage { core, data, services, game, loadSave }
@@ -99,6 +101,20 @@ Future<Result<void, BootstrapFailure>> _registerData(Logger logger) async {
 }
 
 void _registerServices() {
+  final Logger logger = locator<Logger>();
+
+  // The graphics tier is decided here, once, at boot (docs/19 §19.4). It runs
+  // during the splash where nothing else needs the frame, and it is
+  // deliberately a measurement rather than a device allow-list: an allow-list
+  // is wrong on launch day for hardware that did not exist when it was written,
+  // and says nothing about a phone that is hot or sharing the CPU.
+  final BenchmarkResult benchmark = const DeviceBenchmark().run();
+  logger.i('$benchmark', tag: 'device');
+
+  locator.registerSingleton<QualityController>(
+    QualityController(logger: logger)..applyBenchmark(benchmark.tier),
+  );
+
   // Audio, ads, IAP, analytics, notifications and remote config are registered
   // here from Phase 16/17. They are deliberately absent now: ADR 0001 defers the
   // ads and Firebase packages so the iOS build stays green, and nothing in

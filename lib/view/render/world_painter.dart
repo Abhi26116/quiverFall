@@ -3,18 +3,20 @@ import 'dart:math' as math;
 import 'package:flutter/painting.dart';
 
 import 'package:quiverfall/game/content/enemy_definition.dart';
+import 'package:quiverfall/game/device/quality_tier.dart';
 import 'package:quiverfall/game/feel/damage_number_pool.dart';
 import 'package:quiverfall/game/feel/feedback_director.dart';
 import 'package:quiverfall/game/feel/feel_palette.dart';
 import 'package:quiverfall/game/feel/juice.dart';
-import 'package:quiverfall/game/sim/arena.dart' as sim;
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/hazard_store.dart';
-import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
+import 'package:quiverfall/view/camera/game_camera.dart';
+import 'package:quiverfall/view/render/arena_layer.dart';
+import 'package:quiverfall/view/render/particle_mesh.dart';
 import 'package:quiverfall/view/render/windline_mesh.dart';
 
 /// The greybox renderer.
@@ -44,12 +46,28 @@ import 'package:quiverfall/view/render/windline_mesh.dart';
 ///  6. Draw arc and Momentum chevrons — player state, always legible.
 ///  7. Damage numbers.
 class WorldPainter {
-  WorldPainter({required this.world, required this.director})
-      : mesh = WindlineMesh();
+  WorldPainter({
+    required this.world,
+    required this.director,
+    GameCamera? camera,
+  })  : camera = camera ?? GameCamera(shake: director.shake),
+        mesh = WindlineMesh(),
+        particleMesh = ParticleMesh();
 
   final SimWorld world;
   final FeedbackDirector director;
+
+  /// Owns the letterbox transform and the shake. See [GameCamera].
+  final GameCamera camera;
+
+  /// The static floor and walls, recorded once per room.
+  final ArenaLayer arenaLayer = ArenaLayer();
+
   final WindlineMesh mesh;
+  final ParticleMesh particleMesh;
+
+  /// The active graphics tier. Everything that scales reads from here.
+  QualityTier quality = QualityTier.high;
 
   // Reused paints. A `Paint` per shape per frame is the kind of allocation that
   // shows up as periodic jank rather than as a slow frame.
@@ -60,38 +78,15 @@ class WorldPainter {
     ..blendMode = BlendMode.plus;
 
   /// World units to logical pixels for the last frame painted.
-  double get scale => _scale;
-  double _scale = 1;
-  double _originX = 0;
-  double _originY = 0;
-
-  /// Converts a screen point to world coordinates. Used by input debugging and
-  /// by anything that needs to know what the player actually touched.
-  void screenToWorld(Offset point, List<double> out) {
-    out[0] = (point.dx - _originX) / _scale;
-    out[1] = (point.dy - _originY) / _scale;
-  }
+  double get scale => camera.scale;
 
   void paint(Canvas canvas, Size size) {
-    _computeTransform(size);
+    camera
+      ..quality = quality
+      ..resize(size)
+      ..apply(canvas);
 
-    canvas.save();
-
-    // Camera: letterbox the fixed 16x9 arena, then apply shake about its
-    // centre. The arena is single-screen by design (docs/14 §14.1) — the camera
-    // never tracks the player, so shake and punch are the only things it does.
-    final double cx = size.width / 2;
-    final double cy = size.height / 2;
-    canvas
-      ..translate(cx, cy)
-      ..rotate(director.shake.roll)
-      ..scale(director.shake.zoomScale)
-      ..translate(-cx, -cy)
-      ..translate(_originX, _originY)
-      ..scale(_scale)
-      ..translate(director.shake.offsetX, director.shake.offsetY);
-
-    _paintArena(canvas);
+    arenaLayer.render(canvas, world.arena, quality);
     _paintTelegraphs(canvas);
     _paintHazards(canvas);
     _paintEntities(canvas);
@@ -101,7 +96,11 @@ class WorldPainter {
       ..render(canvas);
 
     _paintBursts(canvas);
-    _paintParticles(canvas);
+
+    particleMesh
+      ..rebuild(director.particles, density: quality.particleDensity)
+      ..render(canvas);
+
     _paintPlayerState(canvas);
 
     canvas.restore();
@@ -112,45 +111,7 @@ class WorldPainter {
     _paintDamageNumbers(canvas);
   }
 
-  void _computeTransform(Size size) {
-    final double sx = size.width / SimConfig.arenaWidth;
-    final double sy = size.height / SimConfig.arenaHeight;
-    _scale = sx < sy ? sx : sy;
-    _originX = (size.width - SimConfig.arenaWidth * _scale) / 2;
-    _originY = (size.height - SimConfig.arenaHeight * _scale) / 2;
-  }
-
-  // ── Arena ─────────────────────────────────────────────────────────────────
-
-  void _paintArena(Canvas canvas) {
-    final sim.Arena arena = world.arena;
-
-    _fill.color = const Color(FeelPalette.arenaFloor);
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, arena.width, arena.height),
-      _fill,
-    );
-
-    // A thin border so the playfield's edge is unambiguous. Players back into
-    // walls constantly; an invisible boundary reads as the character sticking.
-    _stroke
-      ..color = const Color(FeelPalette.arenaWall)
-      ..strokeWidth = 0.05;
-    canvas.drawRect(Rect.fromLTWH(0, 0, arena.width, arena.height), _stroke);
-
-    _fill.color = const Color(FeelPalette.arenaWall);
-    for (int i = 0; i < arena.wallCount; i++) {
-      canvas.drawRect(
-        Rect.fromLTRB(
-          arena.wallLeft(i),
-          arena.wallTop(i),
-          arena.wallRight(i),
-          arena.wallBottom(i),
-        ),
-        _fill,
-      );
-    }
-  }
+  void dispose() => arenaLayer.dispose();
 
   // ── Telegraphs ────────────────────────────────────────────────────────────
 
@@ -515,21 +476,9 @@ class WorldPainter {
     }
   }
 
-  void _paintParticles(Canvas canvas) {
-    for (int i = 0; i < director.particles.capacity; i++) {
-      if (!director.particles.isAlive(i)) continue;
-
-      final double fade = director.particles.fade(i);
-      _additive.color = Color(
-        FeelPalette.withAlpha(director.particles.colour[i], fade),
-      );
-      canvas.drawCircle(
-        Offset(director.particles.x[i], director.particles.y[i]),
-        director.particles.size[i] * fade,
-        _additive,
-      );
-    }
-  }
+  // Particles are drawn by [ParticleMesh] — one `drawVertices` for all of them.
+  // The per-particle `drawCircle` this replaced was 512 draw calls against a
+  // 7.0 ms render budget (docs/19 §19.1).
 
   // ── Player state: the Draw arc and Momentum chevrons ──────────────────────
 
@@ -641,6 +590,14 @@ class WorldPainter {
       final DamageNumberKind kind = pool.kindAt(i);
       final bool confluence = kind == DamageNumberKind.confluence;
 
+      // Battery tier shows crits and Confluence only (docs/19 §19.4). The pool
+      // still records everything, so raising the tier takes effect on the next
+      // frame rather than on the next fight.
+      if (quality.damageNumbers == DamageNumberPolicy.critsOnly &&
+          kind == DamageNumberKind.normal) {
+        continue;
+      }
+
       final String text = confluence
           ? 'x${pool.stacks[i]} CONFLUENCE'
           : pool.value[i].round().toString();
@@ -652,11 +609,8 @@ class WorldPainter {
         ),
       );
 
-      final double worldY = pool.y[i] - pool.rise(i);
-      final Offset screen = Offset(
-        _originX + pool.x[i] * _scale,
-        _originY + worldY * _scale,
-      );
+      final Offset screen =
+          camera.toScreen(Offset(pool.x[i], pool.y[i] - pool.rise(i)));
 
       // TextPainter allocates. At most 24 of these are live and the sim's
       // zero-allocation guarantee is unaffected, but Phase 7's pooling pass

@@ -209,6 +209,10 @@ class SimWorld {
   /// 1-based global stage index. Set by the run coordinator.
   int globalStage = 1;
 
+  /// Contact-capable enemies allowed on screen at once. Lowered on Battery
+  /// tier (docs/19 §19.4).
+  int enemyCap = SimConfig.maxContactEnemies;
+
   /// True on ticks the player released an arrow. The Echo mirrors it.
   bool _playerFiredThisTick = false;
 
@@ -333,6 +337,7 @@ class SimWorld {
       ..now = _elapsed
       ..enemyHpBase = enemyHpBase
       ..globalStage = globalStage
+      ..enemyCap = enemyCap
       ..playerDraw = playerDraw
       ..playerFired = _playerFiredThisTick;
 

@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:quiverfall/game/pools/pool_report.dart';
+
 /// The shape a telegraph describes.
 ///
 /// Three shapes cover the entire roster and every boss in docs/06. That is not
@@ -43,7 +45,7 @@ enum TelegraphSeverity {
 ///
 /// Fixed capacity, struct-of-arrays, zero allocation — the same discipline as
 /// [EntityStore], for the same reason.
-class TelegraphStore {
+class TelegraphStore implements PoolReport {
   TelegraphStore({this.capacity = 64})
       : _shape = Uint8List(capacity),
         _severity = Uint8List(capacity),
@@ -91,6 +93,18 @@ class TelegraphStore {
   int _liveCount = 0;
 
   int get liveCount => _liveCount;
+
+  @override
+  String get poolName => 'telegraphs';
+
+  @override
+  int get poolCapacity => capacity;
+
+  @override
+  int get poolLive => _liveCount;
+
+  @override
+  int get poolMisses => dropped;
 
   /// Telegraphs dropped because the store was full, since the last [clear].
   ///

@@ -1,6 +1,7 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:quiverfall/core/di/service_locator.dart';
 import 'package:quiverfall/core/routing/routes.dart';
 import 'package:quiverfall/core/theme/tokens.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
@@ -12,6 +13,7 @@ import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:quiverfall/services/audio/audio_port.dart';
+import 'package:quiverfall/services/device/quality_controller.dart';
 import 'package:quiverfall/services/haptics/haptic_service.dart';
 import 'package:quiverfall/view/hud/combat_hud.dart';
 import 'package:quiverfall/view/input/joystick_layer.dart';
@@ -116,6 +118,11 @@ class _GameScreenState extends State<GameScreen>
         _game = QuiverfallGame(
           sim: sim,
           sinks: <CueSink>[_haptics, _audio],
+          // Decided by the boot benchmark. Absent in tests and tools, where the
+          // default tier is the right answer anyway.
+          quality: locator.isRegistered<QualityController>()
+              ? locator<QualityController>()
+              : null,
         );
       });
     } catch (error) {
