@@ -111,6 +111,13 @@ class HeroRuntime {
   static const double firstBloodSpeedDuration = 1.5;
   static const double firstBloodSpeedBonus = 0.25;
 
+  /// Seconds left on Oriel's *Prism* — every arrow spawned while this reads
+  /// above zero carries all four elements at once, checked wherever an
+  /// arrow's element is assigned. Zero means inactive.
+  double prismRemaining = 0;
+
+  static const double prismDuration = 10.0;
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -139,6 +146,7 @@ class HeroRuntime {
     flurryRemaining = 0;
     flurryRateMultiplier = 1.0;
     firstBloodSpeedRemaining = 0;
+    prismRemaining = 0;
     rekindleSpent = false;
     cycleIndex = 0;
   }
@@ -152,5 +160,6 @@ class HeroRuntime {
     // clearing the Kiting window at the same boundary.
     flurryRemaining = 0;
     firstBloodSpeedRemaining = 0;
+    prismRemaining = 0;
   }
 }

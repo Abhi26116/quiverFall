@@ -12,6 +12,7 @@ import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
+import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
@@ -35,6 +36,7 @@ void main() {
   final HeroDefinition sela = heroes.byArchetype(HeroArchetype.sela)!;
   final HeroDefinition sable = heroes.byArchetype(HeroArchetype.sable)!;
   final HeroDefinition nyx = heroes.byArchetype(HeroArchetype.nyx)!;
+  final HeroDefinition oriel = heroes.byArchetype(HeroArchetype.oriel)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -767,6 +769,92 @@ void main() {
     });
   });
 
+  group('Spectrum and Prism', () {
+    ({SimWorld world, int target}) orielArena() {
+      final SimWorld world = SimWorld(seed: 31, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        oriel,
+        const HeroState(heroId: 'oriel'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[0] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    /// Elements of the first [count] arrows fired, in firing order.
+    List<int> firstArrowElements(SimWorld world, int count) {
+      final List<int> out = <int>[];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600 && out.length < count; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) != SimEventType.arrowFired) continue;
+          out.add(world.projectiles.element[world.events.entityAAt(e)]);
+        }
+        world.events.clear();
+      }
+      return out;
+    }
+
+    test('Spectrum cycles Ember -> Frost -> Storm -> Toxin, one per shot', () {
+      final List<int> elements = firstArrowElements(orielArena().world, 8);
+      expect(elements, hasLength(8));
+      for (int i = 0; i < 8; i++) {
+        expect(elements[i], i % 4, reason: 'arrow $i');
+      }
+      // Declaration order in SimElement is the cycle order, not incidental.
+      expect(SimElement.ember.index, 0);
+      expect(SimElement.frost.index, 1);
+      expect(SimElement.storm.index, 2);
+      expect(SimElement.toxin.index, 3);
+    });
+
+    test('Prism carries all four elements at once for its window', () {
+      final ({SimWorld world, int target}) a = orielArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.prismRemaining, closeTo(HeroRuntime.prismDuration, 1e-9));
+
+      final InputSnapshot idle = InputSnapshot();
+      bool sawAllFour = false;
+      for (int t = 0; t < 60; t++) {
+        a.world.tick(idle);
+        for (int e = 0; e < a.world.events.count; e++) {
+          if (a.world.events.typeAt(e) != SimEventType.arrowFired) continue;
+          final int slot = a.world.events.entityAAt(e);
+          if (a.world.projectiles.elementMask[slot] == 0xF) sawAllFour = true;
+        }
+        a.world.events.clear();
+      }
+      expect(sawAllFour, isTrue);
+    });
+
+    test('Endless Prism (★5a) extends the window to 16 s', () {
+      final ({SimWorld world, int target}) a = orielArena();
+      HeroLoadoutResolver.apply(
+        a.world,
+        oriel,
+        const HeroState(
+          heroId: 'oriel',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.prismRemaining, closeTo(16.0, 1e-9));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -793,10 +881,11 @@ void main() {
       // total (kestrelSharperNock never joined this enum — it turned out to
       // be one StatModifier, not a behaviour). Out so far: Wren's four,
       // Kestrel's Flurry plus both ★5 variants, Kade/Sela/Sable's
-      // innate-element passives, and Nyx's First Blood plus Executioner's Eye.
+      // innate-element passives, Nyx's First Blood plus Executioner's Eye,
+      // and Oriel's Spectrum, Prism and Endless Prism.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(128),
+        lessThanOrEqualTo(125),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -971,10 +1060,16 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.mirelleEndlessHall,
   HeroBehaviour.mirelleTwinWarden,
 
-  HeroBehaviour.orielSpectrum,
-  HeroBehaviour.orielPrism,
+  // orielSpectrum, orielPrism and orielEndlessPrism are implemented — see
+  // the "Spectrum and Prism" group.
   HeroBehaviour.orielFasterCycle,
   HeroBehaviour.orielSaturation,
-  HeroBehaviour.orielEndlessPrism,
+  // orielWhiteLight: the 6 s duration is free, but "reactions deal x3"
+  // needs Reaction/elementalBonus damage wiring that does not exist yet —
+  // projectiles.elementalBonus is set and never read anywhere. Shipping the
+  // duration alone would be a card that promises x3 and does not deliver.
+  // Real work for whoever needs elemental/reaction damage bonuses first —
+  // Attuned (#Oriel T1b, allElementDamage) and Resonance (T3a,
+  // reactionDamage) are blocked on the exact same wiring.
   HeroBehaviour.orielWhiteLight,
 };

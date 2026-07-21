@@ -423,6 +423,10 @@ class SimWorld {
       hero.firstBloodSpeedRemaining -= dt;
       if (hero.firstBloodSpeedRemaining < 0) hero.firstBloodSpeedRemaining = 0;
     }
+    if (hero.prismRemaining > 0) {
+      hero.prismRemaining -= dt;
+      if (hero.prismRemaining < 0) hero.prismRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -737,8 +741,19 @@ class SimWorld {
       _fireWrenVolleyFan();
     } else if (hero.has(HeroBehaviour.kestrelFlurry)) {
       _fireKestrelFlurry();
+    } else if (hero.has(HeroBehaviour.orielPrism)) {
+      // *White Light* (T5b) is not handled here: its duration change is free,
+      // but "reactions deal x3" needs Reaction/elementalBonus damage wiring
+      // that does not exist anywhere yet (see the ledger's own note on
+      // orielAttuned/orielResonance), and shipping the duration half alone
+      // would be a card that promises x3 and does not deliver it.
+      hero.prismRemaining = hero.has(HeroBehaviour.orielEndlessPrism)
+          ? _orielEndlessPrismDuration
+          : HeroRuntime.prismDuration;
     }
   }
+
+  static const double _orielEndlessPrismDuration = 16.0;
 
   /// *Flurry* — a timed self-buff rather than a burst: forced Tier III and a
   /// fire-rate multiplier for its duration, both read every tick from
@@ -914,6 +929,7 @@ class SimWorld {
     projectiles.drawTier[i] = tier.index;
     projectiles.lifetime[i] = arrowLifetime;
     projectiles.element[i] = _arrowElementIndex();
+    _applyOrielElementCycle(i);
 
     _applyArrowBoons(i, tier);
 
@@ -925,6 +941,22 @@ class SimWorld {
       x: x,
       y: y,
     );
+  }
+
+  /// Oriel: *Spectrum* cycles the equipped arrow's own element away in
+  /// favour of Ember → Frost → Storm → Toxin, one per shot; *Prism* replaces
+  /// that with all four at once for its own window. Prism wins when both are
+  /// live, which is every tick it runs — Spectrum is Oriel's passive, always
+  /// on, and Prism is layered on top of it rather than instead of it.
+  void _applyOrielElementCycle(int i) {
+    if (hero.prismRemaining > 0 && hero.has(HeroBehaviour.orielPrism)) {
+      projectiles.elementMask[i] = _allElements;
+      return;
+    }
+    if (hero.has(HeroBehaviour.orielSpectrum)) {
+      projectiles.element[i] = SimElement.values[hero.cycleIndex].index;
+      hero.cycleIndex = (hero.cycleIndex + 1) % SimElement.values.length;
+    }
   }
 
   /// The element the next arrow carries.
