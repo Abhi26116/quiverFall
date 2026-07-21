@@ -10,6 +10,7 @@ import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
+import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
@@ -52,6 +53,13 @@ enum SystemOrder {
   draw,
   collision,
   firing,
+  // Phase 10. Right after ordinary firing so an ultimate that spawns arrows
+  // (Wren's Volley Fan) has them swept by this same tick's projectile step —
+  // exactly the ordering an ordinary volley already gets. No replay or
+  // balance number was voided: no world before Phase 10 could ever hold a
+  // hero, so `_updateUltimate` returns immediately (`hero.ultimateReady` is
+  // false with no loadout applied) for every pre-existing seeded run.
+  ultimate,
   // Confluence is resolved inside the projectile step, on each arrow's swept
   // path, so it cannot land a tick late.
   projectile,
@@ -416,6 +424,12 @@ class SimWorld {
     // ── firing ─────────────────────────────────────────────────────────────
     _updateFiring(dt);
 
+    // ── ultimate ───────────────────────────────────────────────────────────
+    // After ordinary firing, before the projectile step, so an ultimate that
+    // spawns arrows (Wren's Volley Fan) has them processed this same tick —
+    // exactly the ordering ordinary volleys already get.
+    _updateUltimate(input);
+
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
     windlineIndex.rebuild(windlines);
@@ -439,6 +453,7 @@ class SimWorld {
       status: status,
       combat: combat,
       boons: boons,
+      hero: hero,
       confluenceDamageMultiplier: confluenceDamageMultiplier,
     );
 
@@ -606,7 +621,7 @@ class SimWorld {
     final AimAssist assist =
         boons.has(BoonBehaviour.blindFury) ? AimAssist.off : aimAssist;
 
-    final double angle = FiringSystem.aimAngle(
+    double angle = FiringSystem.aimAngle(
       entities,
       target,
       fromX,
@@ -616,11 +631,153 @@ class SimWorld {
       projectileSpeed,
     );
 
+    // *Trueshot* — Tier III shots gain a mild homing correction onto a moving
+    // target, on top of whatever the base aim assist already resolved.
+    if (tier == DrawTier.three && hero.has(HeroBehaviour.wrenTrueshot)) {
+      angle = _wrenTrueshotAngle(angle, target, fromX, fromY, entities.facing[p]);
+    }
+
     for (int s = 0; s < shots; s++) {
       _spawnVolley(fromX, fromY, angle, tier);
     }
     _playerFiredThisTick = true;
   }
+
+  /// *Trueshot*'s "mild homing (12°)": leads the target the way
+  /// [AimAssist.strong] would, but the correction away from the ordinary
+  /// aim angle is capped at 12° rather than applied in full — a nudge, not a
+  /// lock.
+  double _wrenTrueshotAngle(
+    double standardAngle,
+    int target,
+    double fromX,
+    double fromY,
+    double facing,
+  ) {
+    final double leadAngle = FiringSystem.aimAngle(
+      entities,
+      target,
+      fromX,
+      fromY,
+      facing,
+      AimAssist.strong,
+      projectileSpeed,
+    );
+
+    double delta = leadAngle - standardAngle;
+    // Normalise to (-pi, pi] first, so a wraparound near +-180 deg is read as
+    // the short turn rather than the long way around.
+    while (delta > math.pi) {
+      delta -= math.pi * 2;
+    }
+    while (delta < -math.pi) {
+      delta += math.pi * 2;
+    }
+    if (delta > _wrenTrueshotMaxCorrection) delta = _wrenTrueshotMaxCorrection;
+    if (delta < -_wrenTrueshotMaxCorrection) delta = -_wrenTrueshotMaxCorrection;
+    return standardAngle + delta;
+  }
+
+  /// 12°, in radians — docs/07 §7.0's own figure for Trueshot's homing cone.
+  static const double _wrenTrueshotMaxCorrection = math.pi / 15;
+
+  /// The manual Ultimate button. Charges from damage dealt
+  /// ([HeroRuntime.chargeFromDamage], called from [ProjectileSystem]); firing
+  /// it is entirely this method's concern.
+  ///
+  /// Never auto-casts — docs/07 §7.0 is explicit that this is "a single large
+  /// button, right thumb", not a payoff the sim decides to spend on the
+  /// player's behalf.
+  void _updateUltimate(InputSnapshot input) {
+    if (hero.consumeJustBecameReady()) {
+      events.emit(
+        SimEventType.ultimateReady,
+        entityA: player.isNone ? -1 : player.index,
+      );
+    }
+
+    if (!input.ultimatePressed) return;
+    if (!hero.ultimateReady) return;
+    if (player.isNone || !entities.isAlive(player)) return;
+
+    _fireUltimate();
+    hero.ultimateCharge = 0;
+    events.emit(SimEventType.ultimateUsed, entityA: player.index);
+  }
+
+  /// Dispatches to whichever hero's ultimate behaviour is live. Exactly one
+  /// hero is ever equipped, so exactly one branch below ever fires for a
+  /// given world — this is a switch on identity, not a stack of effects.
+  void _fireUltimate() {
+    if (hero.has(HeroBehaviour.wrenVolleyFan)) {
+      _fireWrenVolleyFan();
+    }
+  }
+
+  /// *Volley Fan* — 7 arrows in a 90° arc, each at 80 % damage, each laying
+  /// its own Windline exactly as any other Tier III arrow would. *Wide Fan*
+  /// (T3a) and *Focused Fan* (T3b) are the same release with a different
+  /// count, damage share and pierce, not a different mechanic — [hero]'s
+  /// flags pick which one applies.
+  void _fireWrenVolleyFan() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double fromX = entities.posX[p];
+    final double fromY = entities.posY[p];
+
+    final int target = FiringSystem.selectTarget(
+      entities,
+      spatial,
+      fromX,
+      fromY,
+      enemies: enemies,
+    );
+    // No target still fires — an Ultimate that fizzled because nothing was in
+    // range would feel like the button ate the charge for nothing. Centred on
+    // facing instead.
+    final double baseAngle = target >= 0
+        ? FiringSystem.aimAngle(entities, target, fromX, fromY,
+            entities.facing[p], aimAssist, projectileSpeed)
+        : entities.facing[p];
+
+    final bool focused = hero.has(HeroBehaviour.wrenFocusedFan);
+    final bool wide = hero.has(HeroBehaviour.wrenWideFan);
+
+    final int count = focused
+        ? _wrenFocusedFanArrows
+        : (wide ? _wrenWideFanArrows : _wrenVolleyArrows);
+    final double share = focused
+        ? _wrenFocusedFanDamageShare
+        : (wide ? _wrenWideFanDamageShare : _wrenVolleyDamageShare);
+    // Focused Fan's card reads "pierce 3" as a bonus on top of a Tier III
+    // arrow's own baseline 2, matching how every other pierce-granting source
+    // in the game (Boons, arrows) adds rather than replaces.
+    final int extraPierce = focused ? _wrenFocusedFanPierce : 0;
+
+    final double step = count > 1 ? _wrenVolleyArcRadians / (count - 1) : 0;
+    final double start = baseAngle - _wrenVolleyArcRadians * 0.5;
+    for (int i = 0; i < count; i++) {
+      _spawnArrow(
+        fromX,
+        fromY,
+        start + step * i,
+        DrawTier.three,
+        share,
+        extraPierce: extraPierce,
+      );
+    }
+  }
+
+  static const int _wrenVolleyArrows = 7;
+  static const double _wrenVolleyDamageShare = 0.80;
+  static const int _wrenWideFanArrows = 11;
+  static const double _wrenWideFanDamageShare = 0.60;
+  static const int _wrenFocusedFanArrows = 3;
+  static const double _wrenFocusedFanDamageShare = 2.20;
+  static const int _wrenFocusedFanPierce = 3;
+
+  /// 90°, in radians — the arc every Volley Fan variant fans across.
+  static const double _wrenVolleyArcRadians = math.pi / 2;
 
   /// Releases one shot, which may be several arrows.
   ///
@@ -675,8 +832,9 @@ class SimWorld {
     double y,
     double angle,
     DrawTier tier,
-    double damageScale,
-  ) {
+    double damageScale, {
+    int extraPierce = 0,
+  }) {
     final EntityId id = entities.spawn(EntityKind.projectile);
     if (id.isNone) return;
 
@@ -696,7 +854,7 @@ class SimWorld {
     projectiles.windlineSerial[i] = windlines.nextSerial;
     projectiles.trailId[i] = _nextTrailId++;
     projectiles.damage[i] = playerAttack * damageScale;
-    projectiles.pierceRemaining[i] = basePierce + tier.bonusPierce;
+    projectiles.pierceRemaining[i] = basePierce + tier.bonusPierce + extraPierce;
     projectiles.drawTier[i] = tier.index;
     projectiles.lifetime[i] = arrowLifetime;
     projectiles.element[i] = _arrowElementIndex();

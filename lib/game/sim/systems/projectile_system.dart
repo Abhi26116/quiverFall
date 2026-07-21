@@ -6,6 +6,7 @@ import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
@@ -44,6 +45,7 @@ abstract final class ProjectileSystem {
     required double confluenceDamageMultiplier,
     EnemyStore? enemies,
     StatusStore? status,
+    HeroRuntime? hero,
   }) {
     final int high = store.highWater;
 
@@ -122,6 +124,7 @@ abstract final class ProjectileSystem {
         toY: toY,
         combat: combat,
         boons: boons,
+        hero: hero,
       );
 
       if (consumed) continue;
@@ -264,6 +267,7 @@ abstract final class ProjectileSystem {
     required double toY,
     required CombatModifiers combat,
     required BoonRuntime boons,
+    HeroRuntime? hero,
   }) {
     final double arrowRadius = store.radius[slot];
     final int candidates =
@@ -303,6 +307,7 @@ abstract final class ProjectileSystem {
         fromY: fromY,
         combat: combat,
         boons: boons,
+        hero: hero,
       );
 
       if (projectiles.pierceRemaining[slot] < 0) {
@@ -330,6 +335,7 @@ abstract final class ProjectileSystem {
     required double fromY,
     required CombatModifiers combat,
     required BoonRuntime boons,
+    HeroRuntime? hero,
   }) {
     final int pierceIndex = projectiles.hitCount[slot];
     projectiles.recordHit(slot, targetId);
@@ -446,6 +452,10 @@ abstract final class ProjectileSystem {
       x: store.posX[target],
       y: store.posY[target],
     );
+
+    // docs/07 §7.0's Ultimate charge formula reads on the damage a hit
+    // actually dealt, the same number the event above just reported.
+    hero?.chargeFromDamage(toHealth);
 
     // Death is **not** resolved here. [AiSystem]'s death pass owns it, because a
     // death can mean a detonation, a revival or a split, and those must not

@@ -84,6 +84,11 @@ void main() {
           'draw',
           'collision',
           'firing',
+          // Phase 10. Right after ordinary firing, before the projectile step
+          // sweeps whatever either one spawned this tick. No pre-Phase-10 run
+          // is affected: no world before now could ever hold a hero, so
+          // `_updateUltimate` is a no-op for every one of them.
+          'ultimate',
           'projectile',
           'windlineExpiry',
           'element',

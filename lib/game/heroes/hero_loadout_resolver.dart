@@ -9,6 +9,7 @@ import 'package:quiverfall/game/heroes/hero_definition.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_stats.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
 import 'package:quiverfall/game/sim/world.dart';
 
@@ -112,7 +113,12 @@ abstract final class HeroLoadoutResolver {
 
     world.hero
       ..setHeroActive(heroActive)
-      ..setArrowActive(arrow.behaviour);
+      ..setArrowActive(arrow.behaviour)
+      // ADR 0006: the hero's own base ATK and fire rate, not the composed
+      // build — Boons and the arrow change how fast damage adds up, not how
+      // fast that damage fills the bar.
+      ..chargePerDamage =
+          1.0 / (HeroRuntime.ultimateChargeDivisor * heroAtk * heroFireRate);
   }
 
   /// The same add-or-multiply rule [BoonInventory] applies to every

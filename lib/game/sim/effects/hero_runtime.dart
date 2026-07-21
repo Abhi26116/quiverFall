@@ -55,6 +55,37 @@ class HeroRuntime {
   /// formula rather than a bare `/14`.
   static const double ultimateChargeDivisor = 14.0;
 
+  /// `1 / (14 * heroATK * fireRate)` — set by `HeroLoadoutResolver.apply`
+  /// from the hero's own base stat block, per ADR 0006. Zero (the resting
+  /// value) means no hero is loaded and damage charges nothing, rather than
+  /// dividing by zero.
+  double chargePerDamage = 0;
+
+  /// Adds this hit's share of Ultimate charge. [rawDamage] is the damage the
+  /// hit actually dealt — pre-mitigation makes an armoured target charge the
+  /// Ultimate slower than a fodder one, which is backwards for a resource
+  /// meant to reward landing hits at all.
+  void chargeFromDamage(double rawDamage) {
+    if (chargePerDamage <= 0) return;
+    final double next = ultimateCharge + rawDamage * chargePerDamage;
+    ultimateCharge = next > 1.0 ? 1.0 : next;
+  }
+
+  bool _readyAnnounced = false;
+
+  /// True exactly once per charge-up — the tick charge first reaches 1.0.
+  /// [SimWorld] uses this to emit `SimEventType.ultimateReady` once rather
+  /// than every tick the button sits full.
+  bool consumeJustBecameReady() {
+    if (!ultimateReady) {
+      _readyAnnounced = false;
+      return false;
+    }
+    if (_readyAnnounced) return false;
+    _readyAnnounced = true;
+    return true;
+  }
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -78,6 +109,8 @@ class HeroRuntime {
       _arrowActive[i] = false;
     }
     ultimateCharge = 0;
+    chargePerDamage = 0;
+    _readyAnnounced = false;
     rekindleSpent = false;
     cycleIndex = 0;
   }
