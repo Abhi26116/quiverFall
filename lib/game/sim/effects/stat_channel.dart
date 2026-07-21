@@ -135,6 +135,12 @@ enum StatChannel {
   /// Fraction of max HP per second, while moving.
   regenWhileMoving,
 
+  /// Fraction of max HP per second, while stationary. The mirror image of
+  /// [regenWhileMoving] — Lira's *Sanctuary* talent is the first thing to use
+  /// it, and it composes the same way: additive, summed with anything else
+  /// that ever writes to it.
+  regenWhileStationary,
+
   /// Multiplier on incoming damage. *Hollow Bones* pays for its speed here.
   damageTakenMultiplier,
 
@@ -178,6 +184,13 @@ enum StatChannel {
 
   /// Fraction of an enemy's max HP per second, while it stands on a line.
   windlineDamage,
+
+  // ── Ultimate ──────────────────────────────────────────────────────────────
+
+  /// Multiplier on how fast the Ultimate charges. docs/07 §7.0:
+  /// `charge% = 100 · damageDealt / (14 · heroATK · fireRate)` — this scales
+  /// the whole expression, so "charges 25 % faster" is 1.25 here.
+  ultimateChargeRate,
 
   // ── Elemental ─────────────────────────────────────────────────────────────
 
@@ -239,7 +252,8 @@ enum StatChannel {
       this == momentumDecayRate ||
       this == momentumBuildRate ||
       this == drawSpeed ||
-      this == damageTakenMultiplier;
+      this == damageTakenMultiplier ||
+      this == ultimateChargeRate;
 
   /// Channels that hold a count, not a fraction. Rounded, never interpolated.
   bool get isIntegral =>
@@ -254,4 +268,24 @@ enum StatChannel {
       this == boonRerolls ||
       this == insightPerElite ||
       this == vigorRefund;
+}
+
+/// A channel and an amount — the smallest unit every content system that
+/// moves a [StatChannel] is built from.
+///
+/// Boons already have their own [BoonModifier] with this exact shape, kept
+/// separate rather than reused here so a talent branch does not read as
+/// borrowing from the Boon system it has nothing to do with. Both compile down
+/// to the same two fields on purpose: a hero's "+12 % crit damage" talent and
+/// a Boon's "+15 % crit damage" card are the same kind of fact, read by the
+/// same [StatChannel], composed by the same rules in docs/04 §4.1 — they just
+/// come from different places in the loadout.
+class StatModifier {
+  const StatModifier(this.channel, this.value);
+
+  final StatChannel channel;
+  final double value;
+
+  @override
+  String toString() => '${channel.name} ${value >= 0 ? '+' : ''}$value';
 }

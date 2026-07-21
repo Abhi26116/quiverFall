@@ -1,0 +1,1572 @@
+{
+  "_comment": [
+    "The 20 heroes of docs/07-heroes.md, authored verbatim from the doc.",
+    "",
+    "Stat baselines are level-1, star-0 values (docs/07 §7.0's reference-Warden",
+    "indices). HeroLeveling (docs/04 §4.3) scales them at loadout time:",
+    "heroBase(lvl) = statAtL1 * (1 + 0.085*(lvl-1)), +12% per star.",
+    "",
+    "Unlock costs docs/07 states as a bare 'shards' with no number (Sela,",
+    "Halden, Ashlin) use the standard 40-shard unlock cost docs/04 §4.3 states",
+    "generally ('40 to unlock, then 30/80/180/400/900') rather than an invented",
+    "number. Unlock text that says a chapter with no 'shards' word (Torv, Sable,",
+    "Lira, Corvin, Vane, Thane) is read literally as a chapter-clear grant, not",
+    "as an unstated shard cost — see docs/decisions/0005-hero-unlock-costs.md.",
+    "",
+    "Every StatModifier value is PER INSTANCE, same convention as boons.json.",
+    "Multiplicative channels (see StatChannel.isMultiplicative) rest at 1.0."
+  ],
+  "heroes": [
+    {
+      "id": 1,
+      "archetype": "wren",
+      "key": "wren",
+      "name": "Wren",
+      "epithet": "the First Warden",
+      "rarity": "common",
+      "role": "Generalist",
+      "stats": { "atk": 100, "hp": 100, "moveSpeed": 3.20, "fireRate": 2.20 },
+      "unlock": { "kind": "free" },
+      "passive": {
+        "name": "Trueshot",
+        "description": "+8 % crit chance. Tier III shots cannot miss a moving target (mild homing, 12°)",
+        "modifiers": [{ "channel": "critChance", "value": 0.08 }],
+        "behaviour": "wrenTrueshot"
+      },
+      "ultimate": {
+        "name": "Volley Fan",
+        "description": "7 arrows in a 90° arc, each at 80 % damage, each laying a full Windline",
+        "behaviour": "wrenVolleyFan"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Steady Hand",
+              "description": "+12 % crit damage",
+              "modifiers": [{ "channel": "critDamage", "value": 0.12 }]
+            },
+            {
+              "key": "b",
+              "name": "Fleet",
+              "description": "+10 % move speed",
+              "modifiers": [{ "channel": "moveSpeed", "value": 0.10 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Wide Fan",
+              "description": "Ultimate fires 11 arrows at 60 % damage",
+              "behaviour": "wrenWideFan"
+            },
+            {
+              "key": "b",
+              "name": "Focused Fan",
+              "description": "Ultimate fires 3 arrows at 220 % damage, pierce 3",
+              "behaviour": "wrenFocusedFan"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Warden's Lattice",
+              "description": "Ultimate's Windlines last 4 s",
+              "behaviour": "wrenWardensLattice"
+            },
+            {
+              "key": "b",
+              "name": "Warden's Fury",
+              "description": "Ultimate refunds 30 % charge on kill",
+              "behaviour": "wrenWardensFury"
+            }
+          ]
+        }
+      ],
+      "strengths": "No bad matchups, teaches the game, strong at every stage.",
+      "weaknesses": "Never the best answer to anything — deliberately, so the starter stays viable without ever being optimal."
+    },
+    {
+      "id": 2,
+      "archetype": "bram",
+      "key": "bram",
+      "name": "Bram",
+      "epithet": "the Siegewright",
+      "rarity": "common",
+      "role": "Area damage",
+      "stats": { "atk": 118, "hp": 110, "moveSpeed": 2.95, "fireRate": 1.85 },
+      "unlock": { "kind": "chapterClear", "chapter": 2 },
+      "passive": {
+        "name": "Heavy Ordnance",
+        "description": "Arrows detonate for 45 % splash in 1.6 u. Splash never applies elements.",
+        "behaviour": "bramHeavyOrdnance"
+      },
+      "ultimate": {
+        "name": "Mortar Rain",
+        "description": "12 shells over 3 s across the arena, each 130 %, amber-telegraphed",
+        "behaviour": "bramMortarRain"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Wider Blast",
+              "description": "Splash radius 2.2 u",
+              "behaviour": "bramWiderBlast"
+            },
+            {
+              "key": "b",
+              "name": "Denser Blast",
+              "description": "65 % splash, radius 1.2 u",
+              "behaviour": "bramDenserBlast"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Concussion",
+              "description": "Splash staggers Rush enemies",
+              "behaviour": "bramConcussion"
+            },
+            {
+              "key": "b",
+              "name": "Incendiary",
+              "description": "Splash applies Burn at 40 %",
+              "behaviour": "bramIncendiary"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Saturation",
+              "description": "Mortar Rain fires 20 shells",
+              "behaviour": "bramSaturation"
+            },
+            {
+              "key": "b",
+              "name": "Precision Strike",
+              "description": "Mortar Rain fires 4 shells, 500 %, boss-seeking",
+              "behaviour": "bramPrecisionStrike"
+            }
+          ]
+        }
+      ],
+      "strengths": "Swarmlings, Skarn, crowd floors.",
+      "weaknesses": "Slow fire rate makes Shellback and Bulwark miserable; splash cannot break Husk plating."
+    },
+    {
+      "id": 3,
+      "archetype": "kestrel",
+      "key": "kestrel",
+      "name": "Kestrel",
+      "epithet": "the Quickstring",
+      "rarity": "common",
+      "role": "Speed",
+      "stats": { "atk": 78, "hp": 88, "moveSpeed": 3.55, "fireRate": 2.95 },
+      "unlock": { "kind": "chapterClear", "chapter": 3 },
+      "passive": {
+        "name": "Hummingbird",
+        "description": "+25 % fire rate, −15 % damage per arrow. Draw tiers advance 30 % faster.",
+        "modifiers": [
+          { "channel": "fireRate", "value": 0.25 },
+          { "channel": "damage", "value": -0.15 },
+          { "channel": "drawSpeed", "value": 0.70 }
+        ]
+      },
+      "ultimate": {
+        "name": "Flurry",
+        "description": "4 s of ×3 fire rate at Tier III regardless of movement. Movement no longer drops the tier for the duration.",
+        "behaviour": "kestrelFlurry"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Lighter Draw",
+              "description": "Tier time −45 % total",
+              "modifiers": [{ "channel": "drawSpeed", "value": 0.55 }]
+            },
+            {
+              "key": "b",
+              "name": "Sharper Nock",
+              "description": "Recovers Hummingbird's −15 % damage penalty at Tier III",
+              "behaviour": "kestrelSharperNock"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Windrunner",
+              "description": "+0.6 s Windline duration",
+              "modifiers": [{ "channel": "windlineDuration", "value": 0.6 }]
+            },
+            {
+              "key": "b",
+              "name": "Bleed",
+              "description": "Every 4th arrow applies a 3 s bleed",
+              "behaviour": "kestrelBleed"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Endless Flurry",
+              "description": "Flurry lasts 7 s at ×2.2 rate",
+              "behaviour": "kestrelEndlessFlurry"
+            },
+            {
+              "key": "b",
+              "name": "Perfect Flurry",
+              "description": "Flurry lasts 3 s at ×3 rate, +100 % Confluence damage",
+              "behaviour": "kestrelPerfectFlurry"
+            }
+          ]
+        }
+      ],
+      "strengths": "The best Confluence hero in the game — Windline density scales with fire rate.",
+      "weaknesses": "Worst single-shot damage; loses hard to Husk/Ironmaw plating and to Warden-Fell."
+    },
+    {
+      "id": 4,
+      "archetype": "ovrin",
+      "key": "ovrin",
+      "name": "Ovrin",
+      "epithet": "the Bulwark",
+      "rarity": "common",
+      "role": "Tank",
+      "stats": { "atk": 92, "hp": 155, "moveSpeed": 2.90, "fireRate": 2.00 },
+      "unlock": { "kind": "chapterClear", "chapter": 2, "note": "star-up shards drop from Gaunt" },
+      "passive": {
+        "name": "Aegis",
+        "description": "+55 % max HP. Each Momentum stack grants a shield equal to 2 % max HP (max 5 stacks = 10 %), refreshing while moving.",
+        "modifiers": [
+          { "channel": "maxHealth", "value": 0.55 },
+          { "channel": "shieldPerMomentum", "value": 0.02 }
+        ]
+      },
+      "ultimate": {
+        "name": "Aegis Pin",
+        "description": "Plants a shield wall that blocks all enemy projectiles for 6 s and reflects 30 % of blocked damage as Storm.",
+        "behaviour": "ovrinAegisPin"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Thicker Plate",
+              "description": "+15 % max HP",
+              "modifiers": [{ "channel": "maxHealth", "value": 0.15 }]
+            },
+            {
+              "key": "b",
+              "name": "Faster Guard",
+              "description": "Momentum stacks build 40 % faster",
+              "modifiers": [{ "channel": "momentumBuildRate", "value": 1.40 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Bastion",
+              "description": "Shield per Momentum stack rises to 4 %",
+              "modifiers": [{ "channel": "shieldPerMomentum", "value": 0.02 }]
+            },
+            {
+              "key": "b",
+              "name": "Riposte",
+              "description": "Breaking a shield deals 200 % AoE",
+              "behaviour": "ovrinRiposte"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Long Wall",
+              "description": "Aegis Pin lasts 10 s",
+              "behaviour": "ovrinLongWall"
+            },
+            {
+              "key": "b",
+              "name": "Mirror Wall",
+              "description": "Aegis Pin reflects 100 % for 3 s",
+              "behaviour": "ovrinMirrorWall"
+            }
+          ]
+        }
+      ],
+      "strengths": "The answer to Longeye, Mortarite, and every projectile boss. The recommended pick for a stuck player.",
+      "weaknesses": "Lowest damage ceiling; long fights."
+    },
+    {
+      "id": 5,
+      "archetype": "kade",
+      "key": "kade",
+      "name": "Kade",
+      "epithet": "the Emberhand",
+      "rarity": "rare",
+      "role": "Ember",
+      "stats": { "atk": 108, "hp": 100, "moveSpeed": 3.15, "fireRate": 2.10 },
+      "unlock": { "kind": "free", "chapter": 5, "note": "tutorial grant" },
+      "passive": {
+        "name": "Kindling",
+        "description": "Tier III arrows apply Burn (4 % of enemy max HP/s, 4 s, stacks ×2)",
+        "behaviour": "kadeKindling"
+      },
+      "ultimate": {
+        "name": "Pyre Line",
+        "description": "A burning wall along the aim vector for 8 s; enemies crossing take Burn ×3.",
+        "behaviour": "kadePyreLine"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Hot Iron",
+              "description": "Burn also applies at Tier II",
+              "behaviour": "kadeHotIron"
+            },
+            {
+              "key": "b",
+              "name": "Deep Burn",
+              "description": "Burn rises to 6 %/s, Tier III only",
+              "behaviour": "kadeDeepBurn"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Wildfire",
+              "description": "Burn spreads to one enemy within 2 u on death",
+              "behaviour": "kadeWildfire"
+            },
+            {
+              "key": "b",
+              "name": "Slow Burn",
+              "description": "Burn lasts 8 s, stacks ×3",
+              "behaviour": "kadeSlowBurn"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Long Pyre",
+              "description": "Pyre Line lasts 14 s",
+              "behaviour": "kadeLongPyre"
+            },
+            {
+              "key": "b",
+              "name": "Twin Pyre",
+              "description": "Two crossed walls — an instant Confluence intersection",
+              "behaviour": "kadeTwinPyre"
+            }
+          ]
+        }
+      ],
+      "strengths": "Gravebound (burn denies revive), swarms, sustained fights.",
+      "weaknesses": "Warden-Fell, Rimefather, burst windows."
+    },
+    {
+      "id": 6,
+      "archetype": "sela",
+      "key": "sela",
+      "name": "Sela",
+      "epithet": "the Rimebound",
+      "rarity": "rare",
+      "role": "Frost",
+      "stats": { "atk": 102, "hp": 105, "moveSpeed": 3.10, "fireRate": 2.15 },
+      "unlock": {
+        "kind": "shards",
+        "shardCost": 40,
+        "source": "chapter 4 chests",
+        "note": "docs/07 does not state a cost; 40 is docs/04 §4.3's standard unlock cost"
+      },
+      "passive": {
+        "name": "Chill",
+        "description": "Every hit applies 12 Chill; at 100 the enemy freezes 1.6 s and takes +30 % damage while frozen.",
+        "behaviour": "selaChill"
+      },
+      "ultimate": {
+        "name": "Glacier Nail",
+        "description": "A spike of ice at the target; freezes everything in 3.5 u for 3 s.",
+        "behaviour": "selaGlacierNail"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Deeper Chill",
+              "description": "Chill rises to 16 per hit",
+              "behaviour": "selaDeeperChill"
+            },
+            {
+              "key": "b",
+              "name": "Brittle",
+              "description": "Frozen targets take +45 % damage",
+              "behaviour": "selaBrittle"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Shatter",
+              "description": "Killing a frozen enemy deals 250 % in 2 u",
+              "behaviour": "selaShatter"
+            },
+            {
+              "key": "b",
+              "name": "Lingering Frost",
+              "description": "Frozen enemies leave a 3 s slow field",
+              "behaviour": "selaLingeringFrost"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Absolute Zero",
+              "description": "Glacier Nail becomes 5 s, 5 u",
+              "behaviour": "selaAbsoluteZero"
+            },
+            {
+              "key": "b",
+              "name": "Cascading Nail",
+              "description": "Freeze chains to 3 more enemies",
+              "behaviour": "selaCascadingNail"
+            }
+          ]
+        }
+      ],
+      "strengths": "Hard-counters Cinder Mote, Ironmaw enrage, Lancer charges, Vermillion.",
+      "weaknesses": "Bosses with freeze immunity; slow against single high-HP targets."
+    },
+    {
+      "id": 7,
+      "archetype": "torv",
+      "key": "torv",
+      "name": "Torv",
+      "epithet": "the Stormcalled",
+      "rarity": "rare",
+      "role": "Storm",
+      "stats": { "atk": 105, "hp": 98, "moveSpeed": 3.20, "fireRate": 2.20 },
+      "unlock": { "kind": "chapterClear", "chapter": 7 },
+      "passive": {
+        "name": "Arc",
+        "description": "Every 5th arrow chains to 3 additional enemies at 60 % damage. Chains travel along live Windlines.",
+        "behaviour": "torvArc"
+      },
+      "ultimate": {
+        "name": "Tempest Nock",
+        "description": "5 s where every arrow chains to 5 targets.",
+        "behaviour": "torvTempestNock"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Frequent Arc",
+              "description": "Arc triggers every 3rd arrow",
+              "behaviour": "torvFrequentArc"
+            },
+            {
+              "key": "b",
+              "name": "Wide Arc",
+              "description": "Arc chains to 5 targets",
+              "behaviour": "torvWideArc"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Conductive Lines",
+              "description": "Chains along Windlines deal +80 %",
+              "behaviour": "torvConductiveLines"
+            },
+            {
+              "key": "b",
+              "name": "Overload",
+              "description": "Chain targets take +20 % damage for 4 s",
+              "behaviour": "torvOverload"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Long Tempest",
+              "description": "Tempest Nock lasts 8 s",
+              "behaviour": "torvLongTempest"
+            },
+            {
+              "key": "b",
+              "name": "Thunderhead",
+              "description": "Tempest Nock also stuns 0.5 s per chain",
+              "behaviour": "torvThunderhead"
+            }
+          ]
+        }
+      ],
+      "strengths": "Grouped enemies, Arclight, Swarmlings, lattice play.",
+      "weaknesses": "Single-target, Null, isolated bosses."
+    },
+    {
+      "id": 8,
+      "archetype": "sable",
+      "key": "sable",
+      "name": "Sable",
+      "epithet": "the Wither",
+      "rarity": "rare",
+      "role": "Toxin",
+      "stats": { "atk": 88, "hp": 102, "moveSpeed": 3.20, "fireRate": 2.35 },
+      "unlock": { "kind": "chapterClear", "chapter": 8 },
+      "passive": {
+        "name": "Toxin",
+        "description": "Hits stack Toxin (max 10). Each stack deals 0.9 % of enemy max HP/s and reduces healing 5 %.",
+        "behaviour": "sableToxin"
+      },
+      "ultimate": {
+        "name": "Miasma",
+        "description": "A 5 u cloud for 8 s applying 2 stacks/s.",
+        "behaviour": "sableMiasma"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Virulence",
+              "description": "Toxin cap rises to 12",
+              "behaviour": "sableVirulence"
+            },
+            {
+              "key": "b",
+              "name": "Fast Acting",
+              "description": "Stacks apply 2× faster, max 8",
+              "behaviour": "sableFastActing"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Contagion",
+              "description": "On death, half the stacks jump to the nearest enemy",
+              "behaviour": "sableContagion"
+            },
+            {
+              "key": "b",
+              "name": "Corrosion",
+              "description": "Each stack also reduces enemy damage 2 %",
+              "behaviour": "sableCorrosion"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Lasting Miasma",
+              "description": "Miasma lasts 14 s",
+              "behaviour": "sableLastingMiasma"
+            },
+            {
+              "key": "b",
+              "name": "Concentrated Miasma",
+              "description": "3 u, 5 stacks/s",
+              "behaviour": "sableConcentratedMiasma"
+            }
+          ]
+        }
+      ],
+      "strengths": "Every boss, Knitter, The Green Mother.",
+      "weaknesses": "Trash clear, short fights, Warden-Fell."
+    },
+    {
+      "id": 9,
+      "archetype": "lira",
+      "key": "lira",
+      "name": "Lira",
+      "epithet": "the Verdant",
+      "rarity": "rare",
+      "role": "Sustain",
+      "stats": { "atk": 94, "hp": 118, "moveSpeed": 3.20, "fireRate": 2.25 },
+      "unlock": { "kind": "chapterClear", "chapter": 6 },
+      "passive": {
+        "name": "Lifebound",
+        "description": "4 % lifesteal; +2 % additional while at Tier III.",
+        "behaviour": "liraLifebound"
+      },
+      "ultimate": {
+        "name": "Verdant Bloom",
+        "description": "Heals 40 % max HP over 4 s and grants +25 % damage during it.",
+        "behaviour": "liraVerdantBloom"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Deep Roots",
+              "description": "Lifebound's base lifesteal rises to 6 %",
+              "behaviour": "liraDeepRoots"
+            },
+            {
+              "key": "b",
+              "name": "Bloom Speed",
+              "description": "Ultimate charges 25 % faster",
+              "modifiers": [{ "channel": "ultimateChargeRate", "value": 1.25 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Overheal",
+              "description": "Excess healing becomes a shield up to 30 % HP",
+              "behaviour": "liraOverheal"
+            },
+            {
+              "key": "b",
+              "name": "Sanctuary",
+              "description": "Standing still heals 1.5 %/s",
+              "modifiers": [{ "channel": "regenWhileStationary", "value": 0.015 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Endless Bloom",
+              "description": "Bloom lasts 8 s, 60 % heal",
+              "behaviour": "liraEndlessBloom"
+            },
+            {
+              "key": "b",
+              "name": "Blood Bloom",
+              "description": "Bloom converts healing to +80 % damage",
+              "behaviour": "liraBloodBloom"
+            }
+          ]
+        }
+      ],
+      "strengths": "The survivability crutch for a stuck player; Endless Descent attrition.",
+      "weaknesses": "Low ceiling; burst damage bypasses sustain."
+    },
+    {
+      "id": 10,
+      "archetype": "corvin",
+      "key": "corvin",
+      "name": "Corvin",
+      "epithet": "the Caroms",
+      "rarity": "rare",
+      "role": "Ricochet",
+      "stats": { "atk": 96, "hp": 96, "moveSpeed": 3.25, "fireRate": 2.30 },
+      "unlock": { "kind": "chapterClear", "chapter": 5, "note": "chest drop" },
+      "passive": {
+        "name": "Bounce",
+        "description": "Arrows ricochet once off walls or enemies, and a ricocheted arrow lays a new Windline.",
+        "behaviour": "corvinBounce"
+      },
+      "ultimate": {
+        "name": "Caroms",
+        "description": "6 s where arrows bounce 4×.",
+        "behaviour": "corvinCaroms"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "True Bounce",
+              "description": "Ricochets seek the nearest enemy",
+              "behaviour": "corvinTrueBounce"
+            },
+            {
+              "key": "b",
+              "name": "Hard Bounce",
+              "description": "A ricochet deals 120 %",
+              "behaviour": "corvinHardBounce"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Angle Study",
+              "description": "+35 % Confluence damage",
+              "modifiers": [{ "channel": "confluenceDamage", "value": 0.35 }]
+            },
+            {
+              "key": "b",
+              "name": "Double Bounce",
+              "description": "2 ricochets base",
+              "behaviour": "corvinDoubleBounce"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Endless Carom",
+              "description": "Caroms lasts 10 s",
+              "behaviour": "corvinEndlessCarom"
+            },
+            {
+              "key": "b",
+              "name": "Perfect Carom",
+              "description": "During Caroms, ricochets never lose damage",
+              "behaviour": "corvinPerfectCarom"
+            }
+          ]
+        }
+      ],
+      "strengths": "Enclosed arenas, Bulwark (bounces around the shield), lattice builds.",
+      "weaknesses": "Open arenas, predictability."
+    },
+    {
+      "id": 11,
+      "archetype": "vane",
+      "key": "vane",
+      "name": "Vane",
+      "epithet": "the Longsight",
+      "rarity": "rare",
+      "role": "Sniper",
+      "stats": { "atk": 125, "hp": 86, "moveSpeed": 3.05, "fireRate": 1.70 },
+      "unlock": { "kind": "chapterClear", "chapter": 9 },
+      "passive": {
+        "name": "Distance",
+        "description": "+6 % damage per unit of distance to target, capped at +90 %. Below 3 u, −30 %.",
+        "behaviour": "vaneDistance"
+      },
+      "ultimate": {
+        "name": "Piercing Horizon",
+        "description": "A full-arena-width lance, 600 % damage, infinite pierce, leaving a Windline across the whole arena.",
+        "behaviour": "vanePiercingHorizon"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Farsight",
+              "description": "Distance's cap rises to +130 %",
+              "behaviour": "vaneFarsight"
+            },
+            {
+              "key": "b",
+              "name": "Steady",
+              "description": "No close-range penalty",
+              "behaviour": "vaneSteady"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Marked",
+              "description": "Enemies hit beyond 8 u take +25 % for 5 s",
+              "behaviour": "vaneMarked"
+            },
+            {
+              "key": "b",
+              "name": "Overpenetration",
+              "description": "+3 pierce",
+              "modifiers": [{ "channel": "pierce", "value": 3 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Twin Horizon",
+              "description": "Two lances, 90° apart — an instant Confluence cross",
+              "behaviour": "vaneTwinHorizon"
+            },
+            {
+              "key": "b",
+              "name": "Sundering Horizon",
+              "description": "1,400 %, single line",
+              "behaviour": "vaneSunderingHorizon"
+            }
+          ]
+        }
+      ],
+      "strengths": "Bosses, Longeye duels, open arenas.",
+      "weaknesses": "Anything in her face; the most punishing hero for a careless player."
+    },
+    {
+      "id": 12,
+      "archetype": "thane",
+      "key": "thane",
+      "name": "Thane",
+      "epithet": "the Bloodtide",
+      "rarity": "rare",
+      "role": "Berserker",
+      "stats": { "atk": 112, "hp": 92, "moveSpeed": 3.30, "fireRate": 2.40 },
+      "unlock": { "kind": "chapterClear", "chapter": 10 },
+      "passive": {
+        "name": "Bloodtide",
+        "description": "+1.2 % damage per 1 % missing HP (max +85 %). Cannot be healed above 70 % max HP by any source.",
+        "behaviour": "thaneBloodtide"
+      },
+      "ultimate": {
+        "name": "Red Draw",
+        "description": "Costs 20 % current HP; 6 s of +120 % damage and +30 % fire rate.",
+        "behaviour": "thaneRedDraw"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Deeper Tide",
+              "description": "Bloodtide's cap rises to +120 %",
+              "behaviour": "thaneDeeperTide"
+            },
+            {
+              "key": "b",
+              "name": "Tempered",
+              "description": "Healing cap rises to 90 %",
+              "behaviour": "thaneTempered"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Last Stand",
+              "description": "Below 25 % HP: +40 % damage reduction",
+              "behaviour": "thaneLastStand"
+            },
+            {
+              "key": "b",
+              "name": "Frenzy",
+              "description": "Below 25 % HP: +50 % fire rate",
+              "behaviour": "thaneFrenzy"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Long Red",
+              "description": "Red Draw lasts 10 s",
+              "behaviour": "thaneLongRed"
+            },
+            {
+              "key": "b",
+              "name": "Crimson Draw",
+              "description": "Red Draw also makes all shots Tier III",
+              "behaviour": "thaneCrimsonDraw"
+            }
+          ]
+        }
+      ],
+      "strengths": "Highest damage ceiling of any Rare; skilled players only.",
+      "weaknesses": "Unforgiving, anti-synergy with Lira-style sustain, high variance."
+    },
+    {
+      "id": 13,
+      "archetype": "nyx",
+      "key": "nyx",
+      "name": "Nyx",
+      "epithet": "the Umbral",
+      "rarity": "epic",
+      "role": "Assassin",
+      "stats": { "atk": 130, "hp": 84, "moveSpeed": 3.40, "fireRate": 2.15 },
+      "unlock": { "kind": "shards", "shardCost": 40, "source": "Astral chests" },
+      "passive": {
+        "name": "First Blood",
+        "description": "+70 % damage to enemies above 90 % HP. Kills grant 1.5 s of +25 % move speed.",
+        "behaviour": "nyxFirstBlood"
+      },
+      "ultimate": {
+        "name": "Umbral Step",
+        "description": "Teleport to the furthest enemy, become untargetable 1.5 s, next 3 shots are guaranteed crits at 300 %.",
+        "behaviour": "nyxUmbralStep"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Executioner's Eye",
+              "description": "+35 % below 20 % HP too",
+              "behaviour": "nyxExecutionersEye"
+            },
+            {
+              "key": "b",
+              "name": "Deeper Shadow",
+              "description": "Step lasts 2.5 s",
+              "behaviour": "nyxDeeperShadow"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Shadowline",
+              "description": "Windlines laid while untargetable deal damage",
+              "behaviour": "nyxShadowline"
+            },
+            {
+              "key": "b",
+              "name": "Chain Kill",
+              "description": "Kill speed buff stacks to 3",
+              "behaviour": "nyxChainKill"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Twin Step",
+              "description": "2 charges",
+              "behaviour": "nyxTwinStep"
+            },
+            {
+              "key": "b",
+              "name": "Perfect Step",
+              "description": "Step arrows at 600 %, 1 shot",
+              "behaviour": "nyxPerfectStep"
+            }
+          ]
+        }
+      ],
+      "strengths": "",
+      "weaknesses": ""
+    },
+    {
+      "id": 14,
+      "archetype": "iris",
+      "key": "iris",
+      "name": "Iris",
+      "epithet": "the Latticeweaver",
+      "rarity": "epic",
+      "role": "Confluence specialist",
+      "stats": { "atk": 98, "hp": 100, "moveSpeed": 3.20, "fireRate": 2.45 },
+      "unlock": { "kind": "shards", "shardCost": 40 },
+      "passive": {
+        "name": "Weave",
+        "description": "Windlines last 2.6 s (vs 1.2 s base), and Confluence stacks cap at 5 instead of 3 (4th: +230 %, 5th: +320 % and 2 u AoE).",
+        "modifiers": [
+          { "channel": "windlineDuration", "value": 1.4 },
+          { "channel": "confluenceStacks", "value": 2 }
+        ],
+        "behaviour": "irisWeave"
+      },
+      "ultimate": {
+        "name": "The Lattice",
+        "description": "Instantly draws a 6-line web across the arena, persisting 10 s. Every shot through it caps out at 5 Confluence.",
+        "behaviour": "irisTheLattice"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Long Weave",
+              "description": "Windlines last 3.4 s",
+              "modifiers": [{ "channel": "windlineDuration", "value": 0.8 }]
+            },
+            {
+              "key": "b",
+              "name": "Bright Weave",
+              "description": "+25 % Confluence damage",
+              "modifiers": [{ "channel": "confluenceDamage", "value": 0.25 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Cutting Lines",
+              "description": "Windlines damage enemies 2 %/s",
+              "modifiers": [{ "channel": "windlineDamage", "value": 0.02 }]
+            },
+            {
+              "key": "b",
+              "name": "Binding Lines",
+              "description": "Windline slow 8 % → 35 %",
+              "modifiers": [{ "channel": "windlineSlow", "value": 0.27 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Grand Lattice",
+              "description": "10 lines, 16 s",
+              "behaviour": "irisGrandLattice"
+            },
+            {
+              "key": "b",
+              "name": "Living Lattice",
+              "description": "The Lattice follows the player",
+              "behaviour": "irisLivingLattice"
+            }
+          ]
+        }
+      ],
+      "strengths": "The hero the whole game is designed around. Highest skill ceiling.",
+      "weaknesses": "Genuinely weak in the hands of a player who does not understand the mechanic — exactly right."
+    },
+    {
+      "id": 15,
+      "archetype": "zea",
+      "key": "zea",
+      "name": "Zea",
+      "epithet": "the Falconer",
+      "rarity": "epic",
+      "role": "Summoner",
+      "stats": { "atk": 90, "hp": 104, "moveSpeed": 3.20, "fireRate": 2.20 },
+      "unlock": { "kind": "shards", "shardCost": 40, "source": "Thrall drops" },
+      "passive": {
+        "name": "Skyhawk",
+        "description": "A spirit hawk companion attacks independently for 35 % of hero ATK at 1.5/s, and its shots lay Windlines the player can Confluence through.",
+        "behaviour": "zeaSkyhawk"
+      },
+      "ultimate": {
+        "name": "Falconry",
+        "description": "Summons 4 hawks for 12 s.",
+        "behaviour": "zeaFalconry"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Sharper Talons",
+              "description": "Hawk damage share rises to 50 % ATK",
+              "behaviour": "zeaSharperTalons"
+            },
+            {
+              "key": "b",
+              "name": "Swift Hawk",
+              "description": "Hawk attacks at 2.4/s",
+              "behaviour": "zeaSwiftHawk"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Bonded",
+              "description": "Hawk crits when the player is at Tier III",
+              "behaviour": "zeaBonded"
+            },
+            {
+              "key": "b",
+              "name": "Flock",
+              "description": "2 permanent hawks at 25 % each",
+              "behaviour": "zeaFlock"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Skydarken",
+              "description": "8 hawks, 12 s",
+              "behaviour": "zeaSkydarken"
+            },
+            {
+              "key": "b",
+              "name": "Great Hawk",
+              "description": "1 hawk, 250 % ATK, 20 s, taunts",
+              "behaviour": "zeaGreatHawk"
+            }
+          ]
+        }
+      ],
+      "strengths": "",
+      "weaknesses": ""
+    },
+    {
+      "id": 16,
+      "archetype": "rook",
+      "key": "rook",
+      "name": "Rook",
+      "epithet": "the Gravebinder",
+      "rarity": "epic",
+      "role": "Control",
+      "stats": { "atk": 106, "hp": 112, "moveSpeed": 3.00, "fireRate": 2.05 },
+      "unlock": { "kind": "shards", "shardCost": 40 },
+      "passive": {
+        "name": "Pull",
+        "description": "Crits pull the target 1.2 u toward the impact point. Grouped enemies take +12 % damage each (max +48 %).",
+        "behaviour": "rookPull"
+      },
+      "ultimate": {
+        "name": "Singularity",
+        "description": "A 4 s well pulling everything in 6 u to a point, then detonating for 400 %.",
+        "behaviour": "rookSingularity"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Stronger Pull",
+              "description": "Displacement rises to 2.0 u",
+              "behaviour": "rookStrongerPull"
+            },
+            {
+              "key": "b",
+              "name": "Denser Grouping",
+              "description": "+18 % per enemy",
+              "behaviour": "rookDenserGrouping"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Crush",
+              "description": "Grouped enemies take stacking 5 %/s",
+              "behaviour": "rookCrush"
+            },
+            {
+              "key": "b",
+              "name": "Anchor",
+              "description": "Pulled enemies are rooted 0.6 s",
+              "behaviour": "rookAnchor"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Twin Singularity",
+              "description": "2 wells",
+              "behaviour": "rookTwinSingularity"
+            },
+            {
+              "key": "b",
+              "name": "Collapsing Singularity",
+              "description": "1 well, 6 s, 900 %",
+              "behaviour": "rookCollapsingSingularity"
+            }
+          ]
+        }
+      ],
+      "strengths": "",
+      "weaknesses": ""
+    },
+    {
+      "id": 17,
+      "archetype": "halden",
+      "key": "halden",
+      "name": "Halden",
+      "epithet": "the Judgement",
+      "rarity": "epic",
+      "role": "Boss-killer",
+      "stats": { "atk": 120, "hp": 108, "moveSpeed": 3.10, "fireRate": 1.95 },
+      "unlock": {
+        "kind": "shards",
+        "shardCost": 40,
+        "source": "Weeping Gate",
+        "note": "docs/07 does not state a cost; 40 is docs/04 §4.3's standard unlock cost"
+      },
+      "passive": {
+        "name": "Verdict",
+        "description": "+40 % damage to bosses and elites. Boss attacks deal −15 % to Halden.",
+        "behaviour": "haldenVerdict"
+      },
+      "ultimate": {
+        "name": "Judgment Spear",
+        "description": "A 900 % single strike; +100 % more if the target is below 40 %.",
+        "behaviour": "haldenJudgmentSpear"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Zealot",
+              "description": "Boss damage bonus rises to +55 %",
+              "behaviour": "haldenZealot"
+            },
+            {
+              "key": "b",
+              "name": "Warded",
+              "description": "Boss damage taken reduction rises to −28 %",
+              "behaviour": "haldenWarded"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Sentence",
+              "description": "Ultimate marks the boss: +20 % damage taken 10 s",
+              "behaviour": "haldenSentence"
+            },
+            {
+              "key": "b",
+              "name": "Swift Judgment",
+              "description": "Ultimate charges 40 % faster on bosses",
+              "behaviour": "haldenSwiftJudgment"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Final Verdict",
+              "description": "Below 25 % HP the Spear executes at 3,000 %",
+              "behaviour": "haldenFinalVerdict"
+            },
+            {
+              "key": "b",
+              "name": "Twin Spear",
+              "description": "2 spears, 600 % each",
+              "behaviour": "haldenTwinSpear"
+            }
+          ]
+        }
+      ],
+      "strengths": "",
+      "weaknesses": ""
+    },
+    {
+      "id": 18,
+      "archetype": "ashlin",
+      "key": "ashlin",
+      "name": "Ashlin",
+      "epithet": "the Rekindled",
+      "rarity": "epic",
+      "role": "Revival",
+      "stats": { "atk": 104, "hp": 96, "moveSpeed": 3.20, "fireRate": 2.25 },
+      "unlock": {
+        "kind": "shards",
+        "shardCost": 40,
+        "source": "Ashen Choir",
+        "note": "docs/07 does not state a cost; 40 is docs/04 §4.3's standard unlock cost"
+      },
+      "passive": {
+        "name": "Rekindle",
+        "description": "Once per run, on lethal damage, revive at 45 % HP with a 350 % AoE nova and 3 s of invulnerability.",
+        "behaviour": "ashlinRekindle"
+      },
+      "ultimate": {
+        "name": "Rebirth Nova",
+        "description": "500 % AoE, heals 25 %, and refreshes Rekindle if already used.",
+        "behaviour": "ashlinRebirthNova"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Bright Rekindle",
+              "description": "Revive at 70 % HP",
+              "behaviour": "ashlinBrightRekindle"
+            },
+            {
+              "key": "b",
+              "name": "Twice Kindled",
+              "description": "2 revives, 30 % each",
+              "behaviour": "ashlinTwiceKindled"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Ember Body",
+              "description": "3 s of invulnerability after any room clear",
+              "behaviour": "ashlinEmberBody"
+            },
+            {
+              "key": "b",
+              "name": "Phoenix Trail",
+              "description": "Invulnerability leaves burning Windlines",
+              "behaviour": "ashlinPhoenixTrail"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Eternal",
+              "description": "Ultimate refresh has no cooldown",
+              "behaviour": "ashlinEternal"
+            },
+            {
+              "key": "b",
+              "name": "Supernova",
+              "description": "Nova 1,200 %, no refresh",
+              "behaviour": "ashlinSupernova"
+            }
+          ]
+        }
+      ],
+      "strengths": "",
+      "weaknesses": ""
+    },
+    {
+      "id": 19,
+      "archetype": "mirelle",
+      "key": "mirelle",
+      "name": "Mirelle",
+      "epithet": "the Mirrored",
+      "rarity": "legendary",
+      "role": "Duplication",
+      "stats": { "atk": 100, "hp": 100, "moveSpeed": 3.20, "fireRate": 2.20 },
+      "unlock": {
+        "kind": "shards",
+        "shardCost": 40,
+        "source": "Prism chests / Hollow Warden"
+      },
+      "passive": {
+        "name": "Reflection",
+        "description": "25 % chance for each arrow to duplicate. Duplicates can duplicate (geometric, capped at 4 arrows). Duplicates lay their own Windlines.",
+        "behaviour": "mirelleReflection"
+      },
+      "ultimate": {
+        "name": "Hall of Mirrors",
+        "description": "8 s where every arrow duplicates 3×, and a mirror clone of the player fights alongside at 60 % stats.",
+        "behaviour": "mirelleHallOfMirrors"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Truer Mirror",
+              "description": "35 % chance",
+              "behaviour": "mirelleTruerMirror"
+            },
+            {
+              "key": "b",
+              "name": "Deeper Mirror",
+              "description": "Cap 6 arrows",
+              "behaviour": "mirelleDeeperMirror"
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Silvered",
+              "description": "Duplicates deal 100 % instead of 85 %",
+              "behaviour": "mirelleSilvered"
+            },
+            {
+              "key": "b",
+              "name": "Fractured",
+              "description": "Duplicates spread ±20°, wider coverage",
+              "behaviour": "mirelleFractured"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Endless Hall",
+              "description": "14 s",
+              "behaviour": "mirelleEndlessHall"
+            },
+            {
+              "key": "b",
+              "name": "Twin Warden",
+              "description": "The clone lasts the whole room at 80 % stats",
+              "behaviour": "mirelleTwinWarden"
+            }
+          ]
+        }
+      ],
+      "strengths": "Everything, moderately.",
+      "weaknesses": "High variance; a bad RNG stretch feels awful — the tax on the highest theoretical output in the game."
+    },
+    {
+      "id": 20,
+      "archetype": "oriel",
+      "key": "oriel",
+      "name": "Oriel",
+      "epithet": "the Prism",
+      "rarity": "legendary",
+      "role": "Elemental mastery",
+      "stats": { "atk": 110, "hp": 105, "moveSpeed": 3.20, "fireRate": 2.20 },
+      "unlock": { "kind": "chapterClear", "chapter": 12, "note": "guaranteed drop on completion" },
+      "passive": {
+        "name": "Spectrum",
+        "description": "Arrows cycle Ember → Frost → Storm → Toxin, one element per shot. Confluence merges the elements of the arrows it joins, so reactions trigger constantly.",
+        "behaviour": "orielSpectrum"
+      },
+      "ultimate": {
+        "name": "Prism",
+        "description": "10 s where every arrow carries all four elements simultaneously, triggering every reaction on every hit.",
+        "behaviour": "orielPrism"
+      },
+      "talents": [
+        {
+          "starRequired": 1,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Faster Cycle",
+              "description": "Cycle every shot even at Tier III multishot",
+              "behaviour": "orielFasterCycle"
+            },
+            {
+              "key": "b",
+              "name": "Attuned",
+              "description": "+30 % elemental damage",
+              "modifiers": [{ "channel": "allElementDamage", "value": 0.30 }]
+            }
+          ]
+        },
+        {
+          "starRequired": 3,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Resonance",
+              "description": "Reactions deal +50 %",
+              "modifiers": [{ "channel": "reactionDamage", "value": 0.50 }]
+            },
+            {
+              "key": "b",
+              "name": "Saturation",
+              "description": "Elements persist 2× longer on enemies",
+              "behaviour": "orielSaturation"
+            }
+          ]
+        },
+        {
+          "starRequired": 5,
+          "branches": [
+            {
+              "key": "a",
+              "name": "Endless Prism",
+              "description": "16 s",
+              "behaviour": "orielEndlessPrism"
+            },
+            {
+              "key": "b",
+              "name": "White Light",
+              "description": "Prism 6 s but reactions deal ×3",
+              "behaviour": "orielWhiteLight"
+            }
+          ]
+        }
+      ],
+      "strengths": "Hard-counters Null; the intended Endless Descent hero.",
+      "weaknesses": "The capstone reward for finishing the campaign, not a hero a new player will hold early."
+    }
+  ]
+}

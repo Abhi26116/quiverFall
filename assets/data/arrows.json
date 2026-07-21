@@ -1,0 +1,163 @@
+{
+  "_comment": [
+    "The 12 arrows of docs/08-arrows.md §8.3, authored verbatim.",
+    "",
+    "baseMult is the arrow.baseMult term in docs/08 §8.1's master damage",
+    "formula. craftCost is docs/08 §8.4's table by content tier: T1 free/800g,",
+    "T2 3,400g + 12 T1 mats, T3 14,000g + 10 T2 mats, T4 45,000g + 8 T3 + 4 T4.",
+    "",
+    "elementPotency's meaning depends on element (docs/08 §8.2): for Ember it",
+    "is an application chance (0-1); for Frost it is Chill per hit; for Storm",
+    "it is which arrow in sequence triggers a chain (a count, not a fraction);",
+    "for Toxin it is stacks per hit."
+  ],
+  "arrows": [
+    {
+      "id": 1,
+      "archetype": "ashShaft",
+      "key": "ash_shaft",
+      "name": "Ash Shaft",
+      "contentTier": "t1",
+      "baseMult": 1.00,
+      "craftCost": { "gold": 0 },
+      "description": "The reference arrow. Perfectly average, no drawback.",
+      "balanceNote": "Exists so every other arrow can be described as a trade against it."
+    },
+    {
+      "id": 2,
+      "archetype": "broadhead",
+      "key": "broadhead",
+      "name": "Broadhead",
+      "contentTier": "t1",
+      "baseMult": 1.28,
+      "craftCost": { "gold": 800 },
+      "description": "Slower, heavier. Far better against plated enemies since single hits clear the Tier-II threshold sooner.",
+      "modifiers": [{ "channel": "fireRate", "value": -0.18 }],
+      "balanceNote": "The anti-Husk pick. Weak with Kestrel (fire rate anti-synergy) by design."
+    },
+    {
+      "id": 3,
+      "archetype": "splitshaft",
+      "key": "splitshaft",
+      "name": "Splitshaft",
+      "contentTier": "t1",
+      "baseMult": 0.72,
+      "craftCost": { "gold": 800 },
+      "description": "Fires 2 arrows at ±8°. Two Windlines per shot — the cheapest entry into Confluence play.",
+      "modifiers": [{ "channel": "extraArrows", "value": 1 }],
+      "balanceNote": "1.44x total damage but requires both arrows to connect; a downgrade at range against single targets. Intentionally spikes with Iris."
+    },
+    {
+      "id": 4,
+      "archetype": "emberhead",
+      "key": "emberhead",
+      "name": "Emberhead",
+      "contentTier": "t2",
+      "baseMult": 0.92,
+      "craftCost": { "gold": 3400, "materialsByTier": { "1": 12 } },
+      "description": "Carries Ember, 35 % application chance per hit.",
+      "element": "ember",
+      "elementPotency": 0.35
+    },
+    {
+      "id": 5,
+      "archetype": "rimeshaft",
+      "key": "rimeshaft",
+      "name": "Rimeshaft",
+      "contentTier": "t2",
+      "baseMult": 0.90,
+      "craftCost": { "gold": 3400, "materialsByTier": { "1": 12 } },
+      "description": "Carries Frost, 15 Chill per hit.",
+      "element": "frost",
+      "elementPotency": 15
+    },
+    {
+      "id": 6,
+      "archetype": "stormnock",
+      "key": "stormnock",
+      "name": "Stormnock",
+      "contentTier": "t2",
+      "baseMult": 0.88,
+      "craftCost": { "gold": 3400, "materialsByTier": { "1": 12 } },
+      "description": "Carries Storm; chains every 4th arrow.",
+      "element": "storm",
+      "elementPotency": 4
+    },
+    {
+      "id": 7,
+      "archetype": "blightbarb",
+      "key": "blightbarb",
+      "name": "Blightbarb",
+      "contentTier": "t2",
+      "baseMult": 0.84,
+      "craftCost": { "gold": 3400, "materialsByTier": { "1": 12 } },
+      "description": "Carries Toxin, 1 stack per hit, max 12.",
+      "element": "toxin",
+      "elementPotency": 1,
+      "modifiers": [{ "channel": "toxinMaxStacks", "value": 12 }],
+      "balanceNote": "All four elementals sit at 0.84-0.92 baseMult — an 8-16 % raw damage tax paid for the rider. They out-damage Ash Shaft from roughly chapter 5 onward, exactly when they unlock."
+    },
+    {
+      "id": 8,
+      "archetype": "skimmer",
+      "key": "skimmer",
+      "name": "Skimmer",
+      "contentTier": "t3",
+      "baseMult": 0.86,
+      "craftCost": { "gold": 14000, "materialsByTier": { "2": 10 } },
+      "description": "Ricochets 2x off walls or enemies. The highest lattice-generation arrow in the game.",
+      "behaviour": "skimmerRicochet"
+    },
+    {
+      "id": 9,
+      "archetype": "lancehead",
+      "key": "lancehead",
+      "name": "Lancehead",
+      "contentTier": "t3",
+      "baseMult": 1.15,
+      "craftCost": { "gold": 14000, "materialsByTier": { "2": 10 } },
+      "description": "Pierce +3, projectile speed +40 %.",
+      "modifiers": [
+        { "channel": "pierce", "value": 3 },
+        { "channel": "projectileSpeed", "value": 1.40 }
+      ],
+      "balanceNote": "The Vane/Bram line-clear arrow; poor against dispersed enemies."
+    },
+    {
+      "id": 10,
+      "archetype": "twinfang",
+      "key": "twinfang",
+      "name": "Twinfang",
+      "contentTier": "t3",
+      "baseMult": 0.80,
+      "craftCost": { "gold": 14000, "materialsByTier": { "2": 10 } },
+      "description": "Fires 2 arrows on converging paths that cross at 6 u — a guaranteed Confluence every shot.",
+      "behaviour": "twinfangConverging",
+      "balanceNote": "docs/08 §8.5 rule 4: grants x1 Confluence reliably; manual play reaches x3 (x5 with Iris). The training-wheels arrow must never beat the mastery it trains."
+    },
+    {
+      "id": 11,
+      "archetype": "ghostshaft",
+      "key": "ghostshaft",
+      "name": "Ghostshaft",
+      "contentTier": "t4",
+      "baseMult": 0.94,
+      "craftCost": { "gold": 45000, "materialsByTier": { "3": 8, "4": 4 } },
+      "description": "Passes through walls and shields; ignores plating entirely. No pierce, 8 u range.",
+      "behaviour": "ghostshaftPhase",
+      "balanceNote": "Trivialises Husk/Bulwark/Gaunt, compensated by no pierce and a short range. docs/08 §8.5 rule 3: the range cap is load-bearing — if it proves universally correct, the range drops before the damage is touched."
+    },
+    {
+      "id": 12,
+      "archetype": "prismshaft",
+      "key": "prismshaft",
+      "name": "Prismshaft",
+      "contentTier": "t4",
+      "baseMult": 0.96,
+      "craftCost": { "gold": 45000, "materialsByTier": { "3": 8, "4": 4 } },
+      "description": "Cycles all four elements, one per shot.",
+      "behaviour": "prismshaftCycle",
+      "balanceNote": "The reaction-engine arrow. Weakest raw damage of the T4s; highest ceiling with Confluence. Requires Prismcore x12 to craft, the single largest material cost in the game."
+    }
+  ]
+}
