@@ -510,6 +510,20 @@ abstract final class ProjectileSystem {
       boonSum += cappedCount * perEnemy;
     }
 
+    // *Chill* — "+30 % damage while frozen" (Brittle, T1b: +45 %). This is
+    // Sela's own headline number, never wired into damage before now:
+    // `status.isFrozen` was only read above for a Boon's own targetAfflicted
+    // condition, and `StatusStore.damageTakenBonus` (the generic version of
+    // this same bonus) had no caller anywhere.
+    if (hero != null &&
+        hero.has(HeroBehaviour.selaChill) &&
+        status != null &&
+        status.isFrozen(target)) {
+      boonSum += hero.has(HeroBehaviour.selaBrittle)
+          ? _selaBrittleDamageBonus
+          : ElementTuning.frozenDamageBonus;
+    }
+
     final double damage = DamageResolver.resolve(
       attack: projectiles.damage[slot],
       arrowBaseMultiplier: 1.0,
@@ -809,6 +823,8 @@ abstract final class ProjectileSystem {
   static const double _rookGroupingBonus = 0.12;
   static const double _rookDenserGroupingBonus = 0.18;
 
+  static const double _selaBrittleDamageBonus = 0.45;
+
   /// Applies the arrow's element, and lets adapting enemies adapt.
   ///
   /// Two things can refuse the application: a Warden-Fell aura, which
@@ -872,26 +888,37 @@ abstract final class ProjectileSystem {
   }) {
     if (status == null || hero == null) return;
 
-    void applyIfNotAlreadyCarried(SimElement element) {
+    void applyIfNotAlreadyCarried(
+      SimElement element, {
+      double? chillPerHitOverride,
+    }) {
       final int mask = projectiles.elementMask[slot];
       final int index = projectiles.element[slot];
       final bool alreadyCarried = mask != 0
           ? (mask & (1 << element.index)) != 0
           : index == element.index;
       if (alreadyCarried) return;
-      _applyOneElement(enemies, status, events, slot, target, element, x, y);
+      _applyOneElement(enemies, status, events, slot, target, element, x, y,
+          chillPerHitOverride: chillPerHitOverride);
     }
 
     if (tier == DrawTier.three && hero.has(HeroBehaviour.kadeKindling)) {
       applyIfNotAlreadyCarried(SimElement.ember);
     }
     if (hero.has(HeroBehaviour.selaChill)) {
-      applyIfNotAlreadyCarried(SimElement.frost);
+      // *Deeper Chill* (T1a) — 16 per hit instead of the base 12.
+      applyIfNotAlreadyCarried(
+        SimElement.frost,
+        chillPerHitOverride:
+            hero.has(HeroBehaviour.selaDeeperChill) ? _selaDeeperChillPerHit : null,
+      );
     }
     if (hero.has(HeroBehaviour.sableToxin)) {
       applyIfNotAlreadyCarried(SimElement.toxin);
     }
   }
+
+  static const double _selaDeeperChillPerHit = 16.0;
 
   static void _applyOneElement(
     EnemyStore? enemies,
@@ -901,11 +928,12 @@ abstract final class ProjectileSystem {
     int target,
     SimElement element,
     double x,
-    double y,
-  ) {
+    double y, {
+    double? chillPerHitOverride,
+  }) {
     if (enemies != null && enemies.resistsElement(target, element)) return;
 
-    status.apply(target, element);
+    status.apply(target, element, chillPerHitOverride: chillPerHitOverride);
     events.emit(
       SimEventType.elementApplied,
       entityA: target,

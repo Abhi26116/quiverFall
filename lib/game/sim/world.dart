@@ -822,6 +822,8 @@ class SimWorld {
       hero.tempestNockRemaining = hero.has(HeroBehaviour.torvLongTempest)
           ? _torvLongTempestDuration
           : _torvTempestNockDuration;
+    } else if (hero.has(HeroBehaviour.selaGlacierNail)) {
+      _fireSelaGlacierNail();
     }
   }
 
@@ -892,6 +894,98 @@ class SimWorld {
   static const double _liraEndlessBloomDuration = 8.0;
   static const double _liraEndlessBloomHealFraction = 0.60;
   static const double _liraBloodBloomDamageBonus = 0.80;
+
+  /// *Glacier Nail* — a direct freeze at the nearest target (the same
+  /// selection [FiringSystem.selectTarget] already uses to aim every other
+  /// targeted ultimate), skipping the Chill accumulator entirely rather than
+  /// dumping a huge Chill value into it. *Absolute Zero* (T5a) raises both
+  /// the radius and the duration; *Cascading Nail* (T5b) is a separate
+  /// chain pass to the 3 nearest enemies the initial freeze did not reach,
+  /// mirroring Arc's own "nearest N via insertion" shape.
+  void _fireSelaGlacierNail() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+
+    final int target = FiringSystem.selectTarget(
+      entities,
+      spatial,
+      entities.posX[p],
+      entities.posY[p],
+      enemies: enemies,
+    );
+    if (target < 0) return;
+
+    final double cx = entities.posX[target];
+    final double cy = entities.posY[target];
+    final bool absoluteZero = hero.has(HeroBehaviour.selaAbsoluteZero);
+    final double radius =
+        absoluteZero ? _selaAbsoluteZeroRadius : _selaGlacierNailRadius;
+    final double duration =
+        absoluteZero ? _selaAbsoluteZeroDuration : _selaGlacierNailDuration;
+    final double radiusSq = radius * radius;
+
+    final int found = spatial.queryRadius(cx, cy, radius);
+    for (int i = 0; i < found; i++) {
+      final int e = spatial.resultAt(i);
+      if (entities.alive[e] == 0) continue;
+      if (entities.kind[e] != EntityKind.enemy.index) continue;
+      final double dx = entities.posX[e] - cx;
+      final double dy = entities.posY[e] - cy;
+      if (dx * dx + dy * dy > radiusSq) continue;
+      status.frozenRemaining[e] = duration;
+      status.chill[e] = 0;
+    }
+
+    if (hero.has(HeroBehaviour.selaCascadingNail)) {
+      _applySelaCascadingNail(cx, cy, duration);
+    }
+  }
+
+  static const double _selaGlacierNailRadius = 3.5;
+  static const double _selaGlacierNailDuration = 3.0;
+  static const double _selaAbsoluteZeroRadius = 5.0;
+  static const double _selaAbsoluteZeroDuration = 5.0;
+  static const int _selaCascadingNailTargets = 3;
+
+  /// Chains Glacier Nail's freeze to the nearest enemies the initial radius
+  /// missed. A linear scan, not a second [spatial] query: this runs once per
+  /// Ultimate press rather than per hit, so the cost that matters elsewhere
+  /// in this file (the reentrancy hazard a nested query would risk inside
+  /// [ProjectileSystem]'s own candidate loop) does not apply here — there is
+  /// no outer query active at Ultimate-press time. A plain scan is used
+  /// anyway, for the same "nearest N via insertion" shape Arc already
+  /// established, rather than mixing two different techniques for one hero.
+  void _applySelaCascadingNail(double x, double y, double duration) {
+    final List<int> nearest =
+        List<int>.filled(_selaCascadingNailTargets, -1);
+    final List<double> nearestDistSq =
+        List<double>.filled(_selaCascadingNailTargets, double.infinity);
+
+    for (int i = 0; i < entities.highWater; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      if (status.isFrozen(i)) continue;
+      final double dx = entities.posX[i] - x;
+      final double dy = entities.posY[i] - y;
+      final double distSq = dx * dx + dy * dy;
+
+      if (distSq >= nearestDistSq[_selaCascadingNailTargets - 1]) continue;
+      int slot = _selaCascadingNailTargets - 1;
+      while (slot > 0 && nearestDistSq[slot - 1] > distSq) {
+        nearestDistSq[slot] = nearestDistSq[slot - 1];
+        nearest[slot] = nearest[slot - 1];
+        slot--;
+      }
+      nearestDistSq[slot] = distSq;
+      nearest[slot] = i;
+    }
+
+    for (final int e in nearest) {
+      if (e < 0) continue;
+      status.frozenRemaining[e] = duration;
+      status.chill[e] = 0;
+    }
+  }
 
   /// *Piercing Horizon* — one arrow (two, for Twin Horizon), Tier III,
   /// enough pierce to never run out before a wall stops it, which combined

@@ -2124,6 +2124,152 @@ void main() {
     });
   });
 
+  group('Chill and Glacier Nail', () {
+    /// A primary target 8 u east of the player (always the nearest enemy, so
+    /// it is always what Glacier Nail's own target-selection locks onto),
+    /// plus one bystander per entry in [nearbyOffsets] further east still —
+    /// close enough to the player to still be background, but placed at a
+    /// known distance from the *primary* for radius/chain checks.
+    ({SimWorld world, int primary, List<int> nearby}) selaArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      List<double> nearbyOffsets = const <double>[],
+    }) {
+      final SimWorld world = SimWorld(seed: 131, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        sela,
+        HeroState(heroId: 'sela', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final List<int> nearby = <int>[];
+      for (final double offset in nearbyOffsets) {
+        final int e =
+            world.spawnEnemy(EnemyArchetype.mote, 12.0 + offset, 4.5);
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        nearby.add(e);
+      }
+      return (world: world, primary: primary, nearby: nearby);
+    }
+
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('grants +30 % damage to a target that is already frozen', () {
+      // Frozen state is seeded directly, before the first arrow lands — the
+      // Chill *stack* a hit itself applies only takes effect on the *next*
+      // hit, since element application runs after damage resolves.
+      final double? notFrozen = firstDamageDealt(selaArena().world);
+
+      final ({SimWorld world, int primary, List<int> nearby}) frozenArena =
+          selaArena();
+      frozenArena.world.status.frozenRemaining[frozenArena.primary] = 10.0;
+      final double? frozen = firstDamageDealt(frozenArena.world);
+
+      expect(notFrozen, isNotNull);
+      expect(frozen, isNotNull);
+      expect(frozen! / notFrozen!, closeTo(1.30, 0.01));
+    });
+
+    test('Deeper Chill (★1a): 16 Chill per hit instead of 12', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          selaArena(stars: 1, talentChoices: <String, String>{'1': 'a'});
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.events.countOf(SimEventType.damageDealt) > 0) break;
+      }
+      // Same decay-window slack as the base Chill test.
+      expect(a.world.status.chill[a.primary], closeTo(16.0, 0.3));
+    });
+
+    test('Brittle (★1b): +45 % instead of +30 % while frozen', () {
+      // Both sides ★1 so heroAtk's star scaling matches on both.
+      final ({SimWorld world, int primary, List<int> nearby}) base =
+          selaArena(stars: 1);
+      base.world.status.frozenRemaining[base.primary] = 10.0;
+      final double? baseFrozen = firstDamageDealt(base.world);
+
+      final ({SimWorld world, int primary, List<int> nearby}) brittle =
+          selaArena(stars: 1, talentChoices: <String, String>{'1': 'b'});
+      brittle.world.status.frozenRemaining[brittle.primary] = 10.0;
+      final double? brittleFrozen = firstDamageDealt(brittle.world);
+
+      expect(baseFrozen, isNotNull);
+      expect(brittleFrozen, isNotNull);
+      // (1 + 0.45) / (1 + 0.30)
+      expect(brittleFrozen! / baseFrozen!, closeTo(1.45 / 1.30, 0.01));
+    });
+
+    test('Glacier Nail freezes the target and everything within 3.5 u for 3 s',
+        () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          selaArena(nearbyOffsets: <double>[1.0, 5.0]);
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.status.isFrozen(a.primary), isTrue);
+      // A tick's worth of decay (ElementSystem runs after the Ultimate is
+      // fired, in the same tick) has already come off by the time this reads.
+      expect(a.world.status.frozenRemaining[a.primary], closeTo(3.0, 0.02));
+      // 1.0 u from the primary — inside the 3.5 u radius.
+      expect(a.world.status.isFrozen(a.nearby[0]), isTrue);
+      // 5.0 u from the primary — outside it.
+      expect(a.world.status.isFrozen(a.nearby[1]), isFalse);
+    });
+
+    test('Absolute Zero (★5a): 5 u radius, 5 s duration', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+        // 4.5 u from the primary: outside the base 3.5 u, inside 5 u.
+        nearbyOffsets: <double>[4.5],
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.status.frozenRemaining[a.primary], closeTo(5.0, 0.02));
+      expect(a.world.status.isFrozen(a.nearby[0]), isTrue);
+    });
+
+    test('Cascading Nail (★5b): chains the freeze to the 3 nearest enemies '
+        'the radius missed', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+        // All 4 sit outside the base 3.5 u radius; only the nearest 3 chain.
+        nearbyOffsets: <double>[5.0, 5.5, 6.0, 6.5],
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.status.isFrozen(a.nearby[0]), isTrue);
+      expect(a.world.status.isFrozen(a.nearby[1]), isTrue);
+      expect(a.world.status.isFrozen(a.nearby[2]), isTrue);
+      expect(a.world.status.isFrozen(a.nearby[3]), isFalse);
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -2159,11 +2305,12 @@ void main() {
       // Bloodtide/Red Draw/Deeper Tide/Last Stand/Frenzy/Long Red/
       // Crimson Draw, Mirelle's Reflection/Truer Mirror/Deeper
       // Mirror/Silvered/Fractured, Torv's Arc/Tempest Nock/Frequent
-      // Arc/Wide Arc/Long Tempest, and Rook's Pull/Stronger Pull/Denser
-      // Grouping.
+      // Arc/Wide Arc/Long Tempest, Rook's Pull/Stronger Pull/Denser
+      // Grouping, and Sela's Glacier Nail/Deeper Chill/Brittle/Absolute
+      // Zero/Cascading Nail.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(87),
+        lessThanOrEqualTo(82),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -2224,14 +2371,25 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.kadeLongPyre,
   HeroBehaviour.kadeTwinPyre,
 
-  // selaChill is implemented — see the "three innate elements" group.
-  HeroBehaviour.selaGlacierNail,
-  HeroBehaviour.selaDeeperChill,
-  HeroBehaviour.selaBrittle,
+  // selaChill is implemented — see the "three innate elements" group; its own
+  // "+30 % damage while frozen" clause was not actually wired into damage
+  // until the "Chill and Glacier Nail" group landed (status.isFrozen was
+  // only ever read for a Boon's own targetAfflicted condition before then).
+  // selaGlacierNail, selaDeeperChill, selaBrittle, selaAbsoluteZero and
+  // selaCascadingNail are implemented — see that same group. Shatter needs
+  // an on-kill AoE hook nothing before now has asked of a hero passive (every
+  // existing per-kill hook, Nyx's First Blood included, only sets timed
+  // state on the killer's own runtime — none of them deal damage to a third
+  // party), and Lingering Frost needs a real "timed slow zone independent of
+  // Windlines" primitive: the sim's only existing slow mechanism
+  // (`EnemyStore.slowRemaining`/`windlineSlowFactor`) is Windline- and
+  // Boon-specific by construction (`BoonSystem`'s own pass only reads the
+  // *player's* live trail and a Boon's own `slow` stat), so faking a zone by
+  // dropping a zero-length Windline segment would silently depend on
+  // whatever slow-related Boon the player happens to hold, not on Sela at
+  // all.
   HeroBehaviour.selaShatter,
   HeroBehaviour.selaLingeringFrost,
-  HeroBehaviour.selaAbsoluteZero,
-  HeroBehaviour.selaCascadingNail,
 
   // torvArc, torvTempestNock, torvFrequentArc, torvWideArc and
   // torvLongTempest are implemented — see the "Arc and Tempest Nock" group.

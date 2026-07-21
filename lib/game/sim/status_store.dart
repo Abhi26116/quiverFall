@@ -73,7 +73,11 @@ class StatusStore {
   /// Application is separate from reaction resolution because reactions are
   /// produced only by Confluence (docs/08 §8.2) — a plain hit applies its
   /// element and nothing more.
-  SimElement? apply(int slot, SimElement element) {
+  ///
+  /// [chillPerHitOverride] lets a hero-specific rate (Sela's Deeper Chill:
+  /// 16 instead of the base 12) feed the same accumulator every other Frost
+  /// source uses, rather than forking the threshold logic per caller.
+  SimElement? apply(int slot, SimElement element, {double? chillPerHitOverride}) {
     final SimElement? existing = dominantElement(slot);
 
     switch (element) {
@@ -84,7 +88,7 @@ class StatusStore {
         burnRemaining[slot] = ElementTuning.burnDuration;
 
       case SimElement.frost:
-        chill[slot] += ElementTuning.chillPerHit;
+        chill[slot] += chillPerHitOverride ?? ElementTuning.chillPerHit;
         if (chill[slot] >= ElementTuning.chillToFreeze) {
           chill[slot] = 0;
           frozenRemaining[slot] = ElementTuning.freezeDuration;
