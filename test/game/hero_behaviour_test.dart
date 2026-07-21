@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/data/models/inventory.dart';
 import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
@@ -14,9 +15,11 @@ import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
+import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
+import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:test/test.dart';
 
 import 'arrow_test_support.dart';
@@ -47,6 +50,7 @@ void main() {
   final HeroDefinition torv = heroes.byArchetype(HeroArchetype.torv)!;
   final HeroDefinition rook = heroes.byArchetype(HeroArchetype.rook)!;
   final HeroDefinition iris = heroes.byArchetype(HeroArchetype.iris)!;
+  final HeroDefinition ashlin = heroes.byArchetype(HeroArchetype.ashlin)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -3050,6 +3054,249 @@ void main() {
     });
   });
 
+  group('Rekindle and Rebirth Nova', () {
+    ({SimWorld world, int target}) ashlinArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 201, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        ashlin,
+        HeroState(heroId: 'ashlin', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 6.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      return (world: world, target: target);
+    }
+
+    /// Drives the player to a known, low HP, refreshes `world.ai` so it
+    /// reflects that, and returns the player's own entity index.
+    int setUpForLethalHit(SimWorld world, {double maxHealth = 100}) {
+      final int p = world.player.index;
+      world.entities.maxHealth[p] = maxHealth;
+      world.entities.health[p] = maxHealth * 0.10;
+      world.tick(InputSnapshot());
+      return p;
+    }
+
+    test('Rekindle revives once at 45 % HP with 3 s invulnerability and an AoE nova',
+        () {
+      final ({SimWorld world, int target}) a = ashlinArena();
+      final int p = setUpForLethalHit(a.world);
+
+      final double dealt = EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(dealt, greaterThan(0));
+      expect(a.world.entities.health[p], closeTo(45.0, 1e-6));
+      expect(a.world.hero.ashlinInvulnRemaining, closeTo(3.0, 1e-9));
+      expect(a.world.hero.rekindlesUsed, 1);
+      expect(a.world.hero.rekindleNovaPending, isTrue);
+
+      // The nova itself resolves on the next tick, in SimWorld — see the
+      // field's own doc comment for why it can't resolve inside
+      // EnemyAttack.damagePlayer directly.
+      final double before = a.world.entities.health[a.target];
+      a.world.tick(InputSnapshot());
+      expect(a.world.hero.rekindleNovaPending, isFalse);
+      expect(a.world.entities.health[a.target], lessThan(before));
+    });
+
+    test('without a lethal hit, Rekindle never triggers', () {
+      final ({SimWorld world, int target}) a = ashlinArena();
+      final int p = a.world.player.index;
+      a.world.tick(InputSnapshot());
+      EnemyAttack.damagePlayer(a.world.ai, 0.05, source: -1);
+      expect(a.world.hero.rekindlesUsed, 0);
+      expect(a.world.entities.health[p], greaterThan(0));
+    });
+
+    test('Bright Rekindle (★1a): revives at 70 % HP instead of 45 %', () {
+      final ({SimWorld world, int target}) a =
+          ashlinArena(stars: 1, talentChoices: <String, String>{'1': 'a'});
+      final int p = setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.entities.health[p], closeTo(70.0, 1e-6));
+    });
+
+    test('Twice Kindled (★1b): 2 revives at 30 % each, then death', () {
+      final ({SimWorld world, int target}) a =
+          ashlinArena(stars: 1, talentChoices: <String, String>{'1': 'b'});
+      final int p = setUpForLethalHit(a.world);
+      final InputSnapshot idle = InputSnapshot();
+
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.entities.health[p], closeTo(30.0, 1e-6));
+      expect(a.world.hero.rekindlesUsed, 1);
+
+      // The revive's own invulnerability blocks a hit outright, so it has
+      // to expire before a second lethal hit can even reach the "refuse to
+      // die" check at all.
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.ashlinInvulnRemaining, 0);
+
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.entities.health[p], closeTo(30.0, 1e-6));
+      expect(a.world.hero.rekindlesUsed, 2);
+
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      // `EnemyAttack.damagePlayer` despawns the entity itself and clears
+      // `ai.player` directly; `world.player` is a separate cached
+      // reference, only ever resynced the next time `SimWorld` itself
+      // walks this path (`AiSystem.update`), so the entity store is the
+      // one source of truth reachable from a direct call like this test's.
+      expect(a.world.entities.alive[p], 0,
+          reason: 'no charges left — the third lethal hit must actually kill');
+      expect(a.world.hero.rekindlesUsed, 2,
+          reason: 'the cap must hold — no third revive');
+    });
+
+    test('Rebirth Nova: 500 % AoE, heals 25 %, and refreshes Rekindle', () {
+      final ({SimWorld world, int target}) a = ashlinArena();
+      final int p = setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.hero.rekindlesUsed, 1);
+      a.world.tick(InputSnapshot()); // let the pending nova resolve and clear
+
+      final double playerHealthBefore = a.world.entities.health[p];
+      final double targetHealthBefore = a.world.entities.health[a.target];
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.entities.health[a.target], lessThan(targetHealthBefore));
+      expect(a.world.entities.health[p], greaterThan(playerHealthBefore));
+      expect(a.world.hero.rekindlesUsed, 0);
+    });
+
+    test(
+        'Supernova (★5b): deals 2.4x the base cast (1,200 % vs 500 %) and '
+        'does not refresh Rekindle', () {
+      // Both ★5 so heroAtk's own star scaling matches on both sides.
+      final ({SimWorld world, int target}) base = ashlinArena(stars: 5);
+      base.world.hero.ultimateCharge = 1.0;
+      final double beforeBase = base.world.entities.health[base.target];
+      base.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      final double baseDamage = beforeBase - base.world.entities.health[base.target];
+
+      final ({SimWorld world, int target}) a =
+          ashlinArena(stars: 5, talentChoices: <String, String>{'5': 'b'});
+      setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.hero.rekindlesUsed, 1);
+      a.world.tick(InputSnapshot());
+
+      a.world.hero.ultimateCharge = 1.0;
+      final double beforeSupernova = a.world.entities.health[a.target];
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      final double supernovaDamage =
+          beforeSupernova - a.world.entities.health[a.target];
+
+      expect(supernovaDamage / baseDamage, closeTo(2.4, 0.02));
+      expect(a.world.hero.rekindlesUsed, 1,
+          reason: 'Supernova trades the refresh away for a bigger cast');
+    });
+
+    test('Ember Body (★3a): 3 s invulnerability after any room clear', () {
+      final SimWorld world = SimWorld(seed: 4004, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(8.0, 4.5);
+      world.entities.health[world.player.index] = 1e12;
+      world.entities.maxHealth[world.player.index] = 1e12;
+      HeroLoadoutResolver.apply(
+        world,
+        ashlin,
+        const HeroState(
+            heroId: 'ashlin', stars: 3, talentChoices: <String, String>{'3': 'a'}),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      world.beginRoom(RoomComposer.compose(
+        content: content,
+        rng: Rng(4004),
+        chapter: 2,
+        globalStage: 25,
+      ));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60 * 60 && world.hero.ashlinInvulnRemaining == 0; t++) {
+        world.tick(idle);
+        // Kill everything the moment it appears, so the room drains and
+        // reports itself cleared — the same technique
+        // spawn_system_test.dart's own "a cleared room says so" test uses.
+        for (int i = 0; i < world.entities.highWater; i++) {
+          if (world.entities.alive[i] == 1 &&
+              world.entities.kind[i] == EntityKind.enemy.index) {
+            world.entities.health[i] = 0;
+          }
+        }
+      }
+      expect(world.spawnState.roomClearedEmitted, isTrue);
+      expect(world.hero.ashlinInvulnRemaining, greaterThan(0));
+    });
+
+    test('Phoenix Trail (★3b): lays a damaging Windline segment while invulnerable',
+        () {
+      final ({SimWorld world, int target}) a =
+          ashlinArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      a.world.hero.ashlinInvulnRemaining = 3.0;
+
+      final InputSnapshot idle = InputSnapshot();
+      bool sawPhoenixTrailSegment = false;
+      for (int t = 0; t < 60 && !sawPhoenixTrailSegment; t++) {
+        a.world.tick(idle);
+        for (int s = 0; s < a.world.windlines.capacity; s++) {
+          if (a.world.windlines.isAlive(s) &&
+              a.world.windlines.isPhoenixTrailAt(s)) {
+            sawPhoenixTrailSegment = true;
+            break;
+          }
+        }
+      }
+      expect(sawPhoenixTrailSegment, isTrue);
+    });
+
+    test('a Phoenix-Trail-tagged segment damages an enemy standing on it', () {
+      final SimWorld world = SimWorld(seed: 205, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        ashlin,
+        const HeroState(
+            heroId: 'ashlin', stars: 3, talentChoices: <String, String>{'3': 'b'}),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 8.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      world.windlines.add(
+        fromX: 7.0,
+        fromY: 4.5,
+        toX: 9.0,
+        toY: 4.5,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 777,
+        isPhoenixTrail: true,
+      );
+
+      final double before = world.entities.health[target];
+      world.tick(InputSnapshot());
+      expect(world.entities.health[target], lessThan(before));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -3090,11 +3337,13 @@ void main() {
       // Zero/Cascading Nail, Sable's whole kit (Miasma/Virulence/Fast
       // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma), and
       // Kade's whole kit (Pyre Line/Hot Iron/Deep Burn/Wildfire/Slow
-      // Burn/Long Pyre/Twin Pyre), Iris's Weave, and Nyx's Umbral
-      // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step.
+      // Burn/Long Pyre/Twin Pyre), Iris's Weave, Nyx's Umbral
+      // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step, and Ashlin's
+      // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
+      // Body/Phoenix Trail/Supernova.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(62),
+        lessThanOrEqualTo(55),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -3289,14 +3538,24 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.haldenSentence,
   HeroBehaviour.haldenSwiftJudgment,
 
-  HeroBehaviour.ashlinRekindle,
-  HeroBehaviour.ashlinRebirthNova,
-  HeroBehaviour.ashlinBrightRekindle,
-  HeroBehaviour.ashlinTwiceKindled,
-  HeroBehaviour.ashlinEmberBody,
-  HeroBehaviour.ashlinPhoenixTrail,
+  // ashlinRekindle, ashlinRebirthNova, ashlinBrightRekindle,
+  // ashlinTwiceKindled, ashlinEmberBody, ashlinPhoenixTrail and
+  // ashlinSupernova are all implemented — see the "Rekindle and Rebirth
+  // Nova" group. The revive itself is the hero-side counterpart to
+  // Guardian Angel/Phoenix Heart (same "refuse to die" spot in
+  // EnemyAttack.damagePlayer); Phoenix Trail reuses the same per-segment
+  // Windline tagging Nyx's own Shadowline needed, kept as its own field
+  // rather than shared since the two hero's triggers and rates differ.
+  // ADR 0011 covers the AoE nova's own radius, which docs/07 never states
+  // for any of the three cards that need it.
+  //
+  // Eternal (T5a, "Ultimate refresh has no cooldown") stays pending: the
+  // base Ultimate's own "refreshes Rekindle if already used" clause has no
+  // stated restriction anywhere for Eternal to remove, so implementing it
+  // would mean inventing a cooldown docs/07 never describes just to have
+  // something to lift — a bigger risk than a hero-local addition with a
+  // genuine anchor.
   HeroBehaviour.ashlinEternal,
-  HeroBehaviour.ashlinSupernova,
 
   // mirelleReflection, mirelleTruerMirror, mirelleDeeperMirror,
   // mirelleSilvered and mirelleFractured are implemented — see the

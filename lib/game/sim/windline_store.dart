@@ -31,6 +31,7 @@ class WindlineStore implements PoolReport {
         _serial = Int32List(capacity),
         _trail = Int32List(capacity),
         _shadowline = Uint8List(capacity),
+        _phoenixTrail = Uint8List(capacity),
         _alive = Uint8List(capacity);
 
   final int capacity;
@@ -69,6 +70,13 @@ class WindlineStore implements PoolReport {
   /// untargetable window was live. Read by [BoonSystem.applyWindlineField]
   /// to damage regardless of the player's own `windlineDamage` stat.
   final Uint8List _shadowline;
+
+  /// Ashlin's *Phoenix Trail* (T3b) — set for a segment laid while her own
+  /// invulnerability window was live. Same shape as [_shadowline], kept
+  /// separate rather than shared: a different hero, a different trigger
+  /// window, and a different damage rate would all need their own
+  /// conditions on a single shared flag anyway.
+  final Uint8List _phoenixTrail;
 
   final Uint8List _alive;
 
@@ -162,6 +170,8 @@ class WindlineStore implements PoolReport {
 
   bool isShadowlineAt(int i) => _shadowline[i] == 1;
 
+  bool isPhoenixTrailAt(int i) => _phoenixTrail[i] == 1;
+
   /// Adds a segment and returns its slot, or -1 if the segment is degenerate.
   ///
   /// Zero-length segments are rejected outright: they can never be crossed, and
@@ -177,6 +187,7 @@ class WindlineStore implements PoolReport {
     required int trailId,
     int elementIndex = -1,
     bool isShadowline = false,
+    bool isPhoenixTrail = false,
   }) {
     final double dx = toX - fromX;
     final double dy = toY - fromY;
@@ -194,6 +205,7 @@ class WindlineStore implements PoolReport {
     _x1[slot] = toX;
     _y1[slot] = toY;
     _shadowline[slot] = isShadowline ? 1 : 0;
+    _phoenixTrail[slot] = isPhoenixTrail ? 1 : 0;
     _expiry[slot] = expiresAt;
     _owner[slot] = ownerIndex;
     _element[slot] = elementIndex;

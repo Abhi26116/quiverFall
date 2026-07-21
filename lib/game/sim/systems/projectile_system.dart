@@ -158,6 +158,9 @@ abstract final class ProjectileSystem {
           // *Shadowline* (Nyx, T3a) — a segment laid while Umbral Step's
           // untargetable window is live also deals damage; ADR 0010.
           isShadowline: (hero?.umbralStepRemaining ?? 0) > 0,
+          // *Phoenix Trail* (Ashlin, T3b) — same shape, Ashlin's own
+          // invulnerability window instead of Nyx's.
+          isPhoenixTrail: (hero?.ashlinInvulnRemaining ?? 0) > 0,
         );
         projectiles.sinceLastSegment[i] = 0;
       }

@@ -62,9 +62,14 @@ abstract final class BoonSystem {
     required double damageFraction,
     required double dt,
     bool hasShadowline = false,
+    bool hasPhoenixTrail = false,
   }) {
     final bool sunthread = boons.has(BoonBehaviour.sunthread);
-    if (slow <= 0 && damageFraction <= 0 && !sunthread && !hasShadowline) {
+    if (slow <= 0 &&
+        damageFraction <= 0 &&
+        !sunthread &&
+        !hasShadowline &&
+        !hasPhoenixTrail) {
       return;
     }
 
@@ -80,6 +85,7 @@ abstract final class BoonSystem {
       final int found = index.querySegment(x, y, x, y, r, _scratch);
       bool standing = false;
       bool standingOnShadowline = false;
+      bool standingOnPhoenixTrail = false;
       for (int c = 0; c < found; c++) {
         final int seg = _scratch[c];
         if (!lines.isAlive(seg)) continue;
@@ -91,6 +97,7 @@ abstract final class BoonSystem {
             lines.y1(seg), r)) {
           standing = true;
           if (lines.isShadowlineAt(seg)) standingOnShadowline = true;
+          if (lines.isPhoenixTrailAt(seg)) standingOnPhoenixTrail = true;
         }
       }
       if (!standing) continue;
@@ -103,13 +110,18 @@ abstract final class BoonSystem {
         enemies.windlineSlowFactor[i] = factor < 0.1 ? 0.1 : factor;
       }
 
-      if (damageFraction > 0 || sunthread || standingOnShadowline) {
-        // *Shadowline* (Nyx, T3a) — a tagged segment damages on its own
-        // rate (ADR 0010), on top of whatever Cutting-Lines-shaped share the
-        // build already has, exactly like Sunthread's own bonus above it.
+      if (damageFraction > 0 ||
+          sunthread ||
+          standingOnShadowline ||
+          standingOnPhoenixTrail) {
+        // *Shadowline* (Nyx, T3a) and *Phoenix Trail* (Ashlin, T3b) — a
+        // tagged segment damages on its own rate (ADR 0010), on top of
+        // whatever Cutting-Lines-shaped share the build already has,
+        // exactly like Sunthread's own bonus above it.
         final double share = damageFraction +
             (sunthread ? _sunthreadDamageFraction : 0) +
-            (standingOnShadowline ? _nyxShadowlineDamageFraction : 0);
+            (standingOnShadowline ? _nyxShadowlineDamageFraction : 0) +
+            (standingOnPhoenixTrail ? _ashlinPhoenixTrailDamageFraction : 0);
         entities.health[i] -= entities.maxHealth[i] * share * dt;
       }
 
@@ -128,6 +140,10 @@ abstract final class BoonSystem {
   /// ADR 0010 — docs/07 gives Shadowline no rate; this borrows the same one
   /// Iris's own Cutting Lines and Boon #66 already ship.
   static const double _nyxShadowlineDamageFraction = 0.02;
+
+  /// Same reasoning and same borrowed number as Shadowline (ADR 0010) —
+  /// docs/07 calls Phoenix Trail's windlines "burning" but states no rate.
+  static const double _ashlinPhoenixTrailDamageFraction = 0.02;
 
   /// Windlines the player laid. Matches `ProjectileSystem`'s owner id.
   static const int _playerOwner = 0;

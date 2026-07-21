@@ -470,6 +470,10 @@ class SimWorld {
       hero.umbralStepRemaining -= dt;
       if (hero.umbralStepRemaining < 0) hero.umbralStepRemaining = 0;
     }
+    if (hero.ashlinInvulnRemaining > 0) {
+      hero.ashlinInvulnRemaining -= dt;
+      if (hero.ashlinInvulnRemaining < 0) hero.ashlinInvulnRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -555,11 +559,29 @@ class SimWorld {
     _refreshAiContext(dt);
     AiSystem.update(ai);
 
+    // *Rekindle* — the revive itself happens inside AiSystem's own call to
+    // EnemyAttack.damagePlayer, which has no playerAttack/spatial/entities
+    // to resolve an AoE with; the nova is applied here instead, the first
+    // point after the revive where all three are available together.
+    if (hero.rekindleNovaPending) {
+      hero.rekindleNovaPending = false;
+      _applyAshlinNova(_ashlinRekindleNovaMultiplier);
+    }
+
     // ── hazards ────────────────────────────────────────────────────────────
     HazardSystem.update(ai);
 
     // ── spawning ───────────────────────────────────────────────────────────
+    final bool wasRoomCleared = spawnState.roomClearedEmitted;
     SpawnSystem.update(ai, spawnState);
+    // *Ember Body* (Ashlin, T3a) — 3 s of invulnerability after any room
+    // clear, not just Rekindle's own revive. `roomClearedEmitted` only ever
+    // flips false → true once per room, so this is the rising edge.
+    if (!wasRoomCleared &&
+        spawnState.roomClearedEmitted &&
+        hero.has(HeroBehaviour.ashlinEmberBody)) {
+      hero.ashlinInvulnRemaining = _ashlinInvulnDuration;
+    }
 
     // ── boons ──────────────────────────────────────────────────────────────
     // The Windline field first: Tangle's slow has to land before the AI reads
@@ -577,6 +599,7 @@ class SimWorld {
       damageFraction: windlineDamageFraction,
       dt: dt,
       hasShadowline: hero.has(HeroBehaviour.nyxShadowline),
+      hasPhoenixTrail: hero.has(HeroBehaviour.ashlinPhoenixTrail),
     );
 
     // After everything that could have changed the player's state this frame,
@@ -843,6 +866,8 @@ class SimWorld {
       _fireKadePyreLine();
     } else if (hero.has(HeroBehaviour.nyxUmbralStep)) {
       _fireNyxUmbralStep();
+    } else if (hero.has(HeroBehaviour.ashlinRebirthNova)) {
+      _fireAshlinRebirthNova();
     }
   }
 
@@ -1265,6 +1290,62 @@ class SimWorld {
       }
     }
     return furthest;
+  }
+
+  /// Flat AoE damage centred on the player — Rekindle's own revive-nova and
+  /// Rebirth Nova's Ultimate cast both resolve here, sharing one radius
+  /// (ADR 0011 — docs/07 names a damage percentage for each but no radius
+  /// for any of them). A direct [spatial] query, not a linear scan: this
+  /// runs at most once per revive or Ultimate press, never inside
+  /// [ProjectileSystem]'s own hit-resolution loop, so the reentrancy hazard
+  /// that rules out `queryRadius` there does not apply here.
+  void _applyAshlinNova(double damageMultiplier) {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double cx = entities.posX[p];
+    final double cy = entities.posY[p];
+    final double damage = playerAttack * damageMultiplier;
+    const double radiusSq = _ashlinNovaRadius * _ashlinNovaRadius;
+
+    final int found = spatial.queryRadius(cx, cy, _ashlinNovaRadius);
+    for (int i = 0; i < found; i++) {
+      final int e = spatial.resultAt(i);
+      if (entities.alive[e] == 0) continue;
+      if (entities.kind[e] != EntityKind.enemy.index) continue;
+      final double dx = entities.posX[e] - cx;
+      final double dy = entities.posY[e] - cy;
+      if (dx * dx + dy * dy > radiusSq) continue;
+      entities.health[e] -= damage;
+    }
+  }
+
+  static const double _ashlinNovaRadius = 3.5; // ADR 0011
+  static const double _ashlinRekindleNovaMultiplier = 3.50;
+  static const double _ashlinRebirthNovaMultiplier = 5.00;
+  static const double _ashlinSupernovaMultiplier = 12.00;
+  static const double _ashlinRebirthNovaHealFraction = 0.25;
+  static const double _ashlinInvulnDuration = 3.0;
+
+  /// *Rebirth Nova* — an AoE burst plus a heal, and (unless *Supernova*, T5b,
+  /// traded it away for a bigger burst) resets Rekindle's own charge count
+  /// so it can trigger again later in the run.
+  void _fireAshlinRebirthNova() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+
+    final bool supernova = hero.has(HeroBehaviour.ashlinSupernova);
+    _applyAshlinNova(
+      supernova ? _ashlinSupernovaMultiplier : _ashlinRebirthNovaMultiplier,
+    );
+
+    final double healed = entities.health[p] +
+        entities.maxHealth[p] * _ashlinRebirthNovaHealFraction;
+    final double cap = entities.maxHealth[p];
+    entities.health[p] = healed > cap ? cap : healed;
+
+    if (!supernova) {
+      hero.rekindlesUsed = 0;
+    }
   }
 
   /// *Piercing Horizon* — one arrow (two, for Twin Horizon), Tier III,

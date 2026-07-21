@@ -6,6 +6,8 @@ import 'package:quiverfall/game/sim/ai/steering.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
+import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/hazard_store.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
@@ -45,6 +47,11 @@ abstract final class EnemyAttack {
     // zero, so an enemy attack simply cannot land. Same shape as the Boon
     // checks below it, checked first since it needs no `boons` at all.
     if ((ctx.hero?.umbralStepRemaining ?? 0) > 0) return 0;
+
+    // Ashlin's own invulnerability — Rekindle's revive and Ember Body's
+    // room-clear window both set this; the same "ignore the hit outright"
+    // shape as Umbral Step just above.
+    if ((ctx.hero?.ashlinInvulnRemaining ?? 0) > 0) return 0;
 
     // ── Ignore the hit entirely ────────────────────────────────────────────
     // Covenant's opening grace, Ghost Step's dash window, and Immortal Draw's
@@ -107,11 +114,16 @@ abstract final class EnemyAttack {
     ctx.entities.health[p] -= dealt;
 
     // ── Refuse to die ──────────────────────────────────────────────────────
-    // Both are once per run. Guardian Angel leaves the player at 1 HP; Phoenix
-    // Heart is a full revive at half. Checked in that order so a player holding
-    // both spends the cheaper one first.
-    if (boons != null && ctx.entities.health[p] <= 0) {
-      if (boons.has(BoonBehaviour.guardianAngel) && !boons.guardianAngelSpent) {
+    // Guardian Angel and Phoenix Heart are both once per run and Boon-side;
+    // Ashlin's own Rekindle is the hero-side counterpart, capped at 1 (or 2,
+    // with Twice Kindled) rather than a plain flag. Checked in this order —
+    // cheapest first — so a player holding more than one spends the
+    // cheapest before the others.
+    if (ctx.entities.health[p] <= 0) {
+      final HeroRuntime? hero = ctx.hero;
+      if (boons != null &&
+          boons.has(BoonBehaviour.guardianAngel) &&
+          !boons.guardianAngelSpent) {
         boons.guardianAngelSpent = true;
         ctx.entities.health[p] = BoonRuntime.guardianAngelHealth;
         ctx.events.emit(
@@ -121,11 +133,30 @@ abstract final class EnemyAttack {
           x: ctx.entities.posX[p],
           y: ctx.entities.posY[p],
         );
-      } else if (boons.has(BoonBehaviour.phoenixHeart) &&
+      } else if (boons != null &&
+          boons.has(BoonBehaviour.phoenixHeart) &&
           !boons.phoenixHeartSpent) {
         boons.phoenixHeartSpent = true;
         ctx.entities.health[p] =
             ctx.entities.maxHealth[p] * BoonRuntime.phoenixHeartFraction;
+      } else if (hero != null && hero.has(HeroBehaviour.ashlinRekindle)) {
+        final int cap = hero.has(HeroBehaviour.ashlinTwiceKindled)
+            ? _ashlinTwiceKindledCharges
+            : _ashlinRekindleCharges;
+        if (hero.rekindlesUsed < cap) {
+          hero.rekindlesUsed++;
+          final double fraction = hero.has(HeroBehaviour.ashlinTwiceKindled)
+              ? _ashlinTwiceKindledFraction
+              : hero.has(HeroBehaviour.ashlinBrightRekindle)
+                  ? _ashlinBrightRekindleFraction
+                  : _ashlinRekindleFraction;
+          ctx.entities.health[p] = ctx.entities.maxHealth[p] * fraction;
+          hero.ashlinInvulnRemaining = _ashlinInvulnDuration;
+          // The AoE nova needs playerAttack/spatial/entities together,
+          // which only SimWorld has — flagged here, resolved in
+          // SimWorld.tick right after AiSystem runs.
+          hero.rekindleNovaPending = true;
+        }
       }
     }
 
@@ -151,6 +182,13 @@ abstract final class EnemyAttack {
     }
     return dealt;
   }
+
+  static const int _ashlinRekindleCharges = 1;
+  static const int _ashlinTwiceKindledCharges = 2;
+  static const double _ashlinRekindleFraction = 0.45;
+  static const double _ashlinBrightRekindleFraction = 0.70;
+  static const double _ashlinTwiceKindledFraction = 0.30;
+  static const double _ashlinInvulnDuration = 3.0;
 
   /// True if the player's body overlaps a circle.
   static bool playerInCircle(

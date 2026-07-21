@@ -199,7 +199,25 @@ class HeroRuntime {
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
 
-  bool rekindleSpent = false;
+  /// How many times Rekindle has revived the player this run. Capped at 1
+  /// (or 2, with Twice Kindled) in `EnemyAttack.damagePlayer` — a count
+  /// rather than the flag an earlier part left here, since Twice Kindled
+  /// needs more than one revive to be possible at all.
+  int rekindlesUsed = 0;
+
+  /// Set the instant Rekindle's revive triggers, inside
+  /// `EnemyAttack.damagePlayer`; read and cleared by `SimWorld.tick` right
+  /// after `AiSystem` runs. The nova itself is resolved there rather than
+  /// in `EnemyAttack` because only `SimWorld` has `playerAttack`, `spatial`
+  /// and `entities` together to apply an AoE burst.
+  bool rekindleNovaPending = false;
+
+  /// Seconds left on Ashlin's own invulnerability — Rekindle's revive and
+  /// Ember Body's room-clear window both set this, rather than each
+  /// getting a separate field, since only one is ever live for a single
+  /// hero. Checked in `EnemyAttack.damagePlayer` the same way
+  /// `umbralStepRemaining` already is.
+  double ashlinInvulnRemaining = 0;
 
   // ── Per-arrow assignment ──────────────────────────────────────────────────
 
@@ -248,7 +266,9 @@ class HeroRuntime {
     pyreLine2X1 = 0;
     pyreLine2Y1 = 0;
     arrowsFired = 0;
-    rekindleSpent = false;
+    rekindlesUsed = 0;
+    rekindleNovaPending = false;
+    ashlinInvulnRemaining = 0;
     cycleIndex = 0;
   }
 
@@ -270,5 +290,6 @@ class HeroRuntime {
     tempestNockRemaining = 0;
     miasmaRemaining = 0;
     pyreLineRemaining = 0;
+    ashlinInvulnRemaining = 0;
   }
 }
