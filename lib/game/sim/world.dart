@@ -293,9 +293,22 @@ class SimWorld {
   /// is a getter rather than a stored field — caching it would go stale the
   /// moment the player moved.
   double get incomingDamageFactor {
+    // *Last Stand* (T3a) — below 25 % HP, +40 % damage reduction. Read live
+    // here for the same reason Momentum's own bonus is: it changes with
+    // every hit taken, not once per room.
+    double lastStandReduction = 0;
+    if (hero.has(HeroBehaviour.thaneLastStand) && !player.isNone) {
+      final int p = player.index;
+      final double maxHp = entities.maxHealth[p];
+      if (maxHp > 0 && entities.health[p] / maxHp < _thaneLowHealthThreshold) {
+        lastStandReduction = _thaneLastStandReduction;
+      }
+    }
+
     final double remaining = (1.0 - _clamp01(boonDamageReduction)) *
         (1.0 - _clamp01(combat.playerStationary ? stationaryDamageReduction : 0)) *
-        (1.0 - _clamp01(playerDraw.damageReduction));
+        (1.0 - _clamp01(playerDraw.damageReduction)) *
+        (1.0 - _clamp01(lastStandReduction));
 
     double total = 1.0 - remaining;
     // *The Fortress* set is the only thing in the game allowed to lift this,
@@ -437,6 +450,10 @@ class SimWorld {
         final double cap = entities.maxHealth[p];
         entities.health[p] = healed > cap ? cap : healed;
       }
+    }
+    if (hero.redDrawRemaining > 0) {
+      hero.redDrawRemaining -= dt;
+      if (hero.redDrawRemaining < 0) hero.redDrawRemaining = 0;
     }
 
     // ── collision (broad phase) ────────────────────────────────────────────
@@ -632,8 +649,14 @@ class SimWorld {
     // Kestrel's *Flurry* forces the same override for its own duration — that
     // is also the entire mechanism behind "movement no longer drops the tier":
     // the effective tier stops reading `playerDraw.tier` at all while it runs.
+    // *Crimson Draw* (T5b) forces the same override for Red Draw's own
+    // window — a talent-gated addition on top of the Ultimate, not a
+    // property of Red Draw itself, since the base Ultimate never touches
+    // the tier.
     final DrawTier tier = boons.has(BoonBehaviour.perfectForm) ||
-            hero.flurryRemaining > 0
+            hero.flurryRemaining > 0 ||
+            (hero.redDrawRemaining > 0 &&
+                hero.has(HeroBehaviour.thaneCrimsonDraw))
         ? DrawTier.three
         : playerDraw.tier;
 
@@ -647,6 +670,19 @@ class SimWorld {
       rate *= BoonRuntime.runnersHighFireRate;
     }
     if (hero.flurryRemaining > 0) rate *= hero.flurryRateMultiplier;
+    if (hero.redDrawRemaining > 0) rate *= hero.redDrawFireRateMultiplier;
+
+    // *Frenzy* (T3b) — below 25 % HP, +50 % fire rate. The player's own
+    // health fraction, read live since it changes every hit rather than
+    // once per room.
+    if (hero.has(HeroBehaviour.thaneFrenzy) && !player.isNone) {
+      final int p = player.index;
+      final double maxHp = entities.maxHealth[p];
+      if (maxHp > 0 &&
+          entities.health[p] / maxHp < _thaneLowHealthThreshold) {
+        rate *= 1.0 + _thaneFrenzyFireRateBonus;
+      }
+    }
 
     final double interval = FiringSystem.intervalFor(tier, rate);
 
@@ -769,10 +805,44 @@ class SimWorld {
       _fireHaldenJudgmentSpear();
     } else if (hero.has(HeroBehaviour.liraVerdantBloom)) {
       _fireLiraVerdantBloom();
+    } else if (hero.has(HeroBehaviour.thaneRedDraw)) {
+      _fireThaneRedDraw();
     }
   }
 
   static const double _orielEndlessPrismDuration = 16.0;
+
+  /// *Red Draw* — costs a real slice of current HP up front (floored at 1,
+  /// the same guard *Bloodprice* uses, so the button is never a literal
+  /// suicide press), then a timed self-buff read every tick like Flurry and
+  /// Bloom rather than applied once here. *Long Red* (T5a) only changes the
+  /// duration; *Crimson Draw* (T5b) is checked separately, in
+  /// `_updateFiring`, since it forces the tier rather than changing a number
+  /// here.
+  void _fireThaneRedDraw() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double cost = entities.health[p] * _thaneRedDrawHpCostFraction;
+    final double after = entities.health[p] - cost;
+    entities.health[p] = after < 1.0 ? 1.0 : after;
+
+    hero.redDrawRemaining = hero.has(HeroBehaviour.thaneLongRed)
+        ? _thaneLongRedDuration
+        : _thaneRedDrawDuration;
+    hero.redDrawDamageBonus = _thaneRedDrawDamageBonus;
+    hero.redDrawFireRateMultiplier = 1.0 + _thaneRedDrawFireRateBonus;
+  }
+
+  static const double _thaneRedDrawHpCostFraction = 0.20;
+  static const double _thaneRedDrawDuration = 6.0;
+  static const double _thaneLongRedDuration = 10.0;
+  static const double _thaneRedDrawDamageBonus = 1.20;
+  static const double _thaneRedDrawFireRateBonus = 0.30;
+
+  /// Below this HP fraction, both T3 talents (Last Stand, Frenzy) kick in.
+  static const double _thaneLowHealthThreshold = 0.25;
+  static const double _thaneFrenzyFireRateBonus = 0.50;
+  static const double _thaneLastStandReduction = 0.40;
 
   /// *Verdant Bloom* — a timed self-buff like Flurry, not a burst: a heal
   /// rate and a damage bonus, both read every tick rather than applied once

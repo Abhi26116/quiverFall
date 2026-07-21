@@ -41,6 +41,7 @@ void main() {
   final HeroDefinition halden = heroes.byArchetype(HeroArchetype.halden)!;
   final HeroDefinition lira = heroes.byArchetype(HeroArchetype.lira)!;
   final HeroDefinition bram = heroes.byArchetype(HeroArchetype.bram)!;
+  final HeroDefinition thane = heroes.byArchetype(HeroArchetype.thane)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -1500,6 +1501,187 @@ void main() {
     });
   });
 
+  group('Bloodtide and Red Draw', () {
+    ({SimWorld world, int target}) thaneArena({
+      double playerHealthFraction = 1.0,
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 81, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        thane,
+        HeroState(heroId: 'thane', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int p = world.player.index;
+      world.entities.health[p] = world.entities.maxHealth[p] * playerHealthFraction;
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('deals +1.2 % damage per 1 % missing HP', () {
+      final double? full = firstDamageDealt(thaneArena().world);
+      final double? half =
+          firstDamageDealt(thaneArena(playerHealthFraction: 0.50).world);
+      expect(full, isNotNull);
+      expect(half, isNotNull);
+      // Full HP: 0 % missing, no bonus. Half HP: 50 % missing * 1.2 = +60 %.
+      expect(half! / full!, closeTo(1.60, 0.01));
+    });
+
+    test('caps at +85 %', () {
+      final double? full = firstDamageDealt(thaneArena().world);
+      // 90 % missing * 1.2 = 108 %, past the 85 % cap.
+      final double? nearlyDead =
+          firstDamageDealt(thaneArena(playerHealthFraction: 0.10).world);
+      expect(full, isNotNull);
+      expect(nearlyDead, isNotNull);
+      expect(nearlyDead! / full!, closeTo(1.85, 0.01));
+    });
+
+    test('Deeper Tide (★1a): the cap rises to +120 %', () {
+      // At 5 % HP (95 % missing), the raw formula wants +114 % — past the
+      // base 85 % cap, but still under Deeper Tide's 120 %. Comparing the
+      // same health fraction with and against the talent isolates exactly
+      // the cap's own effect; both sides are ★1 so heroAtk's star scaling
+      // matches too.
+      final double? capped =
+          firstDamageDealt(thaneArena(playerHealthFraction: 0.05, stars: 1).world);
+      final double? uncapped = firstDamageDealt(thaneArena(
+        playerHealthFraction: 0.05,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+      ).world);
+      expect(capped, isNotNull);
+      expect(uncapped, isNotNull);
+      // (1 + 1.14) / (1 + 0.85)
+      expect(uncapped! / capped!, closeTo(2.14 / 1.85, 0.01));
+    });
+
+    test('Red Draw costs 20 % current HP and grants +120 % damage, +30 % fire rate for 6 s', () {
+      final ({SimWorld world, int target}) a = thaneArena();
+      final int p = a.world.player.index;
+      final double before = a.world.entities.health[p];
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.entities.health[p], closeTo(before * 0.80, 1e-6));
+      expect(a.world.hero.redDrawRemaining, closeTo(6.0, 1e-9));
+      expect(a.world.hero.redDrawDamageBonus, closeTo(1.20, 1e-9));
+      expect(a.world.hero.redDrawFireRateMultiplier, closeTo(1.30, 1e-9));
+    });
+
+    test('Red Draw never drops the player below 1 HP', () {
+      final ({SimWorld world, int target}) a = thaneArena();
+      final int p = a.world.player.index;
+      a.world.entities.health[p] = 1.0;
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.entities.health[p], greaterThanOrEqualTo(1.0));
+    });
+
+    test('Long Red (★5a): the window lasts 10 s instead of 6', () {
+      final ({SimWorld world, int target}) a =
+          thaneArena(stars: 5, talentChoices: <String, String>{'5': 'a'});
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.redDrawRemaining, closeTo(10.0, 1e-9));
+    });
+
+    test('Crimson Draw (★5b): every shot is Tier III while Red Draw runs', () {
+      final ({SimWorld world, int target}) a =
+          thaneArena(stars: 5, talentChoices: <String, String>{'5': 'b'});
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      // The Draw meter itself must still read honestly right after — the
+      // override is read-time only, same as Perfect Form and Flurry.
+      expect(a.world.playerDraw.tier, DrawTier.one);
+
+      final InputSnapshot idle = InputSnapshot();
+      bool sawTierThree = false;
+      for (int t = 0; t < 30; t++) {
+        a.world.tick(idle);
+        for (int e = 0; e < a.world.events.count; e++) {
+          if (a.world.events.typeAt(e) == SimEventType.arrowFired &&
+              a.world.events.valueAAt(e).round() == DrawTier.three.index) {
+            sawTierThree = true;
+          }
+        }
+        a.world.events.clear();
+      }
+      expect(sawTierThree, isTrue);
+    });
+
+    test('Last Stand (★3a): +40 % damage reduction below 25 % HP', () {
+      final ({SimWorld world, int target}) full =
+          thaneArena(stars: 3, talentChoices: <String, String>{'3': 'a'});
+      final double atFullHealth = full.world.incomingDamageFactor;
+
+      final ({SimWorld world, int target}) low = thaneArena(
+        playerHealthFraction: 0.20,
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+      final double atLowHealth = low.world.incomingDamageFactor;
+
+      expect(atLowHealth / atFullHealth, closeTo(0.60, 0.01));
+    });
+
+    test('Frenzy (★3b): +50 % fire rate below 25 % HP', () {
+      int arrowsOver(SimWorld world, int ticks) {
+        int count = 0;
+        final InputSnapshot idle = InputSnapshot();
+        for (int t = 0; t < ticks; t++) {
+          world.tick(idle);
+          count += world.events.countOf(SimEventType.arrowFired);
+          world.events.clear();
+        }
+        return count;
+      }
+
+      // Same ★3 on both sides so heroFireRate's star scaling is identical;
+      // only the HP fraction (and so whether Frenzy's own condition is met)
+      // differs. A long window keeps the shot counts stable against tick
+      // rounding.
+      final ({SimWorld world, int target}) low = thaneArena(
+        playerHealthFraction: 0.20,
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+      );
+      final ({SimWorld world, int target}) full =
+          thaneArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+
+      const int window = 600; // 10 s
+      final int lowCount = arrowsOver(low.world, window);
+      final int fullCount = arrowsOver(full.world, window);
+
+      expect(lowCount / fullCount, closeTo(1.50, 0.05));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1530,11 +1712,13 @@ void main() {
       // Blood plus Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism,
       // Vane's Distance/Steady/Piercing Horizon/Twin Horizon/Sundering
       // Horizon, Halden's Verdict/Judgment Spear/Final Verdict/Twin Spear,
-      // Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom, and
-      // Bram's Heavy Ordnance/Wider Blast/Denser Blast.
+      // Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom, Bram's
+      // Heavy Ordnance/Wider Blast/Denser Blast, and Thane's
+      // Bloodtide/Red Draw/Deeper Tide/Last Stand/Frenzy/Long Red/
+      // Crimson Draw.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(107),
+        lessThanOrEqualTo(100),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -1641,14 +1825,16 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // on damagePerDistanceCap.
   HeroBehaviour.vaneMarked,
 
-  HeroBehaviour.thaneBloodtide,
-  HeroBehaviour.thaneRedDraw,
-  HeroBehaviour.thaneDeeperTide,
+  // thaneBloodtide, thaneRedDraw, thaneDeeperTide, thaneLastStand,
+  // thaneFrenzy, thaneLongRed and thaneCrimsonDraw are implemented — see
+  // the "Bloodtide and Red Draw" group. Bloodtide's own healing-cap clause
+  // ("cannot be healed above 70 % max HP by any source") is not: it would
+  // need a cap threaded into every heal source (lifesteal, every
+  // BoonSystem regen/shield call), and whether a heal-to-full Boon should
+  // respect it too is a design question the card's text does not answer.
+  // Tempered is the same gap at a different number (90 %) and stays
+  // pending for the same reason.
   HeroBehaviour.thaneTempered,
-  HeroBehaviour.thaneLastStand,
-  HeroBehaviour.thaneFrenzy,
-  HeroBehaviour.thaneLongRed,
-  HeroBehaviour.thaneCrimsonDraw,
 
   // nyxFirstBlood and nyxExecutionersEye are implemented — see the "First
   // Blood" group.

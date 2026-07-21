@@ -129,6 +129,12 @@ class HeroRuntime {
   /// Bloom's +25 %, or Blood Bloom's +80 % in its place.
   double bloomDamageBonus = 0;
 
+  /// Seconds left on Thane's *Red Draw*. Zero means inactive.
+  double redDrawRemaining = 0;
+
+  double redDrawDamageBonus = 0;
+  double redDrawFireRateMultiplier = 1.0;
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -161,6 +167,9 @@ class HeroRuntime {
     bloomRemaining = 0;
     bloomHealPerSecond = 0;
     bloomDamageBonus = 0;
+    redDrawRemaining = 0;
+    redDrawDamageBonus = 0;
+    redDrawFireRateMultiplier = 1.0;
     rekindleSpent = false;
     cycleIndex = 0;
   }
@@ -176,5 +185,6 @@ class HeroRuntime {
     firstBloodSpeedRemaining = 0;
     prismRemaining = 0;
     bloomRemaining = 0;
+    redDrawRemaining = 0;
   }
 }

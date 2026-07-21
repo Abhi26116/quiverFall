@@ -273,6 +273,12 @@ abstract final class ProjectileSystem {
 
   static const double _liraLifeboundTierThreeBonus = 0.02;
 
+  // ── Thane: Bloodtide ───────────────────────────────────────────────────────
+
+  static const double _thaneBloodtidePerMissingFraction = 1.2;
+  static const double _thaneBloodtideCap = 0.85;
+  static const double _thaneDeeperTideCap = 1.20;
+
   /// Tests the swept segment against nearby enemies. Returns true if the arrow
   /// was consumed.
   static bool _resolveHits({
@@ -466,6 +472,29 @@ abstract final class ProjectileSystem {
     // be non-zero for a hero who actually holds the Ultimate that sets it.
     if (hero != null && hero.bloomRemaining > 0) {
       boonSum += hero.bloomDamageBonus;
+    }
+
+    // *Red Draw* — same reasoning: `redDrawRemaining` only exists for Thane.
+    if (hero != null && hero.redDrawRemaining > 0) {
+      boonSum += hero.redDrawDamageBonus;
+    }
+
+    // *Bloodtide* — the healing-cap half of this passive ("cannot be healed
+    // above 70 % max HP by any source") is not implemented: it would need a
+    // cap check threaded into every heal source (lifesteal above, and every
+    // BoonSystem regen/shield call), and "does a heal-to-full Boon respect
+    // it too" is a design question this card's text does not answer on its
+    // own. The damage half needs nothing new now that `player` reaches this
+    // hit path.
+    if (hero != null && hero.has(HeroBehaviour.thaneBloodtide) && player >= 0) {
+      final double playerMaxHp = store.maxHealth[player];
+      final double missingFraction =
+          playerMaxHp > 0 ? 1.0 - (store.health[player] / playerMaxHp) : 0.0;
+      final double cap = hero.has(HeroBehaviour.thaneDeeperTide)
+          ? _thaneDeeperTideCap
+          : _thaneBloodtideCap;
+      final double bonus = missingFraction * _thaneBloodtidePerMissingFraction;
+      boonSum += bonus > cap ? cap : bonus;
     }
 
     final double damage = DamageResolver.resolve(
