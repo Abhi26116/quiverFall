@@ -44,6 +44,7 @@ void main() {
   final HeroDefinition thane = heroes.byArchetype(HeroArchetype.thane)!;
   final HeroDefinition mirelle = heroes.byArchetype(HeroArchetype.mirelle)!;
   final HeroDefinition torv = heroes.byArchetype(HeroArchetype.torv)!;
+  final HeroDefinition rook = heroes.byArchetype(HeroArchetype.rook)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -1951,6 +1952,178 @@ void main() {
     });
   });
 
+  group('Pull', () {
+    /// A primary target 8 u east of the player, and [groupedCount] bystanders
+    /// further east still along the same line — close enough to the primary
+    /// to count as "grouped" (within 1.6 u, ADR 0007) but never directly hit,
+    /// since a non-piercing arrow always reaches the nearer primary first.
+    /// Mirrors bramArena's own placement trick exactly.
+    ({SimWorld world, int primary, List<int> grouped}) rookArena({
+      int groupedCount = 0,
+      double groupedSpacing = 0.3,
+      bool forceCrit = false,
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 111, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        rook,
+        HeroState(heroId: 'rook', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      if (forceCrit) {
+        world.combat.critChance = 1.0;
+      }
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final List<int> grouped = <int>[];
+      for (int i = 0; i < groupedCount; i++) {
+        final int e = world.spawnEnemy(
+          EnemyArchetype.mote,
+          12.0 + groupedSpacing * (i + 1),
+          4.5,
+        );
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        grouped.add(e);
+      }
+      return (world: world, primary: primary, grouped: grouped);
+    }
+
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('grouped enemies within 1.6 u each add +12 % damage to the hit', () {
+      final double? alone = firstDamageDealt(rookArena().world);
+      final double? withTwo =
+          firstDamageDealt(rookArena(groupedCount: 2).world);
+      final double? withFour =
+          firstDamageDealt(rookArena(groupedCount: 4).world);
+      expect(alone, isNotNull);
+      expect(withTwo, isNotNull);
+      expect(withFour, isNotNull);
+      expect(withTwo! / alone!, closeTo(1.24, 0.01));
+      expect(withFour! / alone, closeTo(1.48, 0.01));
+    });
+
+    test('the bonus caps at 4 grouped enemies (+48 %) — a 5th adds nothing',
+        () {
+      final double? withFour =
+          firstDamageDealt(rookArena(groupedCount: 4).world);
+      final double? withFive =
+          firstDamageDealt(rookArena(groupedCount: 5, groupedSpacing: 0.2).world);
+      expect(withFour, isNotNull);
+      expect(withFive, isNotNull);
+      expect(withFive! / withFour!, closeTo(1.0, 0.01));
+    });
+
+    test('a bystander beyond 1.6 u does not count as grouped', () {
+      final double? alone = firstDamageDealt(rookArena().world);
+      final double? withFarBystander = firstDamageDealt(
+        rookArena(groupedCount: 1, groupedSpacing: 2.0).world,
+      );
+      expect(alone, isNotNull);
+      expect(withFarBystander, isNotNull);
+      expect(withFarBystander! / alone!, closeTo(1.0, 0.01));
+    });
+
+    test('Denser Grouping (★1b): +18 % per enemy instead of +12 %', () {
+      // Both sides ★1 (one with the branch picked, one without) so heroAtk's
+      // star scaling matches on both — only the per-enemy rate differs.
+      final double? base = firstDamageDealt(
+        rookArena(groupedCount: 2, stars: 1).world,
+      );
+      final double? denser = firstDamageDealt(rookArena(
+        groupedCount: 2,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      ).world);
+      expect(base, isNotNull);
+      expect(denser, isNotNull);
+      // (1 + 2*0.18) / (1 + 2*0.12)
+      expect(denser! / base!, closeTo(1.36 / 1.24, 0.01));
+    });
+
+    test('a crit pulls the target 1.2 u toward the point of impact', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a =
+          rookArena(forceCrit: true);
+      final double x0 = a.world.entities.posX[a.primary];
+      final double y0 = a.world.entities.posY[a.primary];
+
+      final InputSnapshot idle = InputSnapshot();
+      bool hit = false;
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.events.countOf(SimEventType.damageDealt) > 0) {
+          hit = true;
+          break;
+        }
+      }
+      expect(hit, isTrue);
+
+      final double dx = a.world.entities.posX[a.primary] - x0;
+      final double dy = a.world.entities.posY[a.primary] - y0;
+      expect(math.sqrt(dx * dx + dy * dy), closeTo(1.2, 0.05));
+    });
+
+    test('Stronger Pull (★1a): displacement rises to 2.0 u', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        forceCrit: true,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+      );
+      final double x0 = a.world.entities.posX[a.primary];
+      final double y0 = a.world.entities.posY[a.primary];
+
+      final InputSnapshot idle = InputSnapshot();
+      bool hit = false;
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.events.countOf(SimEventType.damageDealt) > 0) {
+          hit = true;
+          break;
+        }
+      }
+      expect(hit, isTrue);
+
+      final double dx = a.world.entities.posX[a.primary] - x0;
+      final double dy = a.world.entities.posY[a.primary] - y0;
+      expect(math.sqrt(dx * dx + dy * dy), closeTo(2.0, 0.05));
+    });
+
+    test('without a crit, the target is never pulled', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a =
+          rookArena();
+      final double x0 = a.world.entities.posX[a.primary];
+      final double y0 = a.world.entities.posY[a.primary];
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.entities.posX[a.primary], closeTo(x0, 1e-9));
+      expect(a.world.entities.posY[a.primary], closeTo(y0, 1e-9));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1985,11 +2158,12 @@ void main() {
       // Heavy Ordnance/Wider Blast/Denser Blast, Thane's
       // Bloodtide/Red Draw/Deeper Tide/Last Stand/Frenzy/Long Red/
       // Crimson Draw, Mirelle's Reflection/Truer Mirror/Deeper
-      // Mirror/Silvered/Fractured, and Torv's Arc/Tempest Nock/Frequent
-      // Arc/Wide Arc/Long Tempest.
+      // Mirror/Silvered/Fractured, Torv's Arc/Tempest Nock/Frequent
+      // Arc/Wide Arc/Long Tempest, and Rook's Pull/Stronger Pull/Denser
+      // Grouping.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(90),
+        lessThanOrEqualTo(87),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -2134,10 +2308,15 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.zeaSkydarken,
   HeroBehaviour.zeaGreatHawk,
 
-  HeroBehaviour.rookPull,
+  // rookPull, rookStrongerPull and rookDenserGrouping are implemented — see
+  // the "Pull" group. The Ultimate (Singularity) and its own two ★5 variants
+  // stay pending: a multi-tick "pull everything toward a point, then
+  // detonate" well needs a sustained field effect nothing before now has
+  // asked of Ultimates (every other one so far resolves in a single tick).
+  // Crush needs a stacking per-enemy DoT (the same missing "5th kind of
+  // status" gap as kestrelBleed) and Anchor needs a per-enemy root/stun
+  // timer, neither of which exists yet.
   HeroBehaviour.rookSingularity,
-  HeroBehaviour.rookStrongerPull,
-  HeroBehaviour.rookDenserGrouping,
   HeroBehaviour.rookCrush,
   HeroBehaviour.rookAnchor,
   HeroBehaviour.rookTwinSingularity,

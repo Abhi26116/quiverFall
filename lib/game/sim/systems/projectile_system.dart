@@ -497,6 +497,19 @@ abstract final class ProjectileSystem {
       boonSum += bonus > cap ? cap : bonus;
     }
 
+    // *Pull*'s grouped-damage half. "Grouped" has no distance stated
+    // anywhere in docs/07 — see ADR 0007 for why this borrows Bram's own
+    // 1.6 u splash radius rather than inventing an unrelated number.
+    if (hero != null && hero.has(HeroBehaviour.rookPull) && enemies != null) {
+      final int grouped = _countRookGrouped(store, target);
+      final int cappedCount =
+          grouped > _rookGroupingCountCap ? _rookGroupingCountCap : grouped;
+      final double perEnemy = hero.has(HeroBehaviour.rookDenserGrouping)
+          ? _rookDenserGroupingBonus
+          : _rookGroupingBonus;
+      boonSum += cappedCount * perEnemy;
+    }
+
     final double damage = DamageResolver.resolve(
       attack: projectiles.damage[slot],
       arrowBaseMultiplier: 1.0,
@@ -652,6 +665,31 @@ abstract final class ProjectileSystem {
       );
     }
 
+    // *Pull*'s crit-displacement half. Moves the target toward the shooter
+    // (the player, not the arrow's own tick-local `fromX`/`fromY`, which sits
+    // almost on top of the impact point and would clamp the pull to nearly
+    // nothing) — clamped to the distance actually separating them, so a
+    // point-blank crit cannot pull an enemy past the player. No wall check:
+    // 1.2-2.0 u is small enough that this reads as a shove, not a teleport,
+    // and every other AoE-shaped hero effect in this file (splash, chains) is
+    // equally indifferent to walls.
+    if (hero != null &&
+        hero.has(HeroBehaviour.rookPull) &&
+        projectiles.wasCrit[slot] == 1 &&
+        player >= 0) {
+      final double dx = store.posX[player] - store.posX[target];
+      final double dy = store.posY[player] - store.posY[target];
+      final double dist = math.sqrt(dx * dx + dy * dy);
+      if (dist > 1e-6) {
+        final double pullDistance = hero.has(HeroBehaviour.rookStrongerPull)
+            ? _rookStrongerPullDistance
+            : _rookPullDistance;
+        final double actualPull = pullDistance > dist ? dist : pullDistance;
+        store.posX[target] += dx / dist * actualPull;
+        store.posY[target] += dy / dist * actualPull;
+      }
+    }
+
     // Death is **not** resolved here. [AiSystem]'s death pass owns it, because a
     // death can mean a detonation, a revival or a split, and those must not
     // depend on which system happened to land the killing tick. Without an
@@ -743,6 +781,33 @@ abstract final class ProjectileSystem {
   static const int _torvArcTargets = 3;
   static const int _torvWideArcTargets = 5;
   static const int _torvTempestNockTargets = 5;
+
+  /// Counts other living enemies within [_rookGroupingRadius] of [target] —
+  /// a linear scan for the same reason [_applyBramSplash] is one.
+  static int _countRookGrouped(EntityStore store, int target) {
+    const double radiusSq = _rookGroupingRadius * _rookGroupingRadius;
+    int count = 0;
+    for (int i = 0; i < store.highWater; i++) {
+      if (i == target) continue;
+      if (store.alive[i] == 0) continue;
+      if (store.kind[i] != EntityKind.enemy.index) continue;
+      final double dx = store.posX[i] - store.posX[target];
+      final double dy = store.posY[i] - store.posY[target];
+      if (dx * dx + dy * dy > radiusSq) continue;
+      count++;
+    }
+    return count;
+  }
+
+  static const double _rookPullDistance = 1.2;
+  static const double _rookStrongerPullDistance = 2.0;
+
+  /// ADR 0007 — docs/07 states no distance for "grouped"; this borrows
+  /// Bram's own splash radius rather than inventing an unrelated number.
+  static const double _rookGroupingRadius = 1.6;
+  static const int _rookGroupingCountCap = 4;
+  static const double _rookGroupingBonus = 0.12;
+  static const double _rookDenserGroupingBonus = 0.18;
 
   /// Applies the arrow's element, and lets adapting enemies adapt.
   ///
