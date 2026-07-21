@@ -82,21 +82,28 @@ class StatusStore {
   /// Sable's Fast Acting (2 stacks/hit, capped at 8) and Virulence (capped
   /// at 12) — both read the same [toxinStacks] every other Toxin source
   /// (an arrow's own element, a Boon) stacks at the base rate of 1/10.
+  ///
+  /// [burnMaxStacksOverride]/[burnDurationOverride] do the same for Kade's
+  /// Slow Burn (3 stacks, 8 s instead of the base 2/4 s).
   SimElement? apply(
     int slot,
     SimElement element, {
     double? chillPerHitOverride,
     int? toxinStacksPerHitOverride,
     int? toxinMaxStacksOverride,
+    int? burnMaxStacksOverride,
+    double? burnDurationOverride,
   }) {
     final SimElement? existing = dominantElement(slot);
 
     switch (element) {
       case SimElement.ember:
-        if (burnStacks[slot] < ElementTuning.burnMaxStacks) {
+        final int maxBurnStacks =
+            burnMaxStacksOverride ?? ElementTuning.burnMaxStacks;
+        if (burnStacks[slot] < maxBurnStacks) {
           burnStacks[slot]++;
         }
-        burnRemaining[slot] = ElementTuning.burnDuration;
+        burnRemaining[slot] = burnDurationOverride ?? ElementTuning.burnDuration;
 
       case SimElement.frost:
         chill[slot] += chillPerHitOverride ?? ElementTuning.chillPerHit;

@@ -1,3 +1,5 @@
+import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -25,8 +27,15 @@ abstract final class ElementSystem {
     required SimEventBuffer events,
     required double dt,
     bool deferDeath = false,
+    HeroRuntime? hero,
   }) {
     final int high = store.highWater;
+
+    // *Deep Burn* (Kade, T1b) — 6 %/s instead of the base 4 %/s. Read once
+    // rather than per-entity below, since exactly one hero is ever equipped.
+    final double burnPerSecond = hero != null && hero.has(HeroBehaviour.kadeDeepBurn)
+        ? _kadeDeepBurnPerSecond
+        : ElementTuning.burnPerSecond;
 
     for (int i = 0; i < high; i++) {
       if (store.alive[i] == 0) continue;
@@ -59,10 +68,7 @@ abstract final class ElementSystem {
           status.burnStacks[i] = 0;
           status.burnRemaining[i] = 0;
         } else {
-          damage += store.maxHealth[i] *
-              ElementTuning.burnPerSecond *
-              status.burnStacks[i] *
-              dt;
+          damage += store.maxHealth[i] * burnPerSecond * status.burnStacks[i] * dt;
         }
       }
 
@@ -138,6 +144,8 @@ abstract final class ElementSystem {
 
     return reaction.damageMultiplier;
   }
+
+  static const double _kadeDeepBurnPerSecond = 0.06;
 
   static int _bitCount(int mask) {
     int n = 0;

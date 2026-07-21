@@ -152,6 +152,21 @@ class HeroRuntime {
   /// continuous rate, since Toxin stacks are whole numbers.
   double miasmaTickTimer = 0;
 
+  /// Seconds left on Kade's *Pyre Line* wall. Zero means inactive. Endpoints
+  /// pinned at cast time, the same shape as Miasma's own fixed zone.
+  double pyreLineRemaining = 0;
+  double pyreLineX0 = 0;
+  double pyreLineY0 = 0;
+  double pyreLineX1 = 0;
+  double pyreLineY1 = 0;
+
+  /// *Twin Pyre* (T5b)'s second, perpendicular wall — only ever non-zero
+  /// alongside [pyreLineRemaining], and only when that talent is held.
+  double pyreLine2X0 = 0;
+  double pyreLine2Y0 = 0;
+  double pyreLine2X1 = 0;
+  double pyreLine2Y1 = 0;
+
   // ── Once-per-run counters ─────────────────────────────────────────────────
   // Counted per run rather than per room, same as BoonRuntime.arrowsFired —
   // a counter that silently reset at every door would make the card read as
@@ -202,6 +217,15 @@ class HeroRuntime {
     miasmaX = 0;
     miasmaY = 0;
     miasmaTickTimer = 0;
+    pyreLineRemaining = 0;
+    pyreLineX0 = 0;
+    pyreLineY0 = 0;
+    pyreLineX1 = 0;
+    pyreLineY1 = 0;
+    pyreLine2X0 = 0;
+    pyreLine2Y0 = 0;
+    pyreLine2X1 = 0;
+    pyreLine2Y1 = 0;
     arrowsFired = 0;
     rekindleSpent = false;
     cycleIndex = 0;
@@ -221,5 +245,6 @@ class HeroRuntime {
     redDrawRemaining = 0;
     tempestNockRemaining = 0;
     miasmaRemaining = 0;
+    pyreLineRemaining = 0;
   }
 }

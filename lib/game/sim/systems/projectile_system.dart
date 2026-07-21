@@ -893,6 +893,8 @@ abstract final class ProjectileSystem {
       double? chillPerHitOverride,
       int? toxinStacksPerHitOverride,
       int? toxinMaxStacksOverride,
+      int? burnMaxStacksOverride,
+      double? burnDurationOverride,
     }) {
       final int mask = projectiles.elementMask[slot];
       final int index = projectiles.element[slot];
@@ -903,11 +905,26 @@ abstract final class ProjectileSystem {
       _applyOneElement(enemies, status, events, slot, target, element, x, y,
           chillPerHitOverride: chillPerHitOverride,
           toxinStacksPerHitOverride: toxinStacksPerHitOverride,
-          toxinMaxStacksOverride: toxinMaxStacksOverride);
+          toxinMaxStacksOverride: toxinMaxStacksOverride,
+          burnMaxStacksOverride: burnMaxStacksOverride,
+          burnDurationOverride: burnDurationOverride);
     }
 
-    if (tier == DrawTier.three && hero.has(HeroBehaviour.kadeKindling)) {
-      applyIfNotAlreadyCarried(SimElement.ember);
+    // *Hot Iron* (T1a) widens the tier gate to Tier II as well; *Deep Burn*
+    // (T1b) keeps the Tier-III-only gate and instead raises the per-second
+    // rate — read where the DoT itself ticks, in [ElementSystem], since nothing
+    // here computes damage. *Slow Burn* (T3a) is orthogonal to both: whichever
+    // gate let the stack through, it lasts longer and caps higher.
+    final bool tierQualifies = tier == DrawTier.three ||
+        (tier == DrawTier.two && hero.has(HeroBehaviour.kadeHotIron));
+    if (tierQualifies && hero.has(HeroBehaviour.kadeKindling)) {
+      applyIfNotAlreadyCarried(
+        SimElement.ember,
+        burnMaxStacksOverride:
+            hero.has(HeroBehaviour.kadeSlowBurn) ? _kadeSlowBurnMaxStacks : null,
+        burnDurationOverride:
+            hero.has(HeroBehaviour.kadeSlowBurn) ? _kadeSlowBurnDuration : null,
+      );
     }
     if (hero.has(HeroBehaviour.selaChill)) {
       // *Deeper Chill* (T1a) — 16 per hit instead of the base 12.
@@ -938,6 +955,8 @@ abstract final class ProjectileSystem {
   static const int _sableFastActingPerHit = 2;
   static const int _sableFastActingMaxStacks = 8;
   static const int _sableVirulenceMaxStacks = 12;
+  static const int _kadeSlowBurnMaxStacks = 3;
+  static const double _kadeSlowBurnDuration = 8.0;
 
   static void _applyOneElement(
     EnemyStore? enemies,
@@ -951,6 +970,8 @@ abstract final class ProjectileSystem {
     double? chillPerHitOverride,
     int? toxinStacksPerHitOverride,
     int? toxinMaxStacksOverride,
+    int? burnMaxStacksOverride,
+    double? burnDurationOverride,
   }) {
     if (enemies != null && enemies.resistsElement(target, element)) return;
 
@@ -960,6 +981,8 @@ abstract final class ProjectileSystem {
       chillPerHitOverride: chillPerHitOverride,
       toxinStacksPerHitOverride: toxinStacksPerHitOverride,
       toxinMaxStacksOverride: toxinMaxStacksOverride,
+      burnMaxStacksOverride: burnMaxStacksOverride,
+      burnDurationOverride: burnDurationOverride,
     );
     events.emit(
       SimEventType.elementApplied,

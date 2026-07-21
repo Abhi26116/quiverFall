@@ -498,9 +498,46 @@ abstract final class AiSystem {
       }
     }
 
+    // *Wildfire* (Kade, T3a) — Burn spreads to one enemy within 2 u on death,
+    // applied exactly like a fresh hit's own ember application (respecting
+    // whatever stack cap/duration Slow Burn grants) rather than transferring
+    // a stack count the way Contagion does above: "spreads" reads as the
+    // fire jumping to a new target, not a numeric share.
+    if (hero != null &&
+        hero.has(HeroBehaviour.kadeWildfire) &&
+        ctx.status.burnStacks[slot] > 0) {
+      final int nearest =
+          _nearestOtherEnemyWithin(ctx, slot, _kadeWildfireRadius);
+      if (nearest >= 0 && !ctx.enemies.resistsElement(nearest, SimElement.ember)) {
+        ctx.status.apply(
+          nearest,
+          SimElement.ember,
+          burnMaxStacksOverride:
+              hero.has(HeroBehaviour.kadeSlowBurn) ? _kadeSlowBurnMaxStacks : null,
+          burnDurationOverride:
+              hero.has(HeroBehaviour.kadeSlowBurn) ? _kadeSlowBurnDuration : null,
+        );
+      }
+    }
+
     ctx.status.clearSlot(slot);
     ctx.enemies.reset(slot);
     ctx.entities.despawn(ctx.entities.idAt(slot));
+  }
+
+  static const double _kadeWildfireRadius = 2.0;
+  static const int _kadeSlowBurnMaxStacks = 3;
+  static const double _kadeSlowBurnDuration = 8.0;
+
+  /// Bounded variant of [_nearestOtherEnemy] — returns -1 when the closest
+  /// other enemy overall is still further than [radius], since nothing
+  /// closer than the global nearest could ever qualify instead.
+  static int _nearestOtherEnemyWithin(AiContext ctx, int slot, double radius) {
+    final int nearest = _nearestOtherEnemy(ctx, slot);
+    if (nearest < 0) return -1;
+    final double dx = ctx.entities.posX[nearest] - ctx.entities.posX[slot];
+    final double dy = ctx.entities.posY[nearest] - ctx.entities.posY[slot];
+    return (dx * dx + dy * dy) <= radius * radius ? nearest : -1;
   }
 
   /// Mirrors the same two mutually-exclusive T1 caps

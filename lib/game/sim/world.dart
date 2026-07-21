@@ -486,6 +486,7 @@ class SimWorld {
     // [spatial] (rebuilt just above) to find who is standing in it, exactly
     // like `_fireSelaGlacierNail`'s own target selection does.
     _tickSableMiasma(dt);
+    _tickKadePyreLine(dt);
 
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
@@ -543,6 +544,7 @@ class SimWorld {
       events: events,
       dt: dt,
       deferDeath: true,
+      hero: hero,
     );
 
     // ── ai ─────────────────────────────────────────────────────────────────
@@ -832,6 +834,8 @@ class SimWorld {
       _fireSelaGlacierNail();
     } else if (hero.has(HeroBehaviour.sableMiasma)) {
       _fireSableMiasma();
+    } else if (hero.has(HeroBehaviour.kadePyreLine)) {
+      _fireKadePyreLine();
     }
   }
 
@@ -1070,6 +1074,135 @@ class SimWorld {
       if (enemies.resistsElement(e, SimElement.toxin)) continue;
       status.apply(e, SimElement.toxin, toxinMaxStacksOverride: maxStacks);
     }
+  }
+
+  /// *Pyre Line* — a straight burning wall along the aim vector, the same
+  /// direction [FiringSystem.aimAngle] computes for every other targeted
+  /// Ultimate. Endpoints are pinned at cast time on [HeroRuntime], the same
+  /// fixed-zone shape Miasma's own cloud uses, and ticked every frame from
+  /// [_tickKadePyreLine] rather than applied once here. *Long Pyre* (T5a)
+  /// only changes the duration; *Twin Pyre* (T5b) casts a second wall
+  /// perpendicular to the first, crossing at the player.
+  void _fireKadePyreLine() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double fromX = entities.posX[p];
+    final double fromY = entities.posY[p];
+
+    final int target = FiringSystem.selectTarget(
+      entities,
+      spatial,
+      fromX,
+      fromY,
+      enemies: enemies,
+    );
+    final double angle = target >= 0
+        ? FiringSystem.aimAngle(entities, target, fromX, fromY,
+            entities.facing[p], aimAssist, projectileSpeed)
+        : entities.facing[p];
+
+    hero.pyreLineRemaining = hero.has(HeroBehaviour.kadeLongPyre)
+        ? _kadeLongPyreDuration
+        : _kadePyreLineDuration;
+    hero.pyreLineX0 = fromX;
+    hero.pyreLineY0 = fromY;
+    hero.pyreLineX1 = fromX + math.cos(angle) * _kadePyreLineLength;
+    hero.pyreLineY1 = fromY + math.sin(angle) * _kadePyreLineLength;
+
+    if (hero.has(HeroBehaviour.kadeTwinPyre)) {
+      final double perpAngle = angle + math.pi / 2;
+      hero.pyreLine2X0 = fromX;
+      hero.pyreLine2Y0 = fromY;
+      hero.pyreLine2X1 = fromX + math.cos(perpAngle) * _kadePyreLineLength;
+      hero.pyreLine2Y1 = fromY + math.sin(perpAngle) * _kadePyreLineLength;
+    } else {
+      hero.pyreLine2X0 = 0;
+      hero.pyreLine2Y0 = 0;
+      hero.pyreLine2X1 = 0;
+      hero.pyreLine2Y1 = 0;
+    }
+  }
+
+  static const double _kadePyreLineDuration = 8.0;
+  static const double _kadeLongPyreDuration = 14.0;
+
+  /// Long enough to reach across the arena, the same reasoning
+  /// [_fireVanePiercingHorizon] already uses for its own line length.
+  static const double _kadePyreLineLength = 18.0;
+
+  /// ADR 0008 — docs/07 states no cross-section for the wall; this borrows
+  /// the same tolerance every Windline segment already checks against.
+  static const double _kadePyreLineHalfWidth = SimConfig.windlineHitWidth;
+
+  static const int _kadeSlowBurnMaxStacks = 3;
+  static const double _kadeSlowBurnDuration = 8.0;
+
+  /// Decrements Pyre Line's own timer and re-applies Burn to whoever is
+  /// currently standing in the wall — a plain per-tick refresh rather than a
+  /// once-per-crossing edge trigger, since nothing in the sim tracks "was
+  /// this enemy in the zone last tick" yet. Harmless to reapply every tick:
+  /// [StatusStore.apply]'s own stack cap makes this idempotent once an
+  /// enemy is already at the ceiling, so standing in the fire simply keeps
+  /// Burn topped up rather than stacking indefinitely.
+  void _tickKadePyreLine(double dt) {
+    if (hero.pyreLineRemaining <= 0) return;
+    hero.pyreLineRemaining -= dt;
+    if (hero.pyreLineRemaining < 0) hero.pyreLineRemaining = 0;
+
+    _applyPyreWall(
+        hero.pyreLineX0, hero.pyreLineY0, hero.pyreLineX1, hero.pyreLineY1);
+    if (hero.has(HeroBehaviour.kadeTwinPyre)) {
+      _applyPyreWall(hero.pyreLine2X0, hero.pyreLine2Y0, hero.pyreLine2X1,
+          hero.pyreLine2Y1);
+    }
+  }
+
+  void _applyPyreWall(double x0, double y0, double x1, double y1) {
+    final int? maxStacks =
+        hero.has(HeroBehaviour.kadeSlowBurn) ? _kadeSlowBurnMaxStacks : null;
+    final double? duration =
+        hero.has(HeroBehaviour.kadeSlowBurn) ? _kadeSlowBurnDuration : null;
+
+    for (int i = 0; i < entities.highWater; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      final double reach = entities.radius[i] + _kadePyreLineHalfWidth;
+      if (!_nearSegment(entities.posX[i], entities.posY[i], x0, y0, x1, y1, reach)) {
+        continue;
+      }
+      if (enemies.resistsElement(i, SimElement.ember)) continue;
+      status.apply(
+        i,
+        SimElement.ember,
+        burnMaxStacksOverride: maxStacks,
+        burnDurationOverride: duration,
+      );
+    }
+  }
+
+  static bool _nearSegment(
+    double px,
+    double py,
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    double reach,
+  ) {
+    final double dx = x1 - x0;
+    final double dy = y1 - y0;
+    final double lengthSq = dx * dx + dy * dy;
+
+    double t = 0;
+    if (lengthSq > 1e-12) {
+      t = ((px - x0) * dx + (py - y0) * dy) / lengthSq;
+      if (t < 0) t = 0;
+      if (t > 1) t = 1;
+    }
+
+    final double gapX = px - (x0 + dx * t);
+    final double gapY = py - (y0 + dy * t);
+    return gapX * gapX + gapY * gapY <= reach * reach;
   }
 
   /// *Piercing Horizon* — one arrow (two, for Twin Horizon), Tier III,

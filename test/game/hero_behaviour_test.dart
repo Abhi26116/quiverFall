@@ -2458,6 +2458,176 @@ void main() {
     });
   });
 
+  group('Kindling and Pyre Line', () {
+    /// A single target [distance] u east of the player — kept close (1 u
+    /// default) for the tier-gate tests, where the arrow's own travel time
+    /// must stay negligible next to the ~0.65 s Tier II window itself.
+    ({SimWorld world, int target}) kadeArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      double distance = 8.0,
+    }) {
+      final SimWorld world = SimWorld(seed: 171, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        kade,
+        HeroState(heroId: 'kade', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target =
+          world.spawnEnemy(EnemyArchetype.mote, 4.0 + distance, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      return (world: world, target: target);
+    }
+
+    /// One enemy sitting on the player's aim line (due east — the nearest
+    /// enemy, so it is what target selection locks the wall's direction
+    /// onto) and one 1.5 u off it — well outside the wall's own tolerance
+    /// (ADR 0008's borrowed Windline width plus a mote's radius).
+    ({SimWorld world, int onLine, int offLine}) kadePyreArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 172, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        kade,
+        HeroState(heroId: 'kade', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int onLine = world.spawnEnemy(EnemyArchetype.mote, 9.0, 4.5);
+      world.enemies.speedScale[onLine] = 0;
+      world.entities.maxHealth[onLine] = 1e9;
+      world.entities.health[onLine] = 1e9;
+
+      final int offLine = world.spawnEnemy(EnemyArchetype.mote, 9.0, 6.0);
+      world.enemies.speedScale[offLine] = 0;
+      world.entities.maxHealth[offLine] = 1e9;
+      world.entities.health[offLine] = 1e9;
+      return (world: world, onLine: onLine, offLine: offLine);
+    }
+
+    test('Hot Iron (★1a): Burn also applies at Tier II', () {
+      final ({SimWorld world, int target}) a = kadeArena(
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+        distance: 1.0,
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.playerDraw.tier, DrawTier.two);
+      expect(a.world.status.burnStacks[a.target], greaterThan(0));
+    });
+
+    test('without Hot Iron, Tier II does not apply Burn', () {
+      final ({SimWorld world, int target}) a = kadeArena(distance: 1.0);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.playerDraw.tier, DrawTier.two);
+      expect(a.world.status.burnStacks[a.target], 0);
+    });
+
+    test('Deep Burn (★1b): Burn deals 6 % max HP/s instead of 4 %', () {
+      final ({SimWorld world, int target}) a =
+          kadeArena(stars: 1, talentChoices: <String, String>{'1': 'b'});
+      a.world.status.burnStacks[a.target] = 1;
+      a.world.status.burnRemaining[a.target] = 10.0;
+      final double before = a.world.entities.health[a.target];
+      a.world.tick(InputSnapshot());
+      final double lost = before - a.world.entities.health[a.target];
+      // maxHealth * 0.06 * 1 stack * one tick's dt (1/60 s).
+      expect(lost, closeTo(1e9 * 0.06 / 60.0, 1.0));
+    });
+
+    test(
+        'Wildfire (★3a): Burn spreads to one enemy within 2 u on the '
+        "carrier's death", () {
+      final ({SimWorld world, int target}) a =
+          kadeArena(stars: 3, talentChoices: <String, String>{'3': 'a'});
+      final int nearby = a.world.spawnEnemy(
+        EnemyArchetype.mote,
+        a.world.entities.posX[a.target] + 1.0,
+        a.world.entities.posY[a.target],
+      );
+      a.world.enemies.speedScale[nearby] = 0;
+      a.world.entities.maxHealth[nearby] = 1e9;
+      a.world.entities.health[nearby] = 1e9;
+
+      a.world.status.burnStacks[a.target] = 1;
+      a.world.status.burnRemaining[a.target] = 10.0;
+      // Lethal to Burn's own DoT on the very next tick — deferDeath routes
+      // the reap (and this talent's hook) through AiSystem either way.
+      a.world.entities.health[a.target] = 0.001;
+      a.world.tick(InputSnapshot());
+
+      expect(a.world.entities.alive[a.target], 0);
+      expect(a.world.status.burnStacks[nearby], greaterThan(0));
+    });
+
+    test('Pyre Line burns whoever stands on the wall along the aim vector',
+        () {
+      final ({SimWorld world, int onLine, int offLine}) a = kadePyreArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.status.burnStacks[a.onLine], greaterThan(0));
+      expect(a.world.status.burnStacks[a.offLine], 0);
+    });
+
+    test('Slow Burn (★3b) via Pyre Line: 3 stacks lasting 8 s', () {
+      final ({SimWorld world, int onLine, int offLine}) a =
+          kadePyreArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      // The wall re-applies every tick standing in it (not a once-per-
+      // crossing burst — see _tickKadePyreLine's own note), so a handful of
+      // extra ticks lets the stack count climb to its cap.
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 5; t++) {
+        a.world.tick(idle);
+      }
+
+      expect(a.world.status.burnStacks[a.onLine], 3);
+      expect(a.world.status.burnRemaining[a.onLine], closeTo(8.0, 0.1));
+    });
+
+    test('Long Pyre (★5a): the wall lasts 14 s instead of 8', () {
+      final ({SimWorld world, int onLine, int offLine}) a =
+          kadePyreArena(stars: 5, talentChoices: <String, String>{'5': 'a'});
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.pyreLineRemaining, closeTo(14.0, 0.02));
+    });
+
+    test('Twin Pyre (★5b): a second, perpendicular wall also burns', () {
+      final ({SimWorld world, int onLine, int offLine}) a =
+          kadePyreArena(stars: 5, talentChoices: <String, String>{'5': 'b'});
+      // 6 u due north of the player — further than onLine's 5 u, so target
+      // selection still locks the primary wall eastward — but exactly on
+      // the perpendicular wall Twin Pyre adds.
+      final int perpTester =
+          a.world.spawnEnemy(EnemyArchetype.mote, 4.0, 10.5);
+      a.world.enemies.speedScale[perpTester] = 0;
+      a.world.entities.maxHealth[perpTester] = 1e9;
+      a.world.entities.health[perpTester] = 1e9;
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.status.burnStacks[perpTester], greaterThan(0));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -2495,11 +2665,13 @@ void main() {
       // Mirror/Silvered/Fractured, Torv's Arc/Tempest Nock/Frequent
       // Arc/Wide Arc/Long Tempest, Rook's Pull/Stronger Pull/Denser
       // Grouping, Sela's Glacier Nail/Deeper Chill/Brittle/Absolute
-      // Zero/Cascading Nail, and Sable's whole kit: Miasma/Virulence/Fast
-      // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma.
+      // Zero/Cascading Nail, Sable's whole kit (Miasma/Virulence/Fast
+      // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma), and
+      // Kade's whole kit (Pyre Line/Hot Iron/Deep Burn/Wildfire/Slow
+      // Burn/Long Pyre/Twin Pyre).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(75),
+        lessThanOrEqualTo(68),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -2552,13 +2724,10 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.ovrinMirrorWall,
 
   // kadeKindling is implemented — see the "three innate elements" group.
-  HeroBehaviour.kadePyreLine,
-  HeroBehaviour.kadeHotIron,
-  HeroBehaviour.kadeDeepBurn,
-  HeroBehaviour.kadeWildfire,
-  HeroBehaviour.kadeSlowBurn,
-  HeroBehaviour.kadeLongPyre,
-  HeroBehaviour.kadeTwinPyre,
+  // kadePyreLine, kadeHotIron, kadeDeepBurn, kadeWildfire, kadeSlowBurn,
+  // kadeLongPyre and kadeTwinPyre are all implemented too — see the
+  // "Kindling and Pyre Line" group. Kade is the second hero (after Sable)
+  // whose entire kit is reachable with nothing deferred.
 
   // selaChill is implemented — see the "three innate elements" group; its own
   // "+30 % damage while frozen" clause was not actually wired into damage
