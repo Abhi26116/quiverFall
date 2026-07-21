@@ -30,7 +30,31 @@ void main() {
 
   final HeroDefinition wren = heroes.byArchetype(HeroArchetype.wren)!;
   final HeroDefinition kestrel = heroes.byArchetype(HeroArchetype.kestrel)!;
+  final HeroDefinition kade = heroes.byArchetype(HeroArchetype.kade)!;
+  final HeroDefinition sela = heroes.byArchetype(HeroArchetype.sela)!;
+  final HeroDefinition sable = heroes.byArchetype(HeroArchetype.sable)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
+
+  /// A live world carrying [hero] and Ash Shaft, with a stationary target due
+  /// east of the player — the neutral arrow, so nothing here is ever the
+  /// arrow's own element rather than the hero's.
+  ({SimWorld world, int target}) heroArena(HeroDefinition hero) {
+    final SimWorld world = SimWorld(seed: 11, content: content)
+      ..autoFire = true;
+    world.spawnPlayer(4.0, 4.5);
+    HeroLoadoutResolver.apply(
+      world,
+      hero,
+      HeroState(heroId: hero.key),
+      ashShaft,
+      const ArrowInstance(arrowId: 'ash_shaft'),
+    );
+    final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+    world.enemies.speedScale[0] = 0;
+    world.entities.maxHealth[mote] = 1e9;
+    world.entities.health[mote] = 1e9;
+    return (world: world, target: mote);
+  }
 
   /// A live world carrying Wren and Ash Shaft, with a stationary target due
   /// east of the player — the same "straight line, angle zero" layout every
@@ -493,6 +517,108 @@ void main() {
     });
   });
 
+  group('the three innate elements — same numbers as an arrow\'s own', () {
+    test('Kindling applies Burn on a Tier III hit, never before', () {
+      final ({SimWorld world, int target}) a = heroArena(kade);
+      final InputSnapshot idle = InputSnapshot();
+
+      // Tier I fires immediately: Kindling must not have applied yet.
+      a.world.tick(idle);
+      expect(a.world.status.burnStacks[a.target], 0);
+
+      // Run out to Tier III (1.10 s) and a bit further for a hit to land.
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.burnStacks[a.target], greaterThan(0));
+    });
+
+    test('an Emberhead arrow does not double-stack Burn under Kindling', () {
+      final ArrowDefinition emberhead =
+          arrows.byArchetype(ArrowArchetype.emberhead)!;
+      final SimWorld world = SimWorld(seed: 11, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        kade,
+        const HeroState(heroId: 'kade'),
+        emberhead,
+        const ArrowInstance(arrowId: 'emberhead'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[0] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+      }
+      // ElementTuning.burnMaxStacks — one hit cannot exceed it regardless of
+      // how many sources tried to apply Burn on that same hit.
+      expect(world.status.burnStacks[mote], lessThanOrEqualTo(2));
+    });
+
+    /// Runs [world] until its first `damageDealt` event — an arrow spends
+    /// real travel time crossing to a distant target (8 u at 14 u/s is ~34
+    /// ticks), so checking status state after a single tick catches the shot
+    /// leaving the bow, not the shot landing.
+    void runUntilFirstHit(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        if (world.events.countOf(SimEventType.damageDealt) > 0) return;
+      }
+      fail('no hit landed within 120 ticks');
+    }
+
+    test('Chill stacks 12 per hit and freezes at 100, +30 % damage while frozen', () {
+      final ({SimWorld world, int target}) a = heroArena(sela);
+      // Tier I fires immediately — Chill has no tier gate.
+      runUntilFirstHit(a.world);
+      // ElementSystem's decay pass runs later in the same tick the hit
+      // landed (chillDecayPerSecond = 8/s, one tick's worth is ~0.13), so
+      // this reads a hair under the raw +12 application rather than exactly
+      // it.
+      expect(a.world.status.chill[a.target], closeTo(12.0, 0.2));
+      expect(a.world.status.isFrozen(a.target), isFalse);
+
+      // 9 hits reach 108, past the 100 threshold, and reset to 0 on freezing.
+      // Momentum/AI cannot touch this mote (speedScale 0, isMoving false), so
+      // driving idle ticks alone is enough for auto-fire to land every hit.
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 480 && !a.world.status.isFrozen(a.target); t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.isFrozen(a.target), isTrue);
+      expect(
+        a.world.status.damageTakenBonus(a.target),
+        closeTo(0.30, 1e-9),
+      );
+    });
+
+    test('Toxin stacks once per hit, capped at 10, and reduces healing 5 % per stack', () {
+      final ({SimWorld world, int target}) a = heroArena(sable);
+      runUntilFirstHit(a.world);
+      expect(a.world.status.toxinStacks[a.target], 1);
+      expect(
+        a.world.status.healingMultiplier(a.target),
+        closeTo(0.95, 1e-9),
+      );
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 480; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.toxinStacks[a.target], 10);
+      expect(
+        a.world.status.healingMultiplier(a.target),
+        closeTo(0.50, 1e-9),
+      );
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -517,11 +643,12 @@ void main() {
       // The number that must only ever go down, exactly like
       // pendingBehaviourWork was for Phase 9's Boons. 140 hero behaviours
       // total (kestrelSharperNock never joined this enum — it turned out to
-      // be one StatModifier, not a behaviour); Wren's four and Kestrel's
-      // Flurry plus both ★5 variants are the first seven out.
+      // be one StatModifier, not a behaviour). Out so far: Wren's four,
+      // Kestrel's Flurry plus both ★5 variants, and Kade/Sela/Sable's
+      // innate-element passives.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(133),
+        lessThanOrEqualTo(130),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -569,7 +696,7 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.ovrinLongWall,
   HeroBehaviour.ovrinMirrorWall,
 
-  HeroBehaviour.kadeKindling,
+  // kadeKindling is implemented — see the "three innate elements" group.
   HeroBehaviour.kadePyreLine,
   HeroBehaviour.kadeHotIron,
   HeroBehaviour.kadeDeepBurn,
@@ -578,7 +705,7 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.kadeLongPyre,
   HeroBehaviour.kadeTwinPyre,
 
-  HeroBehaviour.selaChill,
+  // selaChill is implemented — see the "three innate elements" group.
   HeroBehaviour.selaGlacierNail,
   HeroBehaviour.selaDeeperChill,
   HeroBehaviour.selaBrittle,
@@ -596,7 +723,7 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.torvLongTempest,
   HeroBehaviour.torvThunderhead,
 
-  HeroBehaviour.sableToxin,
+  // sableToxin is implemented — see the "three innate elements" group.
   HeroBehaviour.sableMiasma,
   HeroBehaviour.sableVirulence,
   HeroBehaviour.sableFastActing,

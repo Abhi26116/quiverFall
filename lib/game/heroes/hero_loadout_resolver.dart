@@ -111,6 +111,11 @@ abstract final class HeroLoadoutResolver {
       baseMoveSpeed: heroMoveSpeed,
     );
 
+    // The equipped arrow's element, if any — Prismshaft and Attunement-style
+    // rotation aside, this is the one thing every arrow contributes that
+    // isn't a StatModifier or a behaviour flag.
+    world.arrowElement = arrow.element;
+
     world.hero
       ..setHeroActive(heroActive)
       ..setArrowActive(arrow.behaviour)

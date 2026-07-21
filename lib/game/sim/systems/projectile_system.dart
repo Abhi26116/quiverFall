@@ -6,6 +6,7 @@ import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
+import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
@@ -445,6 +446,19 @@ abstract final class ProjectileSystem {
       y: store.posY[target],
     );
 
+    _applyHeroInnateElements(
+      projectiles: projectiles,
+      enemies: enemies,
+      status: status,
+      events: events,
+      hero: hero,
+      slot: slot,
+      target: target,
+      tier: tier,
+      x: store.posX[target],
+      y: store.posY[target],
+    );
+
     events.emit(
       SimEventType.damageDealt,
       entityA: target,
@@ -510,6 +524,52 @@ abstract final class ProjectileSystem {
     if (index < 0) return;
     _applyOneElement(enemies, status, events, slot, target,
         SimElement.values[index], x, y);
+  }
+
+  /// Kade's Kindling, Sela's Chill and Sable's Toxin: each grants their own
+  /// element "without needing an [Ember/Frost/Toxin] arrow" (their own card
+  /// text). Every one of the three uses the exact numbers
+  /// [ElementTuning] already defines for an arrow's own elemental application
+  /// — Sela's "12 Chill, freeze at 100, +30 % while frozen" is
+  /// `ElementTuning.chillPerHit`/`chillToFreeze`/`frozenDamageBonus` verbatim
+  /// — so this reuses [_applyOneElement] rather than a second implementation
+  /// of the same status.
+  ///
+  /// Skips an element the arrow already carries: an Emberhead shot from Kade
+  /// must not stack Burn twice for one hit.
+  static void _applyHeroInnateElements({
+    required ProjectileStore projectiles,
+    required EnemyStore? enemies,
+    required StatusStore? status,
+    required SimEventBuffer events,
+    required HeroRuntime? hero,
+    required int slot,
+    required int target,
+    required DrawTier tier,
+    required double x,
+    required double y,
+  }) {
+    if (status == null || hero == null) return;
+
+    void applyIfNotAlreadyCarried(SimElement element) {
+      final int mask = projectiles.elementMask[slot];
+      final int index = projectiles.element[slot];
+      final bool alreadyCarried = mask != 0
+          ? (mask & (1 << element.index)) != 0
+          : index == element.index;
+      if (alreadyCarried) return;
+      _applyOneElement(enemies, status, events, slot, target, element, x, y);
+    }
+
+    if (tier == DrawTier.three && hero.has(HeroBehaviour.kadeKindling)) {
+      applyIfNotAlreadyCarried(SimElement.ember);
+    }
+    if (hero.has(HeroBehaviour.selaChill)) {
+      applyIfNotAlreadyCarried(SimElement.frost);
+    }
+    if (hero.has(HeroBehaviour.sableToxin)) {
+      applyIfNotAlreadyCarried(SimElement.toxin);
+    }
   }
 
   static void _applyOneElement(
