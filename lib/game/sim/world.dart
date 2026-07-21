@@ -752,6 +752,8 @@ class SimWorld {
           : HeroRuntime.prismDuration;
     } else if (hero.has(HeroBehaviour.vanePiercingHorizon)) {
       _fireVanePiercingHorizon();
+    } else if (hero.has(HeroBehaviour.haldenJudgmentSpear)) {
+      _fireHaldenJudgmentSpear();
     }
   }
 
@@ -805,6 +807,65 @@ class SimWorld {
   static const double _vanePiercingHorizonDamageShare = 6.00;
   static const double _vaneSunderingHorizonDamageShare = 14.00;
   static const double _vaneTwinHorizonOffsetRadians = math.pi / 2;
+
+  /// *Judgment Spear* — a single Tier III strike, scaled up against a
+  /// low-health target rather than at a flat rate. *Final Verdict* (T5a) and
+  /// *Twin Spear* (T5b) are the same node's two branches and never both
+  /// active; Twin Spear's own card text ("2 spears, 600 % each") is a flat
+  /// replacement with no health-tier bonus of its own, the same way Wren's
+  /// Wide Fan and Focused Fan fully replace Volley Fan's numbers rather than
+  /// layering on top of them.
+  void _fireHaldenJudgmentSpear() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double fromX = entities.posX[p];
+    final double fromY = entities.posY[p];
+
+    final int target = FiringSystem.selectTarget(
+      entities,
+      spatial,
+      fromX,
+      fromY,
+      enemies: enemies,
+    );
+    final double baseAngle = target >= 0
+        ? FiringSystem.aimAngle(entities, target, fromX, fromY,
+            entities.facing[p], aimAssist, projectileSpeed)
+        : entities.facing[p];
+
+    if (hero.has(HeroBehaviour.haldenTwinSpear)) {
+      _spawnArrow(fromX, fromY, baseAngle - _haldenTwinSpearHalfSpread,
+          DrawTier.three, _haldenTwinSpearDamageShare);
+      _spawnArrow(fromX, fromY, baseAngle + _haldenTwinSpearHalfSpread,
+          DrawTier.three, _haldenTwinSpearDamageShare);
+      return;
+    }
+
+    double share = _haldenJudgmentSpearBaseDamageShare;
+    if (target >= 0) {
+      final double maxHp = entities.maxHealth[target];
+      final double fraction =
+          maxHp > 0 ? entities.health[target] / maxHp : 1.0;
+      if (hero.has(HeroBehaviour.haldenFinalVerdict) &&
+          fraction < _haldenFinalVerdictThreshold) {
+        share = _haldenFinalVerdictDamageShare;
+      } else if (fraction < _haldenJudgmentSpearLowHealthThreshold) {
+        share = _haldenJudgmentSpearBaseDamageShare * 2.0;
+      }
+    }
+    _spawnArrow(fromX, fromY, baseAngle, DrawTier.three, share);
+  }
+
+  static const double _haldenJudgmentSpearBaseDamageShare = 9.00;
+  static const double _haldenJudgmentSpearLowHealthThreshold = 0.40;
+  static const double _haldenFinalVerdictThreshold = 0.25;
+  static const double _haldenFinalVerdictDamageShare = 30.00;
+  static const double _haldenTwinSpearDamageShare = 6.00;
+
+  /// No angle is documented for Twin Spear's pair, unlike Vane's explicit
+  /// 90°; reuses the narrow same-target fan spacing Split Shot already uses
+  /// rather than inventing a wide, undocumented spread.
+  static const double _haldenTwinSpearHalfSpread = volleySpreadRadians / 2;
 
   /// *Flurry* — a timed self-buff rather than a burst: forced Tier III and a
   /// fire-rate multiplier for its duration, both read every tick from

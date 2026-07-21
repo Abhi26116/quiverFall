@@ -38,6 +38,7 @@ void main() {
   final HeroDefinition nyx = heroes.byArchetype(HeroArchetype.nyx)!;
   final HeroDefinition oriel = heroes.byArchetype(HeroArchetype.oriel)!;
   final HeroDefinition vane = heroes.byArchetype(HeroArchetype.vane)!;
+  final HeroDefinition halden = heroes.byArchetype(HeroArchetype.halden)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -55,7 +56,7 @@ void main() {
       const ArrowInstance(arrowId: 'ash_shaft'),
     );
     final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-    world.enemies.speedScale[0] = 0;
+    world.enemies.speedScale[mote] = 0;
     world.entities.maxHealth[mote] = 1e9;
     world.entities.health[mote] = 1e9;
     return (world: world, target: mote);
@@ -79,7 +80,7 @@ void main() {
       const ArrowInstance(arrowId: 'ash_shaft'),
     );
     final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-    world.enemies.speedScale[0] = 0;
+    world.enemies.speedScale[mote] = 0;
     world.entities.maxHealth[mote] = 1e9;
     world.entities.health[mote] = 1e9;
     return (world: world, target: mote);
@@ -101,7 +102,7 @@ void main() {
       const ArrowInstance(arrowId: 'ash_shaft'),
     );
     final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-    world.enemies.speedScale[0] = 0;
+    world.enemies.speedScale[mote] = 0;
     world.entities.maxHealth[mote] = 1e9;
     world.entities.health[mote] = 1e9;
     return (world: world, target: mote);
@@ -250,7 +251,9 @@ void main() {
     test('landing a real hit actually charges the Ultimate', () {
       final ({SimWorld world, int target}) a = arena();
       expect(a.world.hero.ultimateCharge, 0);
-      run(a.world, 30);
+      // The target sits 8 u away; at 14 u/s the arrow alone needs ~34 ticks
+      // to arrive, before a hit can land at all.
+      run(a.world, 60);
       expect(a.world.hero.ultimateCharge, greaterThan(0));
     });
 
@@ -531,8 +534,9 @@ void main() {
       a.world.tick(idle);
       expect(a.world.status.burnStacks[a.target], 0);
 
-      // Run out to Tier III (1.10 s) and a bit further for a hit to land.
-      for (int t = 0; t < 120; t++) {
+      // Run out to Tier III (1.10 s), plus the travel time a frozen target 8 u
+      // away actually costs (~0.6 s more) before a hit can land at all.
+      for (int t = 0; t < 240; t++) {
         a.world.tick(idle);
       }
       expect(a.world.status.burnStacks[a.target], greaterThan(0));
@@ -552,7 +556,7 @@ void main() {
         const ArrowInstance(arrowId: 'emberhead'),
       );
       final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-      world.enemies.speedScale[0] = 0;
+      world.enemies.speedScale[mote] = 0;
       world.entities.maxHealth[mote] = 1e9;
       world.entities.health[mote] = 1e9;
 
@@ -641,7 +645,7 @@ void main() {
         const ArrowInstance(arrowId: 'ash_shaft'),
       );
       final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-      world.enemies.speedScale[0] = 0;
+      world.enemies.speedScale[mote] = 0;
       world.entities.maxHealth[mote] = 1000;
       world.entities.health[mote] = 1000 * targetHealthFraction;
       return (world: world, target: mote);
@@ -783,7 +787,7 @@ void main() {
         const ArrowInstance(arrowId: 'ash_shaft'),
       );
       final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-      world.enemies.speedScale[0] = 0;
+      world.enemies.speedScale[mote] = 0;
       world.entities.maxHealth[mote] = 1e9;
       world.entities.health[mote] = 1e9;
       return (world: world, target: mote);
@@ -931,7 +935,7 @@ void main() {
       );
       final int mote =
           world.spawnEnemy(EnemyArchetype.mote, 4.0 + distance, 4.5);
-      world.enemies.speedScale[0] = 0;
+      world.enemies.speedScale[mote] = 0;
       world.entities.maxHealth[mote] = 1e9;
       world.entities.health[mote] = 1e9;
 
@@ -1059,6 +1063,147 @@ void main() {
     });
   });
 
+  group('Verdict and Judgment Spear', () {
+    ({SimWorld world, int target}) haldenArena({bool elite = false}) {
+      final SimWorld world = SimWorld(seed: 51, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        halden,
+        const HeroState(heroId: 'halden'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.enemies.elite[mote] = elite ? 1 : 0;
+      world.entities.maxHealth[mote] = 1000;
+      world.entities.health[mote] = 1000;
+      return (world: world, target: mote);
+    }
+
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('Verdict: +40 % damage to an elite target, nothing to a common one', () {
+      final double? common = firstDamageDealt(haldenArena().world);
+      final double? elite = firstDamageDealt(haldenArena(elite: true).world);
+      expect(common, isNotNull);
+      expect(elite, isNotNull);
+      expect(elite! / common!, closeTo(1.40, 0.01));
+    });
+
+    test('Judgment Spear: a single Tier III strike at 900 %', () {
+      final ({SimWorld world, int target}) a = haldenArena()
+        ..world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final List<int> slots = <int>[
+        for (int e = 0; e < a.world.events.count; e++)
+          if (a.world.events.typeAt(e) == SimEventType.arrowFired)
+            a.world.events.entityAAt(e),
+      ];
+      expect(slots, hasLength(1));
+      expect(a.world.projectiles.drawTier[slots.single], DrawTier.three.index);
+      expect(
+        a.world.projectiles.damage[slots.single],
+        closeTo(a.world.playerAttack * 9.0, 1e-9),
+      );
+    });
+
+    test('below 40 % HP the strike doubles to 1,800 %', () {
+      final ({SimWorld world, int target}) a = haldenArena()
+        ..world.autoFire = false;
+      a.world.entities.health[a.target] = 1000 * 0.35;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final int slot = <int>[
+        for (int e = 0; e < a.world.events.count; e++)
+          if (a.world.events.typeAt(e) == SimEventType.arrowFired)
+            a.world.events.entityAAt(e),
+      ].single;
+      expect(
+        a.world.projectiles.damage[slot],
+        closeTo(a.world.playerAttack * 18.0, 1e-9),
+      );
+    });
+
+    test('Final Verdict (★5a): below 25 % HP the Spear executes at 3,000 %', () {
+      final ({SimWorld world, int target}) a = haldenArena()
+        ..world.autoFire = false;
+      HeroLoadoutResolver.apply(
+        a.world,
+        halden,
+        const HeroState(
+          heroId: 'halden',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      a.world.entities.health[a.target] = 1000 * 0.20;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final int slot = <int>[
+        for (int e = 0; e < a.world.events.count; e++)
+          if (a.world.events.typeAt(e) == SimEventType.arrowFired)
+            a.world.events.entityAAt(e),
+      ].single;
+      expect(
+        a.world.projectiles.damage[slot],
+        closeTo(a.world.playerAttack * 30.0, 1e-9),
+      );
+    });
+
+    test('Twin Spear (★5b): 2 spears at 600 % each, regardless of HP', () {
+      final ({SimWorld world, int target}) a = haldenArena()
+        ..world.autoFire = false;
+      HeroLoadoutResolver.apply(
+        a.world,
+        halden,
+        const HeroState(
+          heroId: 'halden',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      // Below Final Verdict's own threshold, to prove Twin Spear ignores it.
+      a.world.entities.health[a.target] = 1000 * 0.10;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final List<int> slots = <int>[
+        for (int e = 0; e < a.world.events.count; e++)
+          if (a.world.events.typeAt(e) == SimEventType.arrowFired)
+            a.world.events.entityAAt(e),
+      ];
+      expect(slots, hasLength(2));
+      for (final int slot in slots) {
+        expect(
+          a.world.projectiles.damage[slot],
+          closeTo(a.world.playerAttack * 6.0, 1e-9),
+        );
+      }
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1086,11 +1231,12 @@ void main() {
       // each turned out to be one StatModifier, not a behaviour). Out so
       // far: Wren's four, Kestrel's Flurry plus both ★5 variants,
       // Kade/Sela/Sable's innate-element passives, Nyx's First Blood plus
-      // Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism, and Vane's
-      // Distance/Steady/Piercing Horizon/Twin Horizon/Sundering Horizon.
+      // Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism, Vane's
+      // Distance/Steady/Piercing Horizon/Twin Horizon/Sundering Horizon, and
+      // Halden's Verdict/Judgment Spear/Final Verdict/Twin Spear.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(119),
+        lessThanOrEqualTo(115),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -1236,14 +1382,15 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.rookTwinSingularity,
   HeroBehaviour.rookCollapsingSingularity,
 
-  HeroBehaviour.haldenVerdict,
-  HeroBehaviour.haldenJudgmentSpear,
+  // haldenVerdict, haldenJudgmentSpear, haldenFinalVerdict and
+  // haldenTwinSpear are implemented — see the "Verdict and Judgment Spear"
+  // group. Verdict itself only reaches its elite half: the boss half of
+  // both its clauses, plus every one of these four talents, needs an
+  // `isBoss` check EnemyStore does not have before Phase 11.
   HeroBehaviour.haldenZealot,
   HeroBehaviour.haldenWarded,
   HeroBehaviour.haldenSentence,
   HeroBehaviour.haldenSwiftJudgment,
-  HeroBehaviour.haldenFinalVerdict,
-  HeroBehaviour.haldenTwinSpear,
 
   HeroBehaviour.ashlinRekindle,
   HeroBehaviour.ashlinRebirthNova,

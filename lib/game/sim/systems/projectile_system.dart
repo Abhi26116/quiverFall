@@ -261,6 +261,10 @@ abstract final class ProjectileSystem {
   static const double _vaneCloseRangeThreshold = 3.0;
   static const double _vaneCloseRangePenalty = -0.30;
 
+  // ── Halden: Verdict ────────────────────────────────────────────────────────
+
+  static const double _haldenVerdictEliteBonus = 0.40;
+
   /// Tests the swept segment against nearby enemies. Returns true if the arrow
   /// was consumed.
   static bool _resolveHits({
@@ -430,6 +434,17 @@ abstract final class ProjectileSystem {
         !hero.has(HeroBehaviour.vaneSteady) &&
         projectiles.distanceFlown[slot] < _vaneCloseRangeThreshold) {
       boonSum += _vaneCloseRangePenalty;
+    }
+
+    // *Verdict* — only the elite half is reachable before Phase 11 builds
+    // bosses. "+40 % to bosses and elites" and "boss attacks deal -15 %"
+    // both need an `isBoss` check that does not exist on EnemyStore yet;
+    // the elite half needs nothing new, since `isElite` already does.
+    if (hero != null &&
+        hero.has(HeroBehaviour.haldenVerdict) &&
+        enemies != null &&
+        enemies.isElite(target)) {
+      boonSum += _haldenVerdictEliteBonus;
     }
 
     final double damage = DamageResolver.resolve(
