@@ -139,6 +139,19 @@ class HeroRuntime {
   /// duration, not just the periodic one *Arc* marks. Zero means inactive.
   double tempestNockRemaining = 0;
 
+  /// Seconds left on Sable's *Miasma* cloud. Zero means inactive. Unlike
+  /// every other timed self-buff above, this one is a fixed zone rather
+  /// than a buff on the player — [miasmaX]/[miasmaY] pin where it was cast,
+  /// read every tick alongside this by whoever applies its stacks.
+  double miasmaRemaining = 0;
+  double miasmaX = 0;
+  double miasmaY = 0;
+
+  /// Counts down to the cloud's next stack application — Miasma applies in
+  /// discrete pulses (2/s base, 5/s for Concentrated Miasma) rather than a
+  /// continuous rate, since Toxin stacks are whole numbers.
+  double miasmaTickTimer = 0;
+
   // ── Once-per-run counters ─────────────────────────────────────────────────
   // Counted per run rather than per room, same as BoonRuntime.arrowsFired —
   // a counter that silently reset at every door would make the card read as
@@ -185,6 +198,10 @@ class HeroRuntime {
     redDrawDamageBonus = 0;
     redDrawFireRateMultiplier = 1.0;
     tempestNockRemaining = 0;
+    miasmaRemaining = 0;
+    miasmaX = 0;
+    miasmaY = 0;
+    miasmaTickTimer = 0;
     arrowsFired = 0;
     rekindleSpent = false;
     cycleIndex = 0;
@@ -203,5 +220,6 @@ class HeroRuntime {
     bloomRemaining = 0;
     redDrawRemaining = 0;
     tempestNockRemaining = 0;
+    miasmaRemaining = 0;
   }
 }

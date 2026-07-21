@@ -891,6 +891,8 @@ abstract final class ProjectileSystem {
     void applyIfNotAlreadyCarried(
       SimElement element, {
       double? chillPerHitOverride,
+      int? toxinStacksPerHitOverride,
+      int? toxinMaxStacksOverride,
     }) {
       final int mask = projectiles.elementMask[slot];
       final int index = projectiles.element[slot];
@@ -899,7 +901,9 @@ abstract final class ProjectileSystem {
           : index == element.index;
       if (alreadyCarried) return;
       _applyOneElement(enemies, status, events, slot, target, element, x, y,
-          chillPerHitOverride: chillPerHitOverride);
+          chillPerHitOverride: chillPerHitOverride,
+          toxinStacksPerHitOverride: toxinStacksPerHitOverride,
+          toxinMaxStacksOverride: toxinMaxStacksOverride);
     }
 
     if (tier == DrawTier.three && hero.has(HeroBehaviour.kadeKindling)) {
@@ -914,11 +918,26 @@ abstract final class ProjectileSystem {
       );
     }
     if (hero.has(HeroBehaviour.sableToxin)) {
-      applyIfNotAlreadyCarried(SimElement.toxin);
+      // *Virulence* (T1a) raises the cap alone; *Fast Acting* (T1b) stacks
+      // twice as fast but settles for a lower cap — mutually exclusive
+      // branches, so only one override pair is ever non-null.
+      applyIfNotAlreadyCarried(
+        SimElement.toxin,
+        toxinStacksPerHitOverride:
+            hero.has(HeroBehaviour.sableFastActing) ? _sableFastActingPerHit : null,
+        toxinMaxStacksOverride: hero.has(HeroBehaviour.sableFastActing)
+            ? _sableFastActingMaxStacks
+            : hero.has(HeroBehaviour.sableVirulence)
+                ? _sableVirulenceMaxStacks
+                : null,
+      );
     }
   }
 
   static const double _selaDeeperChillPerHit = 16.0;
+  static const int _sableFastActingPerHit = 2;
+  static const int _sableFastActingMaxStacks = 8;
+  static const int _sableVirulenceMaxStacks = 12;
 
   static void _applyOneElement(
     EnemyStore? enemies,
@@ -930,10 +949,18 @@ abstract final class ProjectileSystem {
     double x,
     double y, {
     double? chillPerHitOverride,
+    int? toxinStacksPerHitOverride,
+    int? toxinMaxStacksOverride,
   }) {
     if (enemies != null && enemies.resistsElement(target, element)) return;
 
-    status.apply(target, element, chillPerHitOverride: chillPerHitOverride);
+    status.apply(
+      target,
+      element,
+      chillPerHitOverride: chillPerHitOverride,
+      toxinStacksPerHitOverride: toxinStacksPerHitOverride,
+      toxinMaxStacksOverride: toxinMaxStacksOverride,
+    );
     events.emit(
       SimEventType.elementApplied,
       entityA: target,

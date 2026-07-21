@@ -77,7 +77,18 @@ class StatusStore {
   /// [chillPerHitOverride] lets a hero-specific rate (Sela's Deeper Chill:
   /// 16 instead of the base 12) feed the same accumulator every other Frost
   /// source uses, rather than forking the threshold logic per caller.
-  SimElement? apply(int slot, SimElement element, {double? chillPerHitOverride}) {
+  ///
+  /// [toxinStacksPerHitOverride]/[toxinMaxStacksOverride] do the same for
+  /// Sable's Fast Acting (2 stacks/hit, capped at 8) and Virulence (capped
+  /// at 12) — both read the same [toxinStacks] every other Toxin source
+  /// (an arrow's own element, a Boon) stacks at the base rate of 1/10.
+  SimElement? apply(
+    int slot,
+    SimElement element, {
+    double? chillPerHitOverride,
+    int? toxinStacksPerHitOverride,
+    int? toxinMaxStacksOverride,
+  }) {
     final SimElement? existing = dominantElement(slot);
 
     switch (element) {
@@ -99,9 +110,10 @@ class StatusStore {
         break;
 
       case SimElement.toxin:
-        if (toxinStacks[slot] < ElementTuning.toxinMaxStacks) {
-          toxinStacks[slot]++;
-        }
+        final int maxStacks =
+            toxinMaxStacksOverride ?? ElementTuning.toxinMaxStacks;
+        final int next = toxinStacks[slot] + (toxinStacksPerHitOverride ?? 1);
+        toxinStacks[slot] = next > maxStacks ? maxStacks : next;
     }
 
     return existing != element ? existing : null;

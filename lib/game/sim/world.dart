@@ -481,6 +481,12 @@ class SimWorld {
     // exactly the ordering ordinary volleys already get.
     _updateUltimate(input);
 
+    // Sable's *Miasma* — a fixed cloud, not a buff on the player, so it ticks
+    // here rather than in the plain countdown block above: it needs a fresh
+    // [spatial] (rebuilt just above) to find who is standing in it, exactly
+    // like `_fireSelaGlacierNail`'s own target selection does.
+    _tickSableMiasma(dt);
+
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
     windlineIndex.rebuild(windlines);
@@ -824,6 +830,8 @@ class SimWorld {
           : _torvTempestNockDuration;
     } else if (hero.has(HeroBehaviour.selaGlacierNail)) {
       _fireSelaGlacierNail();
+    } else if (hero.has(HeroBehaviour.sableMiasma)) {
+      _fireSableMiasma();
     }
   }
 
@@ -984,6 +992,83 @@ class SimWorld {
       if (e < 0) continue;
       status.frozenRemaining[e] = duration;
       status.chill[e] = 0;
+    }
+  }
+
+  /// *Miasma* — a cloud left at the player's position at cast time (docs/07
+  /// names no target, unlike Glacier Nail's own "at the target" wording, so
+  /// this reads as something dropped rather than aimed), pulsing Toxin onto
+  /// whoever stands in it rather than applying a single lump sum. *Lasting
+  /// Miasma* (T5a) only changes the duration; *Concentrated Miasma* (T5b)
+  /// shrinks the radius but pulses faster — read every tick from
+  /// [_tickSableMiasma], not applied once here.
+  void _fireSableMiasma() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    hero.miasmaRemaining = hero.has(HeroBehaviour.sableLastingMiasma)
+        ? _sableLastingMiasmaDuration
+        : _sableMiasmaDuration;
+    hero.miasmaX = entities.posX[p];
+    hero.miasmaY = entities.posY[p];
+    // Zero rather than the full interval, so the cloud's first pulse lands
+    // the instant it is cast rather than making the player wait half a
+    // second to see it do anything.
+    hero.miasmaTickTimer = 0;
+  }
+
+  static const double _sableMiasmaDuration = 8.0;
+  static const double _sableLastingMiasmaDuration = 14.0;
+  static const double _sableMiasmaRadius = 5.0;
+  static const double _sableConcentratedMiasmaRadius = 3.0;
+  static const double _sableMiasmaStacksPerSecond = 2.0;
+  static const double _sableConcentratedMiasmaStacksPerSecond = 5.0;
+
+  /// Mirrors the same two mutually-exclusive T1 caps
+  /// [ProjectileSystem._applyHeroInnateElements] and [AiSystem]'s own
+  /// Contagion transfer read for Sable's Toxin — kept alongside rather than
+  /// shared, since those copies are private and this is the only other place
+  /// that needs to know the current cap.
+  static const int _sableFastActingMaxStacks = 8;
+  static const int _sableVirulenceMaxStacks = 12;
+
+  /// Applies Miasma's periodic Toxin pulse. A direct [spatial] query, not a
+  /// linear scan: this runs at most a few times a second, from `tick()`
+  /// itself rather than from inside [ProjectileSystem]'s own hit-resolution
+  /// loop, so the reentrancy hazard that rules out `queryRadius` there does
+  /// not apply here.
+  void _tickSableMiasma(double dt) {
+    if (hero.miasmaRemaining <= 0) return;
+    hero.miasmaRemaining -= dt;
+    if (hero.miasmaRemaining < 0) hero.miasmaRemaining = 0;
+
+    hero.miasmaTickTimer -= dt;
+    if (hero.miasmaTickTimer > 0) return;
+
+    final bool concentrated = hero.has(HeroBehaviour.sableConcentratedMiasma);
+    final double radius =
+        concentrated ? _sableConcentratedMiasmaRadius : _sableMiasmaRadius;
+    final double stacksPerSecond = concentrated
+        ? _sableConcentratedMiasmaStacksPerSecond
+        : _sableMiasmaStacksPerSecond;
+    hero.miasmaTickTimer += 1.0 / stacksPerSecond;
+
+    final int? maxStacks = hero.has(HeroBehaviour.sableFastActing)
+        ? _sableFastActingMaxStacks
+        : hero.has(HeroBehaviour.sableVirulence)
+            ? _sableVirulenceMaxStacks
+            : null;
+
+    final double radiusSq = radius * radius;
+    final int found = spatial.queryRadius(hero.miasmaX, hero.miasmaY, radius);
+    for (int i = 0; i < found; i++) {
+      final int e = spatial.resultAt(i);
+      if (entities.alive[e] == 0) continue;
+      if (entities.kind[e] != EntityKind.enemy.index) continue;
+      final double dx = entities.posX[e] - hero.miasmaX;
+      final double dy = entities.posY[e] - hero.miasmaY;
+      if (dx * dx + dy * dy > radiusSq) continue;
+      if (enemies.resistsElement(e, SimElement.toxin)) continue;
+      status.apply(e, SimElement.toxin, toxinMaxStacksOverride: maxStacks);
     }
   }
 

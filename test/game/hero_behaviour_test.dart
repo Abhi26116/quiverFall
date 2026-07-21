@@ -2270,6 +2270,194 @@ void main() {
     });
   });
 
+  group('Toxin and Miasma', () {
+    /// A primary target 8 u east of the player, plus one bystander per
+    /// [nearbyOffsets] entry further east still — the same placement trick
+    /// [selaArena] uses, since Contagion's transfer target needs a second
+    /// enemy at a known distance from the *primary*, not from the player.
+    ({SimWorld world, int primary, List<int> nearby}) sableArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      List<double> nearbyOffsets = const <double>[],
+    }) {
+      final SimWorld world = SimWorld(seed: 151, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        sable,
+        HeroState(heroId: 'sable', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final List<int> nearby = <int>[];
+      for (final double offset in nearbyOffsets) {
+        final int e =
+            world.spawnEnemy(EnemyArchetype.mote, 12.0 + offset, 4.5);
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        nearby.add(e);
+      }
+      return (world: world, primary: primary, nearby: nearby);
+    }
+
+    /// Miasma is centred on the *player*, not on a distant target, so its own
+    /// tests place enemies at a known distance from the player instead of
+    /// reusing [sableArena]'s "8 u due east" primary. `autoFire` stays off:
+    /// an arrow landing would apply its own Toxin stack from `sableToxin`
+    /// and confound "how much did the cloud alone apply".
+    ({SimWorld world, List<int> enemies}) sableMiasmaArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      List<double> distancesFromPlayer = const <double>[],
+    }) {
+      final SimWorld world = SimWorld(seed: 152, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        sable,
+        HeroState(heroId: 'sable', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final List<int> enemies = <int>[];
+      for (final double d in distancesFromPlayer) {
+        final int e = world.spawnEnemy(EnemyArchetype.mote, 4.0 + d, 4.5);
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        enemies.add(e);
+      }
+      return (world: world, enemies: enemies);
+    }
+
+    void runUntilFirstHit(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        if (world.events.countOf(SimEventType.damageDealt) > 0) return;
+      }
+      fail('no hit landed within 120 ticks');
+    }
+
+    test('Virulence (★1a): the Toxin cap rises to 12', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          sableArena(stars: 1, talentChoices: <String, String>{'1': 'a'});
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.toxinStacks[a.primary], 12);
+    });
+
+    test('Fast Acting (★1b): 2 stacks per hit, capped at 8', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          sableArena(stars: 1, talentChoices: <String, String>{'1': 'b'});
+      runUntilFirstHit(a.world);
+      expect(a.world.status.toxinStacks[a.primary], 2);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.toxinStacks[a.primary], 8);
+    });
+
+    test(
+        'Contagion (★3a): half a dying enemy\'s Toxin stacks jump to the '
+        'nearest other enemy', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = sableArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+        nearbyOffsets: <double>[1.0],
+      );
+      a.world.status.toxinStacks[a.primary] = 6;
+      // Lethal to Toxin's own DoT on the very next tick — deferDeath routes
+      // the actual reap (and this talent's hook) through AiSystem, exactly
+      // like an arrow-finished kill would.
+      a.world.entities.health[a.primary] = 0.001;
+      a.world.tick(InputSnapshot());
+
+      expect(a.world.entities.alive[a.primary], 0);
+      expect(a.world.status.toxinStacks[a.nearby[0]], 3);
+    });
+
+    test('Corrosion (★3b): each Toxin stack cuts the enemy\'s own damage by 2 %',
+        () {
+      final ({SimWorld world, int primary, List<int> nearby}) without =
+          sableArena(stars: 3);
+      without.world.status.toxinStacks[without.primary] = 5;
+      without.world.tick(InputSnapshot());
+      expect(without.world.enemies.attackBuff[without.primary], 0);
+
+      final ({SimWorld world, int primary, List<int> nearby}) with_ =
+          sableArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      with_.world.status.toxinStacks[with_.primary] = 5;
+      with_.world.tick(InputSnapshot());
+      expect(
+        with_.world.enemies.attackBuff[with_.primary],
+        closeTo(-0.10, 1e-9),
+      );
+    });
+
+    test('Miasma pulses Toxin onto enemies within 5 u of the cast point', () {
+      final ({SimWorld world, List<int> enemies}) a =
+          sableMiasmaArena(distancesFromPlayer: <double>[2.0, 6.0]);
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      // The first pulse lands the instant the cloud is cast.
+      expect(a.world.status.toxinStacks[a.enemies[0]], greaterThanOrEqualTo(1));
+      expect(a.world.status.toxinStacks[a.enemies[1]], 0);
+    });
+
+    test('the cloud pulses at 2 stacks/s for 8 s, capped at 10 stacks', () {
+      final ({SimWorld world, List<int> enemies}) a =
+          sableMiasmaArena(distancesFromPlayer: <double>[2.0]);
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600; t++) {
+        a.world.tick(idle);
+      }
+      // 8 s at 2/s = 16 pulses, past the base 10-stack ceiling.
+      expect(a.world.status.toxinStacks[a.enemies[0]], 10);
+    });
+
+    test('Lasting Miasma (★5a): the cloud lasts 14 s instead of 8', () {
+      final ({SimWorld world, List<int> enemies}) a = sableMiasmaArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+        distancesFromPlayer: <double>[2.0],
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.miasmaRemaining, closeTo(14.0, 0.02));
+    });
+
+    test('Concentrated Miasma (★5b): 3 u radius instead of 5', () {
+      final ({SimWorld world, List<int> enemies}) a = sableMiasmaArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+        distancesFromPlayer: <double>[2.5, 4.0],
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      // 2.5 u is inside 3 u; 4.0 u would have been inside the base 5 u but
+      // sits outside Concentrated Miasma's own tighter radius.
+      expect(a.world.status.toxinStacks[a.enemies[0]], greaterThanOrEqualTo(1));
+      expect(a.world.status.toxinStacks[a.enemies[1]], 0);
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -2306,11 +2494,12 @@ void main() {
       // Crimson Draw, Mirelle's Reflection/Truer Mirror/Deeper
       // Mirror/Silvered/Fractured, Torv's Arc/Tempest Nock/Frequent
       // Arc/Wide Arc/Long Tempest, Rook's Pull/Stronger Pull/Denser
-      // Grouping, and Sela's Glacier Nail/Deeper Chill/Brittle/Absolute
-      // Zero/Cascading Nail.
+      // Grouping, Sela's Glacier Nail/Deeper Chill/Brittle/Absolute
+      // Zero/Cascading Nail, and Sable's whole kit: Miasma/Virulence/Fast
+      // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(82),
+        lessThanOrEqualTo(75),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -2405,13 +2594,10 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.torvThunderhead,
 
   // sableToxin is implemented — see the "three innate elements" group.
-  HeroBehaviour.sableMiasma,
-  HeroBehaviour.sableVirulence,
-  HeroBehaviour.sableFastActing,
-  HeroBehaviour.sableContagion,
-  HeroBehaviour.sableCorrosion,
-  HeroBehaviour.sableLastingMiasma,
-  HeroBehaviour.sableConcentratedMiasma,
+  // sableMiasma, sableVirulence, sableFastActing, sableContagion,
+  // sableCorrosion, sableLastingMiasma and sableConcentratedMiasma are all
+  // implemented too — see the "Toxin and Miasma" group. Sable is the first
+  // hero whose entire kit is reachable with nothing deferred.
 
   // liraLifebound, liraVerdantBloom, liraEndlessBloom and liraBloodBloom are
   // implemented — see the "Lifebound and Verdant Bloom" group.

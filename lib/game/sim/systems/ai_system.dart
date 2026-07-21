@@ -12,6 +12,7 @@ import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
+import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -87,8 +88,20 @@ abstract final class AiSystem {
       // Auras are recomputed every tick from their live sources.
       ctx.enemies.attackBuff[i] = 0;
       ctx.enemies.elementSuppressed[i] = 0;
+
+      // *Corrosion* — each Toxin stack also cuts this enemy's own damage
+      // output by 2 %, recomputed live in the same pass as the reset above
+      // so it decays the instant the stacks do rather than needing its own
+      // timer.
+      final HeroRuntime? hero = ctx.hero;
+      if (hero != null && hero.has(HeroBehaviour.sableCorrosion)) {
+        ctx.enemies.attackBuff[i] -=
+            ctx.status.toxinStacks[i] * _sableCorrosionPerStack;
+      }
     }
   }
+
+  static const double _sableCorrosionPerStack = 0.02;
 
   static void _countDown(List<double> timers, int slot, double dt) {
     if (timers[slot] <= 0) return;
@@ -463,9 +476,63 @@ abstract final class AiSystem {
       hero.firstBloodSpeedRemaining = HeroRuntime.firstBloodSpeedDuration;
     }
 
+    // *Contagion* — half this corpse's Toxin stacks jump to the nearest
+    // other enemy, read before `clearSlot` below erases them. Read before
+    // the reset, since a corpse still has real stacks to give away.
+    if (hero != null &&
+        hero.has(HeroBehaviour.sableContagion) &&
+        ctx.status.toxinStacks[slot] > 0) {
+      final int jumpStacks = ctx.status.toxinStacks[slot] ~/ 2;
+      if (jumpStacks > 0) {
+        final int nearest = _nearestOtherEnemy(ctx, slot);
+        if (nearest >= 0 && !ctx.enemies.resistsElement(nearest, SimElement.toxin)) {
+          final int maxStacks = hero.has(HeroBehaviour.sableFastActing)
+              ? _sableFastActingMaxStacks
+              : hero.has(HeroBehaviour.sableVirulence)
+                  ? _sableVirulenceMaxStacks
+                  : ElementTuning.toxinMaxStacks;
+          final int next = ctx.status.toxinStacks[nearest] + jumpStacks;
+          ctx.status.toxinStacks[nearest] =
+              next > maxStacks ? maxStacks : next;
+        }
+      }
+    }
+
     ctx.status.clearSlot(slot);
     ctx.enemies.reset(slot);
     ctx.entities.despawn(ctx.entities.idAt(slot));
+  }
+
+  /// Mirrors the same two mutually-exclusive T1 caps
+  /// [ProjectileSystem._applyHeroInnateElements] reads for Sable's own
+  /// Toxin application — kept alongside rather than imported, since
+  /// `ProjectileSystem`'s copies are private and this is the only other
+  /// place that needs to know the current cap.
+  static const int _sableFastActingMaxStacks = 8;
+  static const int _sableVirulenceMaxStacks = 12;
+
+  /// Nearest other living enemy to [slot], for *Contagion*. A linear scan
+  /// rather than a [SpatialHash] query: this runs once per kill, not once
+  /// per hit, so the cost that matters elsewhere in the sim does not apply
+  /// here.
+  static int _nearestOtherEnemy(AiContext ctx, int slot) {
+    final double x = ctx.entities.posX[slot];
+    final double y = ctx.entities.posY[slot];
+    int nearest = -1;
+    double nearestDistSq = double.infinity;
+    for (int i = 0; i < ctx.entities.highWater; i++) {
+      if (i == slot) continue;
+      if (ctx.entities.alive[i] == 0) continue;
+      if (ctx.entities.kind[i] != EntityKind.enemy.index) continue;
+      final double dx = ctx.entities.posX[i] - x;
+      final double dy = ctx.entities.posY[i] - y;
+      final double distSq = dx * dx + dy * dy;
+      if (distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearest = i;
+      }
+    }
+    return nearest;
   }
 
   /// Puts a Gravebound down instead of killing it.
