@@ -86,6 +86,23 @@ class HeroRuntime {
     return true;
   }
 
+  // ── Timed self-buffs ───────────────────────────────────────────────────────
+  // A handful of Ultimates are a window rather than an instant, and share this
+  // one countdown-plus-multiplier shape rather than each inventing their own —
+  // Kestrel's Flurry is the first; more get their own field only if the
+  // duration/multiplier shape genuinely does not fit this one.
+
+  /// Seconds left on Kestrel's *Flurry* — forced Tier III (checked wherever
+  /// the effective Draw tier is chosen), a fire-rate multiplier
+  /// ([flurryRateMultiplier]), and movement no longer dropping the tier for
+  /// as long as this reads above zero. Zero means inactive.
+  double flurryRemaining = 0;
+
+  /// Set alongside [flurryRemaining] when Flurry triggers — the *Endless
+  /// Flurry* and *Perfect Flurry* talents change both the duration and this
+  /// rate together, never one without the other.
+  double flurryRateMultiplier = 1.0;
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -111,6 +128,8 @@ class HeroRuntime {
     ultimateCharge = 0;
     chargePerDamage = 0;
     _readyAnnounced = false;
+    flurryRemaining = 0;
+    flurryRateMultiplier = 1.0;
     rekindleSpent = false;
     cycleIndex = 0;
   }
@@ -118,8 +137,10 @@ class HeroRuntime {
   /// Clears only what a room boundary resets — not the once-per-run flags, not
   /// the loadout itself. Mirrors [BoonRuntime.beginRoom].
   void beginRoom() {
-    // Nothing yet reads this per-room; kept as the hook Task #4's per-room
-    // mechanics (Aegis Pin's own cooldown, and similar) will use, the same way
-    // BoonRuntime.beginRoom existed before every Boon that needed it did.
+    // A Flurry window is short and combat-scoped; carrying it through a door
+    // for free would make "pop Flurry, then leave" a free rate-multiplier on
+    // the next room's opening seconds. Matches `CombatModifiers.resetLive`
+    // clearing the Kiting window at the same boundary.
+    flurryRemaining = 0;
   }
 }

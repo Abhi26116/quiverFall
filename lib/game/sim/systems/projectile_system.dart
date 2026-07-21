@@ -385,6 +385,8 @@ abstract final class ProjectileSystem {
                 status.isFrozen(target)),
         targetArmoured: enemies != null &&
             (enemies.isPlated(target) || enemies.shield[target] > 0),
+        isTierThree: tier == DrawTier.three,
+        isTierOne: tier == DrawTier.one,
       );
     }
 

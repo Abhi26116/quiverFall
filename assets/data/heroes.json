@@ -208,7 +208,7 @@
               "key": "b",
               "name": "Sharper Nock",
               "description": "Recovers Hummingbird's −15 % damage penalty at Tier III",
-              "behaviour": "kestrelSharperNock"
+              "modifiers": [{ "channel": "tierThreeDamage", "value": 0.15 }]
             }
           ]
         },

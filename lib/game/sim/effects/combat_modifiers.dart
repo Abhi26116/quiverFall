@@ -68,6 +68,11 @@ class CombatModifiers {
   double perHitStreak = 0;
   double perHitStreakCap = 0;
 
+  // ── Composed: conditional on the Draw tier ────────────────────────────────
+
+  double vsTierThree = 0;
+  double vsTierOne = 0;
+
   // ── Composed: armour ──────────────────────────────────────────────────────
 
   double armourShredPerHit = 0;
@@ -118,7 +123,9 @@ class CombatModifiers {
       perMomentumStack == 0 &&
       afterMoving == 0 &&
       perDistanceUnit == 0 &&
-      perHitStreak == 0;
+      perHitStreak == 0 &&
+      vsTierThree == 0 &&
+      vsTierOne == 0;
 
   /// Recomposes the fixed terms from a build.
   ///
@@ -148,6 +155,9 @@ class CombatModifiers {
 
     armourShredPerHit = stats[StatChannel.armourShredPerHit];
     armourShredMax = stats[StatChannel.armourShredMax];
+
+    vsTierThree = stats[StatChannel.tierThreeDamage];
+    vsTierOne = stats[StatChannel.tierOneDamage];
   }
 
   /// The summed Boon damage term for one specific hit.
@@ -164,6 +174,8 @@ class CombatModifiers {
     required int targetId,
     bool targetAfflicted = false,
     bool targetArmoured = false,
+    bool isTierThree = false,
+    bool isTierOne = false,
   }) {
     double sum = flatDamage;
 
@@ -172,6 +184,8 @@ class CombatModifiers {
     if (targetAfflicted) sum += vsAfflicted;
     if (targetArmoured) sum += vsArmoured;
     if (targetId == lastHitTarget) sum += vsLastHit;
+    if (isTierThree) sum += vsTierThree;
+    if (isTierOne) sum += vsTierOne;
 
     if (playerStationary) sum += whileStationary;
     if (movedRecentlyRemaining > 0) sum += afterMoving;

@@ -415,6 +415,10 @@ class SimWorld {
       combat.movedRecentlyRemaining -= dt;
     }
     if (_stunRemaining > 0) _stunRemaining -= dt;
+    if (hero.flurryRemaining > 0) {
+      hero.flurryRemaining -= dt;
+      if (hero.flurryRemaining < 0) hero.flurryRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -454,7 +458,15 @@ class SimWorld {
       combat: combat,
       boons: boons,
       hero: hero,
-      confluenceDamageMultiplier: confluenceDamageMultiplier,
+      // *Perfect Flurry* doubles Confluence damage for its own window only —
+      // read live here rather than baked into the room-scoped
+      // confluenceDamageMultiplier field, the same split Flurry's fire-rate
+      // multiplier already uses.
+      confluenceDamageMultiplier: confluenceDamageMultiplier *
+          (hero.flurryRemaining > 0 &&
+                  hero.has(HeroBehaviour.kestrelPerfectFlurry)
+              ? _kestrelPerfectFlurryConfluenceMultiplier
+              : 1.0),
     );
 
     // ── windline expiry ────────────────────────────────────────────────────
@@ -595,17 +607,24 @@ class SimWorld {
 
     // *Perfect Form* (#23) resolves every shot as Tier III. The Draw meter still
     // animates — removing it would make the player think the mechanic broke.
-    final DrawTier tier = boons.has(BoonBehaviour.perfectForm)
+    // Kestrel's *Flurry* forces the same override for its own duration — that
+    // is also the entire mechanism behind "movement no longer drops the tier":
+    // the effective tier stops reading `playerDraw.tier` at all while it runs.
+    final DrawTier tier = boons.has(BoonBehaviour.perfectForm) ||
+            hero.flurryRemaining > 0
         ? DrawTier.three
         : playerDraw.tier;
 
     // *Runner's High* (#55) pays out only at max Momentum, so it is read here
     // rather than composed into fireRateMultiplier — the multiplier is settled
-    // once per room and this changes several times a second.
+    // once per room and this changes several times a second. Flurry's rate is
+    // the same shape: a live multiplier for its own window, not baked into
+    // the room-scoped `fireRateMultiplier`.
     double rate = fireRateMultiplier;
     if (boons.has(BoonBehaviour.runnersHigh) && playerDraw.isAtMaxMomentum) {
       rate *= BoonRuntime.runnersHighFireRate;
     }
+    if (hero.flurryRemaining > 0) rate *= hero.flurryRateMultiplier;
 
     final double interval = FiringSystem.intervalFor(tier, rate);
 
@@ -711,8 +730,40 @@ class SimWorld {
   void _fireUltimate() {
     if (hero.has(HeroBehaviour.wrenVolleyFan)) {
       _fireWrenVolleyFan();
+    } else if (hero.has(HeroBehaviour.kestrelFlurry)) {
+      _fireKestrelFlurry();
     }
   }
+
+  /// *Flurry* — a timed self-buff rather than a burst: forced Tier III and a
+  /// fire-rate multiplier for its duration, both read every tick from
+  /// [_updateFiring] rather than applied once here. *Endless Flurry* (T5a)
+  /// and *Perfect Flurry* (T5b) swap the duration/rate pair; Perfect Flurry's
+  /// own "+100 % Confluence damage" is read directly off [HeroRuntime] at the
+  /// point `ProjectileSystem` receives its Confluence multiplier, alongside
+  /// this method rather than inside it.
+  void _fireKestrelFlurry() {
+    if (hero.has(HeroBehaviour.kestrelEndlessFlurry)) {
+      hero.flurryRemaining = _kestrelEndlessFlurryDuration;
+      hero.flurryRateMultiplier = _kestrelEndlessFlurryRate;
+    } else if (hero.has(HeroBehaviour.kestrelPerfectFlurry)) {
+      hero.flurryRemaining = _kestrelPerfectFlurryDuration;
+      hero.flurryRateMultiplier = _kestrelFlurryRate;
+    } else {
+      hero.flurryRemaining = _kestrelFlurryDuration;
+      hero.flurryRateMultiplier = _kestrelFlurryRate;
+    }
+  }
+
+  static const double _kestrelFlurryDuration = 4.0;
+  static const double _kestrelFlurryRate = 3.0;
+  static const double _kestrelEndlessFlurryDuration = 7.0;
+  static const double _kestrelEndlessFlurryRate = 2.2;
+  static const double _kestrelPerfectFlurryDuration = 3.0;
+
+  /// +100 %, per *Perfect Flurry*'s own card text — a full doubling, not a
+  /// bonus added to whatever Confluence multiplier the build already has.
+  static const double _kestrelPerfectFlurryConfluenceMultiplier = 2.0;
 
   /// *Volley Fan* — 7 arrows in a 90° arc, each at 80 % damage, each laying
   /// its own Windline exactly as any other Tier III arrow would. *Wide Fan*

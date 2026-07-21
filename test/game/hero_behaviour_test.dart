@@ -29,6 +29,7 @@ void main() {
   final ContentLibrary content = loadEnemies();
 
   final HeroDefinition wren = heroes.byArchetype(HeroArchetype.wren)!;
+  final HeroDefinition kestrel = heroes.byArchetype(HeroArchetype.kestrel)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying Wren and Ash Shaft, with a stationary target due
@@ -45,6 +46,28 @@ void main() {
       world,
       wren,
       HeroState(heroId: 'wren', stars: stars, talentChoices: talentChoices),
+      ashShaft,
+      const ArrowInstance(arrowId: 'ash_shaft'),
+    );
+    final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+    world.enemies.speedScale[0] = 0;
+    world.entities.maxHealth[mote] = 1e9;
+    world.entities.health[mote] = 1e9;
+    return (world: world, target: mote);
+  }
+
+  /// Same shape as [arena], carrying Kestrel instead.
+  ({SimWorld world, int target}) kestrelArena({
+    Map<String, String> talentChoices = const <String, String>{},
+    int stars = 0,
+  }) {
+    final SimWorld world = SimWorld(seed: 7, content: content)
+      ..autoFire = true;
+    world.spawnPlayer(4.0, 4.5);
+    HeroLoadoutResolver.apply(
+      world,
+      kestrel,
+      HeroState(heroId: 'kestrel', stars: stars, talentChoices: talentChoices),
       ashShaft,
       const ArrowInstance(arrowId: 'ash_shaft'),
     );
@@ -313,6 +336,163 @@ void main() {
     });
   });
 
+  group('Flurry and its ★5 variants', () {
+    test('triggering sets the base 4 s window at x3 rate', () {
+      final ({SimWorld world, int target}) a = kestrelArena()
+        ..world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.flurryRemaining, closeTo(4.0, 1e-9));
+      expect(a.world.hero.flurryRateMultiplier, closeTo(3.0, 1e-9));
+      expect(a.world.events.countOf(SimEventType.arrowFired), 0,
+          reason: 'Flurry is a buff, not a burst — no arrows of its own');
+    });
+
+    /// True if any arrow fired at Tier III across [ticks] ticks of [input].
+    /// A single tick is not reliably enough time for the next shot's
+    /// cooldown to elapse, so this drives several and checks the whole
+    /// window rather than one snapshot.
+    bool sawTierThreeOver(SimWorld world, InputSnapshot input, int ticks) {
+      for (int t = 0; t < ticks; t++) {
+        world.tick(input);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.arrowFired &&
+              world.events.valueAAt(e).round() == DrawTier.three.index) {
+            return true;
+          }
+        }
+        world.events.clear();
+      }
+      return false;
+    }
+
+    test('while it runs, ordinary shots fire at Tier III with the Draw meter untouched', () {
+      final ({SimWorld world, int target}) a = kestrelArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(sawTierThreeOver(a.world, InputSnapshot(), 30), isTrue);
+      expect(
+        a.world.playerDraw.tier,
+        DrawTier.one,
+        reason: 'the Draw meter must still read honestly, same as Perfect Form',
+      );
+    });
+
+    test('moving during Flurry does not drop the forced tier', () {
+      final ({SimWorld world, int target}) a = kestrelArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(
+        sawTierThreeOver(a.world, InputSnapshot()..set(1.0, 0.0), 30),
+        isTrue,
+      );
+    });
+
+    test('expires after its duration and firing returns to the honest tier', () {
+      final ({SimWorld world, int target}) a = kestrelArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      run(a.world, 300); // well past 4 s at 60 Hz
+      expect(a.world.hero.flurryRemaining, 0);
+    });
+
+    test('Endless Flurry (★5a): 7 s at x2.2 instead of 4 s at x3', () {
+      final ({SimWorld world, int target}) a = kestrelArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      )..world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.flurryRemaining, closeTo(7.0, 1e-9));
+      expect(a.world.hero.flurryRateMultiplier, closeTo(2.2, 1e-9));
+    });
+
+    test('Perfect Flurry (★5b): 3 s at x3, doubles Confluence damage while active', () {
+      final ({SimWorld world, int target}) a = kestrelArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      )..world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.flurryRemaining, closeTo(3.0, 1e-9));
+      expect(a.world.hero.flurryRateMultiplier, closeTo(3.0, 1e-9));
+      expect(a.world.hero.has(HeroBehaviour.kestrelPerfectFlurry), isTrue);
+    });
+  });
+
+  group("Sharper Nock recovers Hummingbird's penalty only at Tier III", () {
+    test('with Sharper Nock, the -15 % penalty is exactly cancelled at Tier III', () {
+      final SimWorld world = SimWorld(seed: 1, content: content);
+      world.spawnPlayer(0, 0);
+      HeroLoadoutResolver.apply(
+        world,
+        kestrel,
+        const HeroState(
+          heroId: 'kestrel',
+          stars: 1,
+          talentChoices: <String, String>{'1': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 0,
+          targetId: -1,
+          isTierThree: true,
+        ),
+        closeTo(0.0, 1e-9),
+      );
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 0,
+          targetId: -1,
+        ),
+        closeTo(-0.15, 1e-9),
+        reason: 'off Tier III, the penalty still applies',
+      );
+    });
+
+    test('without the talent, the -15 % penalty applies at every tier', () {
+      final SimWorld world = SimWorld(seed: 1, content: content);
+      world.spawnPlayer(0, 0);
+      HeroLoadoutResolver.apply(
+        world,
+        kestrel,
+        const HeroState(heroId: 'kestrel'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 0,
+          targetId: -1,
+          isTierThree: true,
+        ),
+        closeTo(-0.15, 1e-9),
+      );
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 0,
+          targetId: -1,
+        ),
+        closeTo(-0.15, 1e-9),
+      );
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -335,12 +515,13 @@ void main() {
 
     test('the ledger has not grown', () {
       // The number that must only ever go down, exactly like
-      // pendingBehaviourWork was for Phase 9's Boons. 141 hero behaviours
-      // total; wrenTrueshot, wrenVolleyFan, wrenWideFan and wrenFocusedFan
-      // are the first four out.
+      // pendingBehaviourWork was for Phase 9's Boons. 140 hero behaviours
+      // total (kestrelSharperNock never joined this enum — it turned out to
+      // be one StatModifier, not a behaviour); Wren's four and Kestrel's
+      // Flurry plus both ★5 variants are the first seven out.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(137),
+        lessThanOrEqualTo(133),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -373,11 +554,15 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.bramSaturation,
   HeroBehaviour.bramPrecisionStrike,
 
-  HeroBehaviour.kestrelFlurry,
-  HeroBehaviour.kestrelSharperNock,
+  // kestrelFlurry, its two ★5 variants, and kestrelSharperNock are
+  // implemented — see hero_behaviour_test.dart's Flurry group.
+  //
+  // Bleed needs a status that does not exist yet: burnStacks/toxinStacks
+  // both live on StatusStore with their own ElementSystem tick logic, and
+  // "every 4th arrow applies a 3 s bleed" is a fifth kind of DoT, not a
+  // reuse of either. Real work for whichever hero or arrow needs it first —
+  // the same call BoonBehaviour.stormfoot's own ledger entry made for chains.
   HeroBehaviour.kestrelBleed,
-  HeroBehaviour.kestrelEndlessFlurry,
-  HeroBehaviour.kestrelPerfectFlurry,
 
   HeroBehaviour.ovrinAegisPin,
   HeroBehaviour.ovrinRiposte,

@@ -87,8 +87,9 @@ enum HeroBehaviour {
   /// the tier for the duration.
   kestrelFlurry,
 
-  /// T1b Sharper Nock: Hummingbird's -15 % penalty is waived at Tier III.
-  kestrelSharperNock,
+  // T1b Sharper Nock is not here: it is fully expressible as a single
+  // StatModifier(StatChannel.tierThreeDamage, 0.15) — see that channel's own
+  // doc comment for why this needed the channel wired up first, not a flag.
 
   /// T3b Bleed: every 4th arrow applies a 3 s bleed.
   kestrelBleed,

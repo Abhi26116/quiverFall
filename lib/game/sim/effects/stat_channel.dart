@@ -28,11 +28,20 @@ enum StatChannel {
 
   fireRate,
 
-  /// Multiplier on `DrawTier.three.damageMultiplier`, clamped by
-  /// `DamageResolver.maxDrawTierMultiplier` like every other draw term.
+  /// Conditional on `boonDamageSum`, active only on a Tier III shot — the
+  /// same conditional-sum shape as [damageVsWounded] and its siblings, not a
+  /// multiplier on the Draw tier's own term. A multiplier there would be a
+  /// no-op: `DrawTier.three.damageMultiplier` already sits exactly at
+  /// `DamageResolver.maxDrawTierMultiplier`, so multiplying it by anything
+  /// above 1.0 and then clamping to that same ceiling changes nothing. Heavy
+  /// Draw (#4, "+12 % Tier III damage") and Kestrel's Sharper Nock ("recover
+  /// the −15 % Hummingbird penalty at Tier III") both need an actual
+  /// increase in the number that lands, which only the conditional-sum route
+  /// gives them.
   tierThreeDamage,
 
   /// *Overdraw* pays for its Tier III bonus here. Negative values are normal.
+  /// Same conditional-sum shape as [tierThreeDamage], active on a Tier I shot.
   tierOneDamage,
 
   /// Arrows added to the base shot. Each arrow's damage is scaled by
