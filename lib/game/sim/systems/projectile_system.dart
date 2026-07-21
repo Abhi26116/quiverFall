@@ -256,6 +256,11 @@ abstract final class ProjectileSystem {
   static const double _nyxExecutionersEyeThreshold = 0.20;
   static const double _nyxExecutionersEyeBonus = 0.35;
 
+  // ── Vane: Distance ─────────────────────────────────────────────────────────
+
+  static const double _vaneCloseRangeThreshold = 3.0;
+  static const double _vaneCloseRangePenalty = -0.30;
+
   /// Tests the swept segment against nearby enemies. Returns true if the arrow
   /// was consumed.
   static bool _resolveHits({
@@ -413,6 +418,18 @@ abstract final class ProjectileSystem {
           targetHealthFraction < _nyxExecutionersEyeThreshold) {
         boonSum += _nyxExecutionersEyeBonus;
       }
+    }
+
+    // *Distance*'s close-range penalty. The per-unit bonus and its cap are
+    // plain StatModifiers on damagePerDistance/damagePerDistanceCap and
+    // already reached boonSum above through `combat`; only the "below 3 u"
+    // half needs a hero-conditional check, and Steady (T1a) removes it
+    // outright rather than reducing it.
+    if (hero != null &&
+        hero.has(HeroBehaviour.vaneDistance) &&
+        !hero.has(HeroBehaviour.vaneSteady) &&
+        projectiles.distanceFlown[slot] < _vaneCloseRangeThreshold) {
+      boonSum += _vaneCloseRangePenalty;
     }
 
     final double damage = DamageResolver.resolve(

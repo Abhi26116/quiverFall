@@ -37,6 +37,7 @@ void main() {
   final HeroDefinition sable = heroes.byArchetype(HeroArchetype.sable)!;
   final HeroDefinition nyx = heroes.byArchetype(HeroArchetype.nyx)!;
   final HeroDefinition oriel = heroes.byArchetype(HeroArchetype.oriel)!;
+  final HeroDefinition vane = heroes.byArchetype(HeroArchetype.vane)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -855,6 +856,209 @@ void main() {
     });
   });
 
+  group('Distance and Piercing Horizon', () {
+    test('the per-unit bonus and its cap compose exactly, via combat.damageSumFor', () {
+      final SimWorld world = SimWorld(seed: 41, content: content);
+      world.spawnPlayer(0, 0);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        const HeroState(heroId: 'vane'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      // +6 %/u, uncapped at 5 u (0.30 < the 0.90 cap).
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 5.0,
+          targetId: -1,
+        ),
+        closeTo(0.30, 1e-9),
+      );
+      // Capped at +90 % well past the point 6 %/u alone would exceed it.
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 40.0,
+          targetId: -1,
+        ),
+        closeTo(0.90, 1e-9),
+      );
+    });
+
+    test('Farsight (★1a) raises the cap to +130 %', () {
+      final SimWorld world = SimWorld(seed: 41, content: content);
+      world.spawnPlayer(0, 0);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        const HeroState(
+          heroId: 'vane',
+          stars: 1,
+          talentChoices: <String, String>{'1': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      expect(
+        world.combat.damageSumFor(
+          targetHealthFraction: 1.0,
+          shotDistance: 40.0,
+          targetId: -1,
+        ),
+        closeTo(1.30, 1e-9),
+      );
+    });
+
+    /// The `valueA` of the first `damageDealt` event against a target placed
+    /// [distance] units east of the player.
+    double? firstDamageAtDistance(
+      double distance, {
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 42, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        HeroState(heroId: 'vane', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote =
+          world.spawnEnemy(EnemyArchetype.mote, 4.0 + distance, 4.5);
+      world.enemies.speedScale[0] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('Steady (★1b) removes the close-range penalty at the same distance', () {
+      const double distance = 1.5; // well under the 3 u threshold
+      // Both sides at ★1 so heroAtk's star scaling is identical — the only
+      // difference between them is which talent (if any) that star bought.
+      final double? penalized = firstDamageAtDistance(distance, stars: 1);
+      final double? steady = firstDamageAtDistance(
+        distance,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      );
+      expect(penalized, isNotNull);
+      expect(steady, isNotNull);
+
+      // Both share the same per-unit term at this distance (0.06 * 1.5 =
+      // 0.09); only the -30 % close-range term differs between them.
+      const double perUnit = 0.06 * distance;
+      const double expectedRatio =
+          (1.0 + perUnit) / (1.0 + perUnit - 0.30);
+      expect(steady! / penalized!, closeTo(expectedRatio, 0.03));
+    });
+
+    test('Piercing Horizon: one Tier III arrow at 600 % with very high pierce', () {
+      final SimWorld world = SimWorld(seed: 43, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        const HeroState(heroId: 'vane'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final List<int> slots = <int>[
+        for (int e = 0; e < world.events.count; e++)
+          if (world.events.typeAt(e) == SimEventType.arrowFired)
+            world.events.entityAAt(e),
+      ];
+      expect(slots, hasLength(1));
+      final int slot = slots.single;
+      expect(world.projectiles.drawTier[slot], DrawTier.three.index);
+      expect(
+        world.projectiles.damage[slot],
+        closeTo(world.playerAttack * 6.0, 1e-9),
+      );
+      expect(world.projectiles.pierceRemaining[slot], greaterThan(1000));
+    });
+
+    test('Twin Horizon (★5a): two lances 90° apart', () {
+      final SimWorld world = SimWorld(seed: 44, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        const HeroState(
+          heroId: 'vane',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final List<int> slots = <int>[
+        for (int e = 0; e < world.events.count; e++)
+          if (world.events.typeAt(e) == SimEventType.arrowFired)
+            world.events.entityAAt(e),
+      ];
+      expect(slots, hasLength(2));
+      final double a0 = math.atan2(
+          world.entities.velY[slots[0]], world.entities.velX[slots[0]]);
+      final double a1 = math.atan2(
+          world.entities.velY[slots[1]], world.entities.velX[slots[1]]);
+      expect((a1 - a0).abs(), closeTo(math.pi / 2, 1e-6));
+    });
+
+    test('Sundering Horizon (★5b): one line at 1,400 % instead of 600 %', () {
+      final SimWorld world = SimWorld(seed: 45, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        const HeroState(
+          heroId: 'vane',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final List<int> slots = <int>[
+        for (int e = 0; e < world.events.count; e++)
+          if (world.events.typeAt(e) == SimEventType.arrowFired)
+            world.events.entityAAt(e),
+      ];
+      expect(slots, hasLength(1));
+      expect(
+        world.projectiles.damage[slots.single],
+        closeTo(world.playerAttack * 14.0, 1e-9),
+      );
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -877,15 +1081,16 @@ void main() {
 
     test('the ledger has not grown', () {
       // The number that must only ever go down, exactly like
-      // pendingBehaviourWork was for Phase 9's Boons. 140 hero behaviours
-      // total (kestrelSharperNock never joined this enum — it turned out to
-      // be one StatModifier, not a behaviour). Out so far: Wren's four,
-      // Kestrel's Flurry plus both ★5 variants, Kade/Sela/Sable's
-      // innate-element passives, Nyx's First Blood plus Executioner's Eye,
-      // and Oriel's Spectrum, Prism and Endless Prism.
+      // pendingBehaviourWork was for Phase 9's Boons. 139 hero behaviours
+      // total (kestrelSharperNock and vaneFarsight never joined this enum —
+      // each turned out to be one StatModifier, not a behaviour). Out so
+      // far: Wren's four, Kestrel's Flurry plus both ★5 variants,
+      // Kade/Sela/Sable's innate-element passives, Nyx's First Blood plus
+      // Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism, and Vane's
+      // Distance/Steady/Piercing Horizon/Twin Horizon/Sundering Horizon.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(125),
+        lessThanOrEqualTo(119),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -984,13 +1189,11 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.corvinEndlessCarom,
   HeroBehaviour.corvinPerfectCarom,
 
-  HeroBehaviour.vaneDistance,
-  HeroBehaviour.vanePiercingHorizon,
-  HeroBehaviour.vaneFarsight,
-  HeroBehaviour.vaneSteady,
+  // vaneDistance, vaneSteady, vanePiercingHorizon, vaneTwinHorizon and
+  // vaneSunderingHorizon are implemented — see the "Distance and Piercing
+  // Horizon" group. vaneFarsight never joined this enum — one StatModifier
+  // on damagePerDistanceCap.
   HeroBehaviour.vaneMarked,
-  HeroBehaviour.vaneTwinHorizon,
-  HeroBehaviour.vaneSunderingHorizon,
 
   HeroBehaviour.thaneBloodtide,
   HeroBehaviour.thaneRedDraw,

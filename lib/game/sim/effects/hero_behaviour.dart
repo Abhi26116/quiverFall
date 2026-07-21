@@ -286,8 +286,9 @@ enum HeroBehaviour {
   /// Piercing Horizon: a full-width, infinite-pierce lance across the arena.
   vanePiercingHorizon,
 
-  /// T1a Farsight: Distance's cap rises to +130 %.
-  vaneFarsight,
+  // T1a Farsight is not here: it is one StatModifier
+  // (damagePerDistanceCap, 0.40) added on top of Distance's own 0.90,
+  // reaching +130 % — no behaviour needed.
 
   /// T1b Steady: the close-range penalty is removed entirely.
   vaneSteady,

@@ -803,6 +803,10 @@
       "passive": {
         "name": "Distance",
         "description": "+6 % damage per unit of distance to target, capped at +90 %. Below 3 u, −30 %.",
+        "modifiers": [
+          { "channel": "damagePerDistance", "value": 0.06 },
+          { "channel": "damagePerDistanceCap", "value": 0.90 }
+        ],
         "behaviour": "vaneDistance"
       },
       "ultimate": {
@@ -818,7 +822,7 @@
               "key": "a",
               "name": "Farsight",
               "description": "Distance's cap rises to +130 %",
-              "behaviour": "vaneFarsight"
+              "modifiers": [{ "channel": "damagePerDistanceCap", "value": 0.40 }]
             },
             {
               "key": "b",

@@ -750,10 +750,61 @@ class SimWorld {
       hero.prismRemaining = hero.has(HeroBehaviour.orielEndlessPrism)
           ? _orielEndlessPrismDuration
           : HeroRuntime.prismDuration;
+    } else if (hero.has(HeroBehaviour.vanePiercingHorizon)) {
+      _fireVanePiercingHorizon();
     }
   }
 
   static const double _orielEndlessPrismDuration = 16.0;
+
+  /// *Piercing Horizon* — one arrow (two, for Twin Horizon), Tier III,
+  /// enough pierce to never run out before a wall stops it, which combined
+  /// with the arena's own diagonal (~18 u) inside the arrow's default reach
+  /// (14 u/s x 2.5 s lifetime = 35 u) is what makes it "full-arena-width"
+  /// without needing a special lifetime of its own.
+  void _fireVanePiercingHorizon() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double fromX = entities.posX[p];
+    final double fromY = entities.posY[p];
+
+    final int target = FiringSystem.selectTarget(
+      entities,
+      spatial,
+      fromX,
+      fromY,
+      enemies: enemies,
+    );
+    final double baseAngle = target >= 0
+        ? FiringSystem.aimAngle(entities, target, fromX, fromY,
+            entities.facing[p], aimAssist, projectileSpeed)
+        : entities.facing[p];
+
+    final double share = hero.has(HeroBehaviour.vaneSunderingHorizon)
+        ? _vaneSunderingHorizonDamageShare
+        : _vanePiercingHorizonDamageShare;
+
+    _spawnArrow(fromX, fromY, baseAngle, DrawTier.three, share,
+        extraPierce: _longArrowPierce);
+
+    // *Twin Horizon* (T5a) trades Sundering's bigger single line for two at
+    // 90° — an instant Confluence cross, per its own card text — rather than
+    // stacking with Sundering; a hero only ever holds one T5 branch.
+    if (hero.has(HeroBehaviour.vaneTwinHorizon)) {
+      _spawnArrow(
+        fromX,
+        fromY,
+        baseAngle + _vaneTwinHorizonOffsetRadians,
+        DrawTier.three,
+        share,
+        extraPierce: _longArrowPierce,
+      );
+    }
+  }
+
+  static const double _vanePiercingHorizonDamageShare = 6.00;
+  static const double _vaneSunderingHorizonDamageShare = 14.00;
+  static const double _vaneTwinHorizonOffsetRadians = math.pi / 2;
 
   /// *Flurry* — a timed self-buff rather than a burst: forced Tier III and a
   /// fire-rate multiplier for its duration, both read every tick from
