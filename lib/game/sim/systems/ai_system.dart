@@ -10,6 +10,8 @@ import 'package:quiverfall/game/sim/ai/rush_tree.dart';
 import 'package:quiverfall/game/sim/ai/salvo_tree.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
+import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -452,6 +454,13 @@ abstract final class AiSystem {
     final int spawner = ctx.enemies.spawnerSlot[slot];
     if (spawner >= 0 && ctx.enemies.liveAdds[spawner] > 0) {
       ctx.enemies.liveAdds[spawner]--;
+    }
+
+    // *First Blood* — a kill grants a speed burst. Refreshes rather than
+    // stacks; Chain Kill (T3b) is the talent that changes that.
+    final HeroRuntime? hero = ctx.hero;
+    if (hero != null && hero.has(HeroBehaviour.nyxFirstBlood)) {
+      hero.firstBloodSpeedRemaining = HeroRuntime.firstBloodSpeedDuration;
     }
 
     ctx.status.clearSlot(slot);

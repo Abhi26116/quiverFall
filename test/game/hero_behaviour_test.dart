@@ -11,6 +11,7 @@ import 'package:quiverfall/game/heroes/hero_definition.dart';
 import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
@@ -33,6 +34,7 @@ void main() {
   final HeroDefinition kade = heroes.byArchetype(HeroArchetype.kade)!;
   final HeroDefinition sela = heroes.byArchetype(HeroArchetype.sela)!;
   final HeroDefinition sable = heroes.byArchetype(HeroArchetype.sable)!;
+  final HeroDefinition nyx = heroes.byArchetype(HeroArchetype.nyx)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -619,6 +621,152 @@ void main() {
     });
   });
 
+  group('First Blood', () {
+    ({SimWorld world, int target}) nyxArena({
+      double targetHealthFraction = 1.0,
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 21, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        nyx,
+        HeroState(heroId: 'nyx', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[0] = 0;
+      world.entities.maxHealth[mote] = 1000;
+      world.entities.health[mote] = 1000 * targetHealthFraction;
+      return (world: world, target: mote);
+    }
+
+    /// The `valueA` (damage dealt) of the first `damageDealt` event, or null
+    /// if no hit lands in time.
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('deals +70 % damage to a target above 90 % HP', () {
+      final double? full = firstDamageDealt(nyxArena().world);
+      final double? mid =
+          firstDamageDealt(nyxArena(targetHealthFraction: 0.60).world);
+      expect(full, isNotNull);
+      expect(mid, isNotNull);
+      expect(full! / mid!, closeTo(1.70, 0.01));
+    });
+
+    test("Executioner's Eye (★1a) adds the same fight below 20 % HP, at its own +35 %", () {
+      final double? low = firstDamageDealt(nyxArena(
+        targetHealthFraction: 0.10,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+      ).world);
+      final double? mid = firstDamageDealt(nyxArena(
+        targetHealthFraction: 0.60,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+      ).world);
+      expect(low, isNotNull);
+      expect(mid, isNotNull);
+      expect(low! / mid!, closeTo(1.35, 0.01));
+    });
+
+    test('without the ★1a talent, low HP gets neither bonus', () {
+      final double? low =
+          firstDamageDealt(nyxArena(targetHealthFraction: 0.10).world);
+      final double? mid =
+          firstDamageDealt(nyxArena(targetHealthFraction: 0.60).world);
+      expect(low, isNotNull);
+      expect(mid, isNotNull);
+      expect(low! / mid!, closeTo(1.0, 0.01));
+    });
+
+    test('a kill grants +25 % move speed for 1.5 s, then reverts', () {
+      // Two identical worlds driven by the same movement input in lockstep,
+      // one with the burst forced on. Momentum accrues identically in both,
+      // so comparing their velocities isolates First Blood's own
+      // contribution — a single world's "before vs. long after" velocity
+      // would also pick up Momentum's own speed bonus building up over the
+      // many ticks it takes the burst to expire.
+      SimWorld buildWorld() {
+        final SimWorld world = SimWorld(seed: 22, content: content)
+          ..autoFire = false;
+        world.spawnPlayer(4.0, 4.5);
+        HeroLoadoutResolver.apply(
+          world,
+          nyx,
+          const HeroState(heroId: 'nyx'),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+        return world;
+      }
+
+      final SimWorld boosted = buildWorld();
+      final SimWorld unboosted = buildWorld();
+      final InputSnapshot moving = InputSnapshot()..set(1.0, 0.0);
+
+      boosted.hero.firstBloodSpeedRemaining =
+          HeroRuntime.firstBloodSpeedDuration;
+      boosted.tick(moving);
+      unboosted.tick(moving);
+      expect(
+        boosted.entities.velX[boosted.player.index] /
+            unboosted.entities.velX[unboosted.player.index],
+        closeTo(1.25, 0.01),
+      );
+
+      for (int t = 0; t < 100; t++) {
+        boosted.tick(moving);
+        unboosted.tick(moving);
+      }
+      expect(boosted.hero.firstBloodSpeedRemaining, 0);
+      expect(
+        boosted.entities.velX[boosted.player.index] /
+            unboosted.entities.velX[unboosted.player.index],
+        closeTo(1.0, 0.01),
+      );
+    });
+
+    test("a real kill triggers the burst via AiSystem's death pass", () {
+      final SimWorld world = SimWorld(seed: 23, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        nyx,
+        const HeroState(heroId: 'nyx'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.entities.maxHealth[mote] = 1;
+      world.entities.health[mote] = 1; // one hit kills it
+
+      expect(world.hero.firstBloodSpeedRemaining, 0);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 120 && world.hero.firstBloodSpeedRemaining == 0;
+          t++) {
+        world.tick(idle);
+      }
+      expect(world.hero.firstBloodSpeedRemaining, greaterThan(0));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -644,11 +792,11 @@ void main() {
       // pendingBehaviourWork was for Phase 9's Boons. 140 hero behaviours
       // total (kestrelSharperNock never joined this enum — it turned out to
       // be one StatModifier, not a behaviour). Out so far: Wren's four,
-      // Kestrel's Flurry plus both ★5 variants, and Kade/Sela/Sable's
-      // innate-element passives.
+      // Kestrel's Flurry plus both ★5 variants, Kade/Sela/Sable's
+      // innate-element passives, and Nyx's First Blood plus Executioner's Eye.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(130),
+        lessThanOrEqualTo(128),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -764,9 +912,9 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.thaneLongRed,
   HeroBehaviour.thaneCrimsonDraw,
 
-  HeroBehaviour.nyxFirstBlood,
+  // nyxFirstBlood and nyxExecutionersEye are implemented — see the "First
+  // Blood" group.
   HeroBehaviour.nyxUmbralStep,
-  HeroBehaviour.nyxExecutionersEye,
   HeroBehaviour.nyxDeeperShadow,
   HeroBehaviour.nyxShadowline,
   HeroBehaviour.nyxChainKill,

@@ -419,6 +419,10 @@ class SimWorld {
       hero.flurryRemaining -= dt;
       if (hero.flurryRemaining < 0) hero.flurryRemaining = 0;
     }
+    if (hero.firstBloodSpeedRemaining > 0) {
+      hero.firstBloodSpeedRemaining -= dt;
+      if (hero.firstBloodSpeedRemaining < 0) hero.firstBloodSpeedRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -570,6 +574,7 @@ class SimWorld {
       ..playerMaxHealth = entities.maxHealth[p]
       ..boons = boons
       ..combat = combat
+      ..hero = hero
       ..incomingDamageFactor = incomingDamageFactor
       ..now = _elapsed
       ..echoLineDuration = windlineDuration;
@@ -1057,8 +1062,14 @@ class SimWorld {
     // docs/01 §1.1 rests on was paying out at roughly half its stated rate, and
     // every balance measurement taken before this was of a game where moving
     // was quietly worse than the design says.
-    final double speed =
-        playerMoveSpeed * (1.0 + playerDraw.moveSpeedBonus);
+    // *First Blood*'s kill-speed burst — a flat bonus on top of Momentum's,
+    // not a replacement for it.
+    final double firstBloodBonus = hero.firstBloodSpeedRemaining > 0
+        ? HeroRuntime.firstBloodSpeedBonus
+        : 0.0;
+
+    final double speed = playerMoveSpeed *
+        (1.0 + playerDraw.moveSpeedBonus + firstBloodBonus);
 
     entities.velX[i] = input.stickX * inv * speed;
     entities.velY[i] = input.stickY * inv * speed;

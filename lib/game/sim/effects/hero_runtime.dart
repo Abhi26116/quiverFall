@@ -103,6 +103,14 @@ class HeroRuntime {
   /// rate together, never one without the other.
   double flurryRateMultiplier = 1.0;
 
+  /// Seconds left on Nyx's *First Blood* kill-speed burst. Zero means
+  /// inactive. Set by [AiSystem]'s death pass, the one place a kill is
+  /// known; read wherever the player's move speed is resolved.
+  double firstBloodSpeedRemaining = 0;
+
+  static const double firstBloodSpeedDuration = 1.5;
+  static const double firstBloodSpeedBonus = 0.25;
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -130,6 +138,7 @@ class HeroRuntime {
     _readyAnnounced = false;
     flurryRemaining = 0;
     flurryRateMultiplier = 1.0;
+    firstBloodSpeedRemaining = 0;
     rekindleSpent = false;
     cycleIndex = 0;
   }
@@ -142,5 +151,6 @@ class HeroRuntime {
     // the next room's opening seconds. Matches `CombatModifiers.resetLive`
     // clearing the Kiting window at the same boundary.
     flurryRemaining = 0;
+    firstBloodSpeedRemaining = 0;
   }
 }

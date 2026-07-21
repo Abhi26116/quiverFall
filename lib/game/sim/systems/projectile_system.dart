@@ -249,6 +249,13 @@ abstract final class ProjectileSystem {
   /// separate Discord rule rather than buffing the player.
   static const int _playerOwner = 0;
 
+  // ── Nyx: First Blood ──────────────────────────────────────────────────────
+
+  static const double _nyxFirstBloodFullHealthThreshold = 0.90;
+  static const double _nyxFirstBloodBonus = 0.70;
+  static const double _nyxExecutionersEyeThreshold = 0.20;
+  static const double _nyxExecutionersEyeBonus = 0.35;
+
   /// Tests the swept segment against nearby enemies. Returns true if the arrow
   /// was consumed.
   static bool _resolveHits({
@@ -370,11 +377,14 @@ abstract final class ProjectileSystem {
     // The build's conditional terms, resolved against *this* target and *this*
     // shot. They sum into one `boonDamageSum` rather than each multiplying the
     // total — docs/04 §4.1 rule 1, and the reason a twenty-Boon run is linear.
+    final double maxHp = store.maxHealth[target];
+    final double targetHealthFraction =
+        maxHp > 0 ? store.health[target] / maxHp : 1.0;
+
     double boonSum = 0;
     if (!combat.isInert) {
-      final double maxHp = store.maxHealth[target];
       boonSum = combat.damageSumFor(
-        targetHealthFraction: maxHp > 0 ? store.health[target] / maxHp : 1.0,
+        targetHealthFraction: targetHealthFraction,
         // Distance the arrow has actually flown, not the length of this tick's
         // sweep. *Marksman* rewards a long shot, and a long shot is long at the
         // moment it lands, not at the moment it was fired.
@@ -389,6 +399,20 @@ abstract final class ProjectileSystem {
         isTierThree: tier == DrawTier.three,
         isTierOne: tier == DrawTier.one,
       );
+    }
+
+    // *First Blood* — a hero passive, not a Boon, so it lives outside
+    // `combat`/`boonDamageSum`'s composed-from-BoonStats world and adds here
+    // directly. Executioner's Eye (T1a) widens the same bonus to below 20 %
+    // HP as well, which is why this checks the talent flag too rather than
+    // being folded into a single always-90 % constant.
+    if (hero != null && hero.has(HeroBehaviour.nyxFirstBlood)) {
+      if (targetHealthFraction > _nyxFirstBloodFullHealthThreshold) {
+        boonSum += _nyxFirstBloodBonus;
+      } else if (hero.has(HeroBehaviour.nyxExecutionersEye) &&
+          targetHealthFraction < _nyxExecutionersEyeThreshold) {
+        boonSum += _nyxExecutionersEyeBonus;
+      }
     }
 
     final double damage = DamageResolver.resolve(

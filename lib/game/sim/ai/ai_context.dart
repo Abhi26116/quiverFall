@@ -7,6 +7,7 @@ import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -120,6 +121,12 @@ class AiContext {
 
   /// Composed mitigation and modifiers. Same nullability contract as [boons].
   CombatModifiers? combat;
+
+  /// Which hero behaviours are live, and their state. Same nullability
+  /// contract as [boons] — null in a world with no hero loaded, which is
+  /// every test that predates Phase 10. Read by the death pass for
+  /// kill-triggered hero effects (Nyx's First Blood speed burst).
+  HeroRuntime? hero;
 
   /// Multiplier on incoming damage from the player's own build — mitigation
   /// already combined and capped. 1.0 means unmodified.
