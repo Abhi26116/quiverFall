@@ -427,6 +427,17 @@ class SimWorld {
       hero.prismRemaining -= dt;
       if (hero.prismRemaining < 0) hero.prismRemaining = 0;
     }
+    if (hero.bloomRemaining > 0) {
+      hero.bloomRemaining -= dt;
+      if (hero.bloomRemaining < 0) hero.bloomRemaining = 0;
+      if (hero.bloomHealPerSecond > 0 && !player.isNone) {
+        final int p = player.index;
+        final double healed = entities.health[p] +
+            entities.maxHealth[p] * hero.bloomHealPerSecond * dt;
+        final double cap = entities.maxHealth[p];
+        entities.health[p] = healed > cap ? cap : healed;
+      }
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -466,6 +477,8 @@ class SimWorld {
       combat: combat,
       boons: boons,
       hero: hero,
+      player: player.isNone ? -1 : player.index,
+      lifesteal: lifesteal,
       // *Perfect Flurry* doubles Confluence damage for its own window only —
       // read live here rather than baked into the room-scoped
       // confluenceDamageMultiplier field, the same split Flurry's fire-rate
@@ -754,10 +767,43 @@ class SimWorld {
       _fireVanePiercingHorizon();
     } else if (hero.has(HeroBehaviour.haldenJudgmentSpear)) {
       _fireHaldenJudgmentSpear();
+    } else if (hero.has(HeroBehaviour.liraVerdantBloom)) {
+      _fireLiraVerdantBloom();
     }
   }
 
   static const double _orielEndlessPrismDuration = 16.0;
+
+  /// *Verdant Bloom* — a timed self-buff like Flurry, not a burst: a heal
+  /// rate and a damage bonus, both read every tick rather than applied once
+  /// here. *Blood Bloom* (T5b) is a full replacement — no heal at all, its
+  /// own higher damage bonus in place of the base +25 % — the same
+  /// full-replacement shape Focused Fan and Twin Spear already use for a
+  /// mutually exclusive branch.
+  void _fireLiraVerdantBloom() {
+    if (hero.has(HeroBehaviour.liraBloodBloom)) {
+      hero.bloomRemaining = _liraVerdantBloomDuration;
+      hero.bloomHealPerSecond = 0;
+      hero.bloomDamageBonus = _liraBloodBloomDamageBonus;
+    } else if (hero.has(HeroBehaviour.liraEndlessBloom)) {
+      hero.bloomRemaining = _liraEndlessBloomDuration;
+      hero.bloomHealPerSecond =
+          _liraEndlessBloomHealFraction / _liraEndlessBloomDuration;
+      hero.bloomDamageBonus = _liraVerdantBloomDamageBonus;
+    } else {
+      hero.bloomRemaining = _liraVerdantBloomDuration;
+      hero.bloomHealPerSecond =
+          _liraVerdantBloomHealFraction / _liraVerdantBloomDuration;
+      hero.bloomDamageBonus = _liraVerdantBloomDamageBonus;
+    }
+  }
+
+  static const double _liraVerdantBloomDuration = 4.0;
+  static const double _liraVerdantBloomHealFraction = 0.40;
+  static const double _liraVerdantBloomDamageBonus = 0.25;
+  static const double _liraEndlessBloomDuration = 8.0;
+  static const double _liraEndlessBloomHealFraction = 0.60;
+  static const double _liraBloodBloomDamageBonus = 0.80;
 
   /// *Piercing Horizon* — one arrow (two, for Twin Horizon), Tier III,
   /// enough pierce to never run out before a wall stops it, which combined

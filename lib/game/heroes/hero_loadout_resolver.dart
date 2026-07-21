@@ -121,9 +121,12 @@ abstract final class HeroLoadoutResolver {
       ..setArrowActive(arrow.behaviour)
       // ADR 0006: the hero's own base ATK and fire rate, not the composed
       // build — Boons and the arrow change how fast damage adds up, not how
-      // fast that damage fills the bar.
-      ..chargePerDamage =
-          1.0 / (HeroRuntime.ultimateChargeDivisor * heroAtk * heroFireRate);
+      // fast that damage fills the bar. `ultimateChargeRate` is the one
+      // exception ADR 0006 doesn't cover: a talent that names the charge
+      // meter itself (Lira's Bloom Speed) is adjusting the bar, not the
+      // damage, so it multiplies in here rather than being read from combat.
+      ..chargePerDamage = combined.multiplierFor(StatChannel.ultimateChargeRate) /
+          (HeroRuntime.ultimateChargeDivisor * heroAtk * heroFireRate);
   }
 
   /// The same add-or-multiply rule [BoonInventory] applies to every

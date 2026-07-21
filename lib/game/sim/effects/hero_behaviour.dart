@@ -240,8 +240,9 @@ enum HeroBehaviour {
   /// Verdant Bloom: a burst heal plus a damage buff for its duration.
   liraVerdantBloom,
 
-  /// T1a Deep Roots: Lifebound's base lifesteal rises to 6 %.
-  liraDeepRoots,
+  // T1a Deep Roots is not here: it is one StatModifier
+  // (lifesteal, 0.02) added on top of Lifebound's own 0.04 — no behaviour
+  // needed, the same shape as Kestrel's Sharper Nock and Vane's Farsight.
 
   /// T3a Overheal: healing past full becomes a shield.
   liraOverheal,

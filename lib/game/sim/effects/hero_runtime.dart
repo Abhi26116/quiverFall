@@ -118,6 +118,17 @@ class HeroRuntime {
 
   static const double prismDuration = 10.0;
 
+  /// Seconds left on Lira's *Verdant Bloom*. Zero means inactive.
+  double bloomRemaining = 0;
+
+  /// Fraction of max HP healed per second while [bloomRemaining] is active.
+  /// Zero for *Blood Bloom*, which converts the heal into damage instead.
+  double bloomHealPerSecond = 0;
+
+  /// Damage bonus applied while [bloomRemaining] is active — the base
+  /// Bloom's +25 %, or Blood Bloom's +80 % in its place.
+  double bloomDamageBonus = 0;
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -147,6 +158,9 @@ class HeroRuntime {
     flurryRateMultiplier = 1.0;
     firstBloodSpeedRemaining = 0;
     prismRemaining = 0;
+    bloomRemaining = 0;
+    bloomHealPerSecond = 0;
+    bloomDamageBonus = 0;
     rekindleSpent = false;
     cycleIndex = 0;
   }
@@ -161,5 +175,6 @@ class HeroRuntime {
     flurryRemaining = 0;
     firstBloodSpeedRemaining = 0;
     prismRemaining = 0;
+    bloomRemaining = 0;
   }
 }

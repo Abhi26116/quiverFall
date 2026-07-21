@@ -47,6 +47,8 @@ abstract final class ProjectileSystem {
     EnemyStore? enemies,
     StatusStore? status,
     HeroRuntime? hero,
+    int player = -1,
+    double lifesteal = 0,
   }) {
     final int high = store.highWater;
 
@@ -126,6 +128,8 @@ abstract final class ProjectileSystem {
         combat: combat,
         boons: boons,
         hero: hero,
+        player: player,
+        lifesteal: lifesteal,
       );
 
       if (consumed) continue;
@@ -265,6 +269,10 @@ abstract final class ProjectileSystem {
 
   static const double _haldenVerdictEliteBonus = 0.40;
 
+  // ── Lira: Lifebound ────────────────────────────────────────────────────────
+
+  static const double _liraLifeboundTierThreeBonus = 0.02;
+
   /// Tests the swept segment against nearby enemies. Returns true if the arrow
   /// was consumed.
   static bool _resolveHits({
@@ -285,6 +293,8 @@ abstract final class ProjectileSystem {
     required CombatModifiers combat,
     required BoonRuntime boons,
     HeroRuntime? hero,
+    int player = -1,
+    double lifesteal = 0,
   }) {
     final double arrowRadius = store.radius[slot];
     final int candidates =
@@ -325,6 +335,8 @@ abstract final class ProjectileSystem {
         combat: combat,
         boons: boons,
         hero: hero,
+        player: player,
+        lifesteal: lifesteal,
       );
 
       if (projectiles.pierceRemaining[slot] < 0) {
@@ -353,6 +365,8 @@ abstract final class ProjectileSystem {
     required CombatModifiers combat,
     required BoonRuntime boons,
     HeroRuntime? hero,
+    int player = -1,
+    double lifesteal = 0,
   }) {
     final int pierceIndex = projectiles.hitCount[slot];
     projectiles.recordHit(slot, targetId);
@@ -447,6 +461,13 @@ abstract final class ProjectileSystem {
       boonSum += _haldenVerdictEliteBonus;
     }
 
+    // *Verdant Bloom* / *Blood Bloom* — a live window read here rather than
+    // gated by a `HeroBehaviour` check, since `bloomRemaining` can only ever
+    // be non-zero for a hero who actually holds the Ultimate that sets it.
+    if (hero != null && hero.bloomRemaining > 0) {
+      boonSum += hero.bloomDamageBonus;
+    }
+
     final double damage = DamageResolver.resolve(
       attack: projectiles.damage[slot],
       arrowBaseMultiplier: 1.0,
@@ -528,6 +549,23 @@ abstract final class ProjectileSystem {
     // docs/07 §7.0's Ultimate charge formula reads on the damage a hit
     // actually dealt, the same number the event above just reported.
     hero?.chargeFromDamage(toHealth);
+
+    // Lifesteal — `lifesteal` is the room-composed fraction any source
+    // (currently only Lira's Lifebound) contributes; her own +2 % at Tier
+    // III is a hero-specific top-up on top of that composed value, not a
+    // second channel, since nothing else in the game varies lifesteal by
+    // Draw tier.
+    if (lifesteal > 0 && player >= 0) {
+      double effectiveLifesteal = lifesteal;
+      if (hero != null &&
+          hero.has(HeroBehaviour.liraLifebound) &&
+          tier == DrawTier.three) {
+        effectiveLifesteal += _liraLifeboundTierThreeBonus;
+      }
+      final double healed = store.health[player] + toHealth * effectiveLifesteal;
+      final double cap = store.maxHealth[player];
+      store.health[player] = healed > cap ? cap : healed;
+    }
 
     // Death is **not** resolved here. [AiSystem]'s death pass owns it, because a
     // death can mean a detonation, a revival or a split, and those must not

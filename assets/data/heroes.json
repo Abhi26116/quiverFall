@@ -651,6 +651,7 @@
       "passive": {
         "name": "Lifebound",
         "description": "4 % lifesteal; +2 % additional while at Tier III.",
+        "modifiers": [{ "channel": "lifesteal", "value": 0.04 }],
         "behaviour": "liraLifebound"
       },
       "ultimate": {
@@ -666,7 +667,7 @@
               "key": "a",
               "name": "Deep Roots",
               "description": "Lifebound's base lifesteal rises to 6 %",
-              "behaviour": "liraDeepRoots"
+              "modifiers": [{ "channel": "lifesteal", "value": 0.02 }]
             },
             {
               "key": "b",

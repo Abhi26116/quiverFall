@@ -39,6 +39,7 @@ void main() {
   final HeroDefinition oriel = heroes.byArchetype(HeroArchetype.oriel)!;
   final HeroDefinition vane = heroes.byArchetype(HeroArchetype.vane)!;
   final HeroDefinition halden = heroes.byArchetype(HeroArchetype.halden)!;
+  final HeroDefinition lira = heroes.byArchetype(HeroArchetype.lira)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -1204,6 +1205,184 @@ void main() {
     });
   });
 
+  group('Lifebound and Verdant Bloom', () {
+    ({SimWorld world, int target}) liraArena() {
+      final SimWorld world = SimWorld(seed: 61, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        lira,
+        const HeroState(heroId: 'lira'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      world.entities.health[world.player.index] = 50; // room to observe healing
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    /// Runs until a `damageDealt` event lands, returning the health healed
+    /// over that span.
+    double? healedByFirstHit(SimWorld world) {
+      final int p = world.player.index;
+      final double before = world.entities.health[p];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        if (world.events.countOf(SimEventType.damageDealt) > 0) {
+          return world.entities.health[p] - before;
+        }
+      }
+      return null;
+    }
+
+    test("Lifebound heals 4 % of a Tier I hit's damage", () {
+      final ({SimWorld world, int target}) a = liraArena();
+      final double? healed = healedByFirstHit(a.world);
+      expect(healed, isNotNull);
+      expect(healed!, closeTo(a.world.playerAttack * 1.0 * 0.04, 0.5));
+    });
+
+    test('the +2 % Tier III bonus lifts Lifebound to 6 % of the (larger) hit', () {
+      final ({SimWorld world, int target}) a = liraArena();
+      a.world.playerDraw.drawSeconds = 999; // force Tier III immediately
+      final double? healed = healedByFirstHit(a.world);
+      expect(healed, isNotNull);
+      expect(
+        healed!,
+        closeTo(a.world.playerAttack * DrawTier.three.damageMultiplier * 0.06, 1.0),
+      );
+    });
+
+    test('Deep Roots (★1a): base lifesteal rises to 6 % even at Tier I', () {
+      final SimWorld world = SimWorld(seed: 61, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        lira,
+        const HeroState(
+          heroId: 'lira',
+          stars: 1,
+          talentChoices: <String, String>{'1': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      world.entities.health[world.player.index] = 50;
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+
+      final double? healed = healedByFirstHit(world);
+      expect(healed, isNotNull);
+      expect(healed!, closeTo(world.playerAttack * 1.0 * 0.06, 0.5));
+    });
+
+    test("Bloom Speed (★1b) raises the Ultimate's charge rate by 25 %", () {
+      // Both at ★1 so heroAtk/heroFireRate's star scaling (ADR 0006) is
+      // identical on both sides — the only difference is which branch (if
+      // any) that star bought.
+      final SimWorld baseline = SimWorld(seed: 61, content: content);
+      baseline.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        baseline,
+        lira,
+        const HeroState(heroId: 'lira', stars: 1),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      final SimWorld boosted = SimWorld(seed: 61, content: content);
+      boosted.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        boosted,
+        lira,
+        const HeroState(
+          heroId: 'lira',
+          stars: 1,
+          talentChoices: <String, String>{'1': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      expect(
+        boosted.hero.chargePerDamage,
+        closeTo(baseline.hero.chargePerDamage * 1.25, 1e-12),
+      );
+    });
+
+    test('Verdant Bloom: heals 40 % over 4 s and grants +25 % damage while active', () {
+      final ({SimWorld world, int target}) a = liraArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.bloomRemaining, closeTo(4.0, 1e-9));
+      expect(
+        a.world.hero.bloomHealPerSecond,
+        closeTo(0.40 / 4.0, 1e-9),
+      );
+      expect(a.world.hero.bloomDamageBonus, closeTo(0.25, 1e-9));
+
+      // One tick's worth of the heal rate lands on the next tick.
+      final int p = a.world.player.index;
+      final double maxHp = a.world.entities.maxHealth[p];
+      final double before = a.world.entities.health[p];
+      a.world.tick(InputSnapshot());
+      final double healedOneTick = a.world.entities.health[p] - before;
+      expect(
+        healedOneTick,
+        closeTo(maxHp * (0.40 / 4.0) * (1 / 60), 1e-6),
+      );
+    });
+
+    test('Endless Bloom (★5a): 8 s at 60 % instead of 4 s at 40 %', () {
+      final ({SimWorld world, int target}) a = liraArena();
+      HeroLoadoutResolver.apply(
+        a.world,
+        lira,
+        const HeroState(
+          heroId: 'lira',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.bloomRemaining, closeTo(8.0, 1e-9));
+      expect(a.world.hero.bloomHealPerSecond, closeTo(0.60 / 8.0, 1e-9));
+    });
+
+    test('Blood Bloom (★5b): no healing, +80 % damage instead of +25 %', () {
+      final ({SimWorld world, int target}) a = liraArena();
+      HeroLoadoutResolver.apply(
+        a.world,
+        lira,
+        const HeroState(
+          heroId: 'lira',
+          stars: 5,
+          talentChoices: <String, String>{'5': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.bloomHealPerSecond, 0);
+      expect(a.world.hero.bloomDamageBonus, closeTo(0.80, 1e-9));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1226,17 +1405,18 @@ void main() {
 
     test('the ledger has not grown', () {
       // The number that must only ever go down, exactly like
-      // pendingBehaviourWork was for Phase 9's Boons. 139 hero behaviours
-      // total (kestrelSharperNock and vaneFarsight never joined this enum —
-      // each turned out to be one StatModifier, not a behaviour). Out so
-      // far: Wren's four, Kestrel's Flurry plus both ★5 variants,
-      // Kade/Sela/Sable's innate-element passives, Nyx's First Blood plus
-      // Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism, Vane's
-      // Distance/Steady/Piercing Horizon/Twin Horizon/Sundering Horizon, and
-      // Halden's Verdict/Judgment Spear/Final Verdict/Twin Spear.
+      // pendingBehaviourWork was for Phase 9's Boons. 138 hero behaviours
+      // total (kestrelSharperNock, vaneFarsight and liraDeepRoots never
+      // joined this enum — each turned out to be one StatModifier, not a
+      // behaviour). Out so far: Wren's four, Kestrel's Flurry plus both ★5
+      // variants, Kade/Sela/Sable's innate-element passives, Nyx's First
+      // Blood plus Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism,
+      // Vane's Distance/Steady/Piercing Horizon/Twin Horizon/Sundering
+      // Horizon, Halden's Verdict/Judgment Spear/Final Verdict/Twin Spear,
+      // and Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(115),
+        lessThanOrEqualTo(110),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -1320,12 +1500,10 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.sableLastingMiasma,
   HeroBehaviour.sableConcentratedMiasma,
 
-  HeroBehaviour.liraLifebound,
-  HeroBehaviour.liraVerdantBloom,
-  HeroBehaviour.liraDeepRoots,
+  // liraLifebound, liraVerdantBloom, liraEndlessBloom and liraBloodBloom are
+  // implemented — see the "Lifebound and Verdant Bloom" group.
+  // liraDeepRoots never joined this enum — one StatModifier on lifesteal.
   HeroBehaviour.liraOverheal,
-  HeroBehaviour.liraEndlessBloom,
-  HeroBehaviour.liraBloodBloom,
 
   HeroBehaviour.corvinBounce,
   HeroBehaviour.corvinCaroms,
