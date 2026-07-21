@@ -43,6 +43,7 @@ void main() {
   final HeroDefinition bram = heroes.byArchetype(HeroArchetype.bram)!;
   final HeroDefinition thane = heroes.byArchetype(HeroArchetype.thane)!;
   final HeroDefinition mirelle = heroes.byArchetype(HeroArchetype.mirelle)!;
+  final HeroDefinition torv = heroes.byArchetype(HeroArchetype.torv)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -1823,6 +1824,133 @@ void main() {
     });
   });
 
+  group('Arc and Tempest Nock', () {
+    /// A primary target 8 u east of the player, plus four more enemies
+    /// clustered around it at 0.3/0.4/0.5/0.8 u — all off the y = 4.5 firing
+    /// line, so a piercing arrow travelling along it never hits them
+    /// directly. Chain damage is the only way any of the four ever take
+    /// damage.
+    ({SimWorld world, int primary, List<int> nearby}) torvArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 101, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        torv,
+        HeroState(heroId: 'torv', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final List<int> nearby = <int>[];
+      for (final double offset in <double>[0.3, 0.4, 0.5, 0.8]) {
+        final int e = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5 + offset);
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        nearby.add(e);
+      }
+      return (world: world, primary: primary, nearby: nearby);
+    }
+
+    test('every 5th arrow chains to the 3 nearest other enemies at 60 % damage', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena();
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+
+      final double primaryDamageTaken =
+          1e9 - a.world.entities.health[a.primary];
+      expect(primaryDamageTaken, greaterThan(0));
+
+      // The 3 nearest (0.3, 0.4, 0.5 u) took chain damage; the 4th (0.8 u)
+      // did not — proof the chain count is exactly 3, not "everything
+      // nearby".
+      final List<double> taken = <int>[0, 1, 2, 3]
+          .map((int i) => 1e9 - a.world.entities.health[a.nearby[i]])
+          .toList();
+      expect(taken[0], greaterThan(0));
+      expect(taken[1], greaterThan(0));
+      expect(taken[2], greaterThan(0));
+      expect(taken[3], 0);
+    });
+
+    test('Frequent Arc (★1a): triggers every 3rd arrow instead of every 5th', () {
+      // Both sides fire for the same window; Frequent Arc should have
+      // produced strictly more total chain damage by then.
+      final ({SimWorld world, int primary, List<int> nearby}) base =
+          torvArena();
+      final ({SimWorld world, int primary, List<int> nearby}) frequent =
+          torvArena(stars: 1, talentChoices: <String, String>{'1': 'a'});
+
+      double totalChainDamage(
+          ({SimWorld world, int primary, List<int> nearby}) a) {
+        final InputSnapshot idle = InputSnapshot();
+        for (int t = 0; t < 400; t++) {
+          a.world.tick(idle);
+        }
+        double total = 0;
+        for (final int e in a.nearby) {
+          total += 1e9 - a.world.entities.health[e];
+        }
+        return total;
+      }
+
+      expect(totalChainDamage(frequent), greaterThan(totalChainDamage(base)));
+    });
+
+    test('Wide Arc (★1b): chains to all 4 targets instead of 3', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena(
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+      for (final int e in a.nearby) {
+        expect(1e9 - a.world.entities.health[e], greaterThan(0),
+            reason: 'enemy $e never took chain damage');
+      }
+    });
+
+    test('Tempest Nock: every arrow chains to 5 targets for its window', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.tempestNockRemaining, closeTo(5.0, 1e-9));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+      // Every one of the 4 nearby enemies took damage from the very first
+      // shot fired during the window — no need to wait for a 5th arrow.
+      for (final int e in a.nearby) {
+        expect(1e9 - a.world.entities.health[e], greaterThan(0),
+            reason: 'enemy $e never took chain damage during Tempest Nock');
+      }
+    });
+
+    test('Long Tempest (★5a): the window lasts 8 s instead of 5', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.tempestNockRemaining, closeTo(8.0, 1e-9));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1856,11 +1984,12 @@ void main() {
       // Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom, Bram's
       // Heavy Ordnance/Wider Blast/Denser Blast, Thane's
       // Bloodtide/Red Draw/Deeper Tide/Last Stand/Frenzy/Long Red/
-      // Crimson Draw, and Mirelle's Reflection/Truer Mirror/Deeper
-      // Mirror/Silvered/Fractured.
+      // Crimson Draw, Mirelle's Reflection/Truer Mirror/Deeper
+      // Mirror/Silvered/Fractured, and Torv's Arc/Tempest Nock/Frequent
+      // Arc/Wide Arc/Long Tempest.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(95),
+        lessThanOrEqualTo(90),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -1930,13 +2059,17 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.selaAbsoluteZero,
   HeroBehaviour.selaCascadingNail,
 
-  HeroBehaviour.torvArc,
-  HeroBehaviour.torvTempestNock,
-  HeroBehaviour.torvFrequentArc,
-  HeroBehaviour.torvWideArc,
+  // torvArc, torvTempestNock, torvFrequentArc, torvWideArc and
+  // torvLongTempest are implemented — see the "Arc and Tempest Nock" group.
+  // Chains hit the nearest enemies by distance rather than genuinely
+  // travelling along Windlines, which nothing in the sim currently indexes
+  // (see the implementation's own note) — Conductive Lines specifically
+  // rewards the Windline-travel case and stays pending until that
+  // relationship exists to reward. Overload needs a timed per-enemy debuff
+  // this hit path does not track yet; Thunderhead needs a stun applied per
+  // chain link.
   HeroBehaviour.torvConductiveLines,
   HeroBehaviour.torvOverload,
-  HeroBehaviour.torvLongTempest,
   HeroBehaviour.torvThunderhead,
 
   // sableToxin is implemented — see the "three innate elements" group.

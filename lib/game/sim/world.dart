@@ -462,6 +462,10 @@ class SimWorld {
       hero.redDrawRemaining -= dt;
       if (hero.redDrawRemaining < 0) hero.redDrawRemaining = 0;
     }
+    if (hero.tempestNockRemaining > 0) {
+      hero.tempestNockRemaining -= dt;
+      if (hero.tempestNockRemaining < 0) hero.tempestNockRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -814,8 +818,15 @@ class SimWorld {
       _fireLiraVerdantBloom();
     } else if (hero.has(HeroBehaviour.thaneRedDraw)) {
       _fireThaneRedDraw();
+    } else if (hero.has(HeroBehaviour.torvTempestNock)) {
+      hero.tempestNockRemaining = hero.has(HeroBehaviour.torvLongTempest)
+          ? _torvLongTempestDuration
+          : _torvTempestNockDuration;
     }
   }
+
+  static const double _torvTempestNockDuration = 5.0;
+  static const double _torvLongTempestDuration = 8.0;
 
   static const double _orielEndlessPrismDuration = 16.0;
 
@@ -1166,6 +1177,7 @@ class SimWorld {
     projectiles.lifetime[i] = arrowLifetime;
     projectiles.element[i] = _arrowElementIndex();
     _applyOrielElementCycle(i);
+    _applyTorvArc(i);
 
     _applyArrowBoons(i, tier);
 
@@ -1252,6 +1264,24 @@ class SimWorld {
       hero.cycleIndex = (hero.cycleIndex + 1) % SimElement.values.length;
     }
   }
+
+  /// Torv: *Arc* marks every 5th arrow (3rd, with Frequent Arc) to chain on
+  /// whichever hit it eventually lands — decided here, at release, the same
+  /// way a crit is rolled once rather than per target. *Tempest Nock* does
+  /// not need a mark at all: it is checked live, at hit time, against
+  /// [HeroRuntime.tempestNockRemaining] directly.
+  void _applyTorvArc(int i) {
+    if (!hero.has(HeroBehaviour.torvArc)) return;
+    hero.arrowsFired++;
+    final int every =
+        hero.has(HeroBehaviour.torvFrequentArc) ? _torvFrequentArcEvery : _torvArcEvery;
+    if (hero.arrowsFired % every == 0) {
+      projectiles.willChain[i] = 1;
+    }
+  }
+
+  static const int _torvArcEvery = 5;
+  static const int _torvFrequentArcEvery = 3;
 
   /// The element the next arrow carries.
   ///

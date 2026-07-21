@@ -99,6 +99,12 @@ class ProjectileStore {
   /// shot, and would put an RNG call in the hit loop.
   final Uint8List wasCrit = Uint8List(SimConfig.maxEntities);
 
+  /// Torv's *Arc*: set at release for every 5th (or 3rd, with Frequent Arc)
+  /// arrow, exactly like [wasCrit] — decided once at the bow, remembered
+  /// until the arrow lands, since a chain has to trigger on whichever hit
+  /// actually happens, not on whichever hit happens to be resolving first.
+  final Uint8List willChain = Uint8List(SimConfig.maxEntities);
+
   /// Distance flown since the last Windline segment was emitted.
   ///
   /// Segments are emitted per distance travelled rather than per tick. Per-tick
@@ -121,6 +127,7 @@ class ProjectileStore {
   void reset(int slot) {
     elementMask[slot] = 0;
     wasCrit[slot] = 0;
+    willChain[slot] = 0;
     damage[slot] = 0;
     pierceRemaining[slot] = 0;
     drawTier[slot] = 0;

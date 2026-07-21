@@ -624,6 +624,34 @@ abstract final class ProjectileSystem {
       );
     }
 
+    // *Arc* / *Tempest Nock* — "chains travel along live Windlines" is read
+    // as the visual presentation (the render layer draws the chain along
+    // nearby trail geometry), not a constraint on which enemies are
+    // reachable: querying "which enemies sit near a live Windline segment"
+    // is a relationship nothing in the sim currently indexes, and docs/07
+    // gives no distance/tolerance for it either. Chains hit whichever
+    // enemies are nearest instead — the same linear-scan approach Heavy
+    // Ordnance's splash already uses, and for the identical reason: this
+    // runs inside `_resolveHits`'s own candidate loop, so a nested
+    // `SpatialHash` query here would corrupt it.
+    if (hero != null &&
+        hero.has(HeroBehaviour.torvArc) &&
+        enemies != null &&
+        (projectiles.willChain[slot] == 1 || hero.tempestNockRemaining > 0)) {
+      final int chainCount =
+          hero.has(HeroBehaviour.torvWideArc) ? _torvWideArcTargets : _torvArcTargets;
+      _applyTorvChain(
+        store: store,
+        primaryTarget: target,
+        x: store.posX[target],
+        y: store.posY[target],
+        chainCount: hero.tempestNockRemaining > 0
+            ? _torvTempestNockTargets
+            : chainCount,
+        chainDamage: toHealth * _torvArcDamageShare,
+      );
+    }
+
     // Death is **not** resolved here. [AiSystem]'s death pass owns it, because a
     // death can mean a detonation, a revival or a split, and those must not
     // depend on which system happened to land the killing tick. Without an
@@ -667,6 +695,54 @@ abstract final class ProjectileSystem {
   static const double _bramWiderBlastRadius = 2.2;
   static const double _bramDenserBlastRadius = 1.2;
   static const double _bramDenserBlastFraction = 0.65;
+
+  /// Damages the [chainCount] nearest other living enemies to ([x], [y]).
+  /// Linear scan, same reasoning and same cost profile as
+  /// [_applyBramSplash] — bounded by how often a chain-eligible hit lands,
+  /// not paid every tick.
+  static void _applyTorvChain({
+    required EntityStore store,
+    required int primaryTarget,
+    required double x,
+    required double y,
+    required int chainCount,
+    required double chainDamage,
+  }) {
+    // Small, fixed-size "nearest N" via insertion — chainCount never
+    // exceeds 5, so this beats allocating and sorting a list.
+    final List<int> nearest = List<int>.filled(chainCount, -1);
+    final List<double> nearestDistSq =
+        List<double>.filled(chainCount, double.infinity);
+
+    for (int i = 0; i < store.highWater; i++) {
+      if (i == primaryTarget) continue;
+      if (store.alive[i] == 0) continue;
+      if (store.kind[i] != EntityKind.enemy.index) continue;
+      final double dx = store.posX[i] - x;
+      final double dy = store.posY[i] - y;
+      final double distSq = dx * dx + dy * dy;
+
+      if (distSq >= nearestDistSq[chainCount - 1]) continue;
+      int slot = chainCount - 1;
+      while (slot > 0 && nearestDistSq[slot - 1] > distSq) {
+        nearestDistSq[slot] = nearestDistSq[slot - 1];
+        nearest[slot] = nearest[slot - 1];
+        slot--;
+      }
+      nearestDistSq[slot] = distSq;
+      nearest[slot] = i;
+    }
+
+    for (final int target in nearest) {
+      if (target < 0) continue;
+      store.health[target] -= chainDamage;
+    }
+  }
+
+  static const double _torvArcDamageShare = 0.60;
+  static const int _torvArcTargets = 3;
+  static const int _torvWideArcTargets = 5;
+  static const int _torvTempestNockTargets = 5;
 
   /// Applies the arrow's element, and lets adapting enemies adapt.
   ///

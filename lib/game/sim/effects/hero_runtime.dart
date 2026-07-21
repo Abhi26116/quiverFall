@@ -135,6 +135,20 @@ class HeroRuntime {
   double redDrawDamageBonus = 0;
   double redDrawFireRateMultiplier = 1.0;
 
+  /// Seconds left on Torv's *Tempest Nock* — every arrow chains for the
+  /// duration, not just the periodic one *Arc* marks. Zero means inactive.
+  double tempestNockRemaining = 0;
+
+  // ── Once-per-run counters ─────────────────────────────────────────────────
+  // Counted per run rather than per room, same as BoonRuntime.arrowsFired —
+  // a counter that silently reset at every door would make the card read as
+  // random rather than building toward a felt payoff.
+
+  /// Arrows fired since this hero was equipped. Torv's *Arc* triggers when
+  /// this hits every 5th (or 3rd, with Frequent Arc) — checked and reset by
+  /// whoever increments it, not by this class.
+  int arrowsFired = 0;
+
   // ── Once-per-run state ────────────────────────────────────────────────────
   // The hero-side counterpart to Guardian Angel/Phoenix Heart — Ashlin's
   // Rekindle is the same shape, extended with an AoE nova.
@@ -170,6 +184,8 @@ class HeroRuntime {
     redDrawRemaining = 0;
     redDrawDamageBonus = 0;
     redDrawFireRateMultiplier = 1.0;
+    tempestNockRemaining = 0;
+    arrowsFired = 0;
     rekindleSpent = false;
     cycleIndex = 0;
   }
@@ -186,5 +202,6 @@ class HeroRuntime {
     prismRemaining = 0;
     bloomRemaining = 0;
     redDrawRemaining = 0;
+    tempestNockRemaining = 0;
   }
 }
