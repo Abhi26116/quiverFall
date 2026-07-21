@@ -651,6 +651,29 @@ abstract final class ProjectileSystem {
       );
     }
 
+    // *Weave* (Iris) — a hit that lands at the (Iris-only) 5-stack Confluence
+    // ceiling also splashes in a 2 u AoE. docs/07 gives no share for this one
+    // (ADR 0009): reuses the hit's own already-resolved damage in full,
+    // rather than a fraction, since a 5-stack hit is the rarest state
+    // reachable in the build. Everything else — the 4th/5th-stack damage
+    // bonus itself, the raised stack cap, the longer Windline duration — is
+    // already generic: `ConfluenceTuning.bonusByStacks` has carried x4/x5
+    // since Phase 9, and Weave's own numbers are plain StatModifiers composed
+    // through the same channel every Boon uses.
+    if (hero != null &&
+        hero.has(HeroBehaviour.irisWeave) &&
+        enemies != null &&
+        projectiles.confluenceStacks[slot] >= ConfluenceTuning.irisMaxStacks) {
+      _applyBramSplash(
+        store: store,
+        primaryTarget: target,
+        x: store.posX[target],
+        y: store.posY[target],
+        radius: _irisWeaveAoeRadius,
+        splashDamage: toHealth,
+      );
+    }
+
     // *Arc* / *Tempest Nock* — "chains travel along live Windlines" is read
     // as the visual presentation (the render layer draws the chain along
     // nearby trail geometry), not a constraint on which enemies are
@@ -747,6 +770,8 @@ abstract final class ProjectileSystem {
   static const double _bramWiderBlastRadius = 2.2;
   static const double _bramDenserBlastRadius = 1.2;
   static const double _bramDenserBlastFraction = 0.65;
+
+  static const double _irisWeaveAoeRadius = 2.0;
 
   /// Damages the [chainCount] nearest other living enemies to ([x], [y]).
   /// Linear scan, same reasoning and same cost profile as

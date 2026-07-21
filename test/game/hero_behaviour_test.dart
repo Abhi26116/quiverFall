@@ -45,6 +45,7 @@ void main() {
   final HeroDefinition mirelle = heroes.byArchetype(HeroArchetype.mirelle)!;
   final HeroDefinition torv = heroes.byArchetype(HeroArchetype.torv)!;
   final HeroDefinition rook = heroes.byArchetype(HeroArchetype.rook)!;
+  final HeroDefinition iris = heroes.byArchetype(HeroArchetype.iris)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -2628,6 +2629,136 @@ void main() {
     });
   });
 
+  group('Weave', () {
+    /// A player 1 u from the west wall and a stationary target at 14 u —
+    /// both, and every pre-existing Windline in between, kept inside
+    /// `SimConfig.arenaWidth`'s 16 u (an out-of-bounds target is never hit
+    /// at all: `ProjectileSystem` misses any arrow whose flight leaves
+    /// `arena.containsPoint`, silently, which is what the first version of
+    /// this arena did at a naive "2 u / 20 u" placement — zero hits, zero
+    /// Confluence events past the crossings an arrow racks up before going
+    /// out of bounds and being discarded).
+    ///
+    /// [lineCount] pre-existing, already-old Windlines are laid
+    /// perpendicular to the firing line — geometry lifted directly from
+    /// confluence_test.dart's own "an arrow crossing an existing trail
+    /// triggers Confluence" end-to-end check, just repeated enough times
+    /// for one arrow to thread every one of them before it reaches the
+    /// target. Spaced 1.5 u apart rather than further: a wider spacing let
+    /// an arrow's trajectory drift (auto-aim tracking a moving reticle)
+    /// enough to miss one of the later lines by the time it reached them,
+    /// empirically capping every arrow at 4 stacks — this spacing was
+    /// checked to reliably reach 5.
+    ({SimWorld world, int target}) irisArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      int lineCount = 5,
+    }) {
+      final SimWorld world = SimWorld(seed: 181, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(1.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        iris,
+        HeroState(heroId: 'iris', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 14.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+
+      for (int i = 0; i < lineCount; i++) {
+        final double x = 3.0 + i * 1.5;
+        world.windlines.add(
+          fromX: x,
+          fromY: 1.0,
+          toX: x,
+          toY: 8.0,
+          expiresAt: 1e9,
+          ownerIndex: 0,
+          trailId: 90000 + i,
+        );
+      }
+      return (world: world, target: target);
+    }
+
+    test('Windlines last 2.6 s instead of the base 1.2 s', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      expect(a.world.windlineDuration, closeTo(2.6, 1e-6));
+    });
+
+    test('Long Weave (★1a): Windlines last 3.4 s', () {
+      final ({SimWorld world, int target}) a =
+          irisArena(stars: 1, talentChoices: <String, String>{'1': 'a'});
+      expect(a.world.windlineDuration, closeTo(3.4, 1e-6));
+    });
+
+    test('Bright Weave (★1b): +25 % Confluence damage', () {
+      final ({SimWorld world, int target}) a =
+          irisArena(stars: 1, talentChoices: <String, String>{'1': 'b'});
+      expect(a.world.confluenceDamageMultiplier, closeTo(1.25, 1e-6));
+    });
+
+    test('Cutting Lines (★3a): Windlines damage enemies 2 % max HP/s', () {
+      final ({SimWorld world, int target}) a =
+          irisArena(stars: 3, talentChoices: <String, String>{'3': 'a'});
+      expect(a.world.windlineDamageFraction, closeTo(0.02, 1e-6));
+    });
+
+    test('Binding Lines (★3b): adds +27 % Windline slow', () {
+      final ({SimWorld world, int target}) a =
+          irisArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      expect(a.world.windlineSlow, closeTo(0.27, 1e-6));
+    });
+
+    test('without Binding Lines, Iris does not touch Windline slow', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      expect(a.world.windlineSlow, 0);
+    });
+
+    test(
+        'the stack cap rises to 5, unlocking the 4th (+230 %) and 5th '
+        '(+320 %) bonuses', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      final InputSnapshot idle = InputSnapshot();
+      int maxStacksSeen = 0;
+      double bonusAtMax = 0;
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+        for (int e = 0; e < a.world.events.count; e++) {
+          if (a.world.events.typeAt(e) == SimEventType.confluenceTriggered) {
+            final int stacks = a.world.events.valueAAt(e).round();
+            if (stacks > maxStacksSeen) {
+              maxStacksSeen = stacks;
+              bonusAtMax = a.world.events.valueBAt(e);
+            }
+          }
+        }
+      }
+      expect(maxStacksSeen, 5);
+      expect(bonusAtMax, closeTo(3.20, 0.01));
+    });
+
+    test('the 5th Confluence stack also splashes a 2 u AoE', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      // 1 u past the primary target — beyond a non-piercing arrow's reach,
+      // so it can only take damage from the splash, never a direct hit.
+      final int bystander =
+          a.world.spawnEnemy(EnemyArchetype.mote, 15.0, 4.5);
+      a.world.enemies.speedScale[bystander] = 0;
+      a.world.entities.maxHealth[bystander] = 1e9;
+      a.world.entities.health[bystander] = 1e9;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.entities.health[bystander], lessThan(1e9));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -2668,10 +2799,10 @@ void main() {
       // Zero/Cascading Nail, Sable's whole kit (Miasma/Virulence/Fast
       // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma), and
       // Kade's whole kit (Pyre Line/Hot Iron/Deep Burn/Wildfire/Slow
-      // Burn/Long Pyre/Twin Pyre).
+      // Burn/Long Pyre/Twin Pyre), and Iris's Weave.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(68),
+        lessThanOrEqualTo(67),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -2807,7 +2938,21 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.nyxTwinStep,
   HeroBehaviour.nyxPerfectStep,
 
-  HeroBehaviour.irisWeave,
+  // irisWeave is implemented — see the "Weave" group. Its own data half
+  // (Windline duration, the raised Confluence stack cap, and the 4th/5th
+  // stack damage bonuses) needed no new code at all: `windlineDuration` and
+  // `confluenceStacks` are plain StatChannels every Boon already composes
+  // through, and `ConfluenceTuning.bonusByStacks` has carried entries for
+  // 4 and 5 stacks since Phase 9's own comment named Iris as the reason
+  // ("x4 and x5 exist only for Iris"). Long Weave, Bright Weave, Cutting
+  // Lines and Binding Lines are the same story — pure StatModifiers with no
+  // `behaviour` field of their own, so they never even joined this enum.
+  // The Lattice (and its own ★5 pair) stays pending: "every shot through it
+  // caps out at 5 Confluence" wants either a guaranteed-max override bolted
+  // onto the shared Confluence-detection code every Boon build depends on,
+  // or a genuinely dense criss-crossing web geometry docs/07 does not
+  // describe — a bigger, riskier change than a hero-local addition, and
+  // worth its own dedicated pass rather than a rushed one here.
   HeroBehaviour.irisTheLattice,
   HeroBehaviour.irisGrandLattice,
   HeroBehaviour.irisLivingLattice,
