@@ -10,6 +10,7 @@ import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
+import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
@@ -221,6 +222,10 @@ class SimWorld {
 
   /// Which Boon behaviours are live, and their state. See [BoonRuntime].
   final BoonRuntime boons = BoonRuntime();
+
+  /// Which hero and arrow behaviours are live, and their state. See
+  /// [HeroRuntime].
+  final HeroRuntime hero = HeroRuntime();
 
   /// Per-hit conditional terms — the ones that cannot be resolved until a
   /// target and a distance are known. See [CombatModifiers].
