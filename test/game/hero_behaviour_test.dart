@@ -9,6 +9,7 @@ import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/heroes/hero_catalogue.dart';
 import 'package:quiverfall/game/heroes/hero_definition.dart';
 import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
+import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
@@ -2759,6 +2760,296 @@ void main() {
     });
   });
 
+  group('Umbral Step', () {
+    /// A near enemy 2 u east of the player and a far one further out and
+    /// off-axis — far enough that it, not the near one, is what a teleport
+    /// to "the furthest enemy" should land on.
+    ({SimWorld world, int near, int far}) nyxStepArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 191, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        nyx,
+        HeroState(heroId: 'nyx', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int near = world.spawnEnemy(EnemyArchetype.mote, 6.0, 4.5);
+      world.enemies.speedScale[near] = 0;
+      world.entities.maxHealth[near] = 1e9;
+      world.entities.health[near] = 1e9;
+
+      final int far = world.spawnEnemy(EnemyArchetype.mote, 12.0, 6.0);
+      world.enemies.speedScale[far] = 0;
+      world.entities.maxHealth[far] = 1e9;
+      world.entities.health[far] = 1e9;
+      return (world: world, near: near, far: far);
+    }
+
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('teleports to the furthest enemy', () {
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final int p = a.world.player.index;
+      expect(a.world.entities.posX[p], closeTo(a.world.entities.posX[a.far], 1e-9));
+      expect(a.world.entities.posY[p], closeTo(a.world.entities.posY[a.far], 1e-9));
+    });
+
+    test('becomes untargetable for 1.5 s — an enemy hit cannot land', () {
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.umbralStepRemaining, closeTo(1.5, 0.02));
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.5, source: -1);
+      expect(dealt, 0);
+    });
+
+    test('without Umbral Step active, a hit lands normally', () {
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.tick(InputSnapshot());
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.5, source: -1);
+      expect(dealt, greaterThan(0));
+    });
+
+    test('Deeper Shadow (★1b): the window lasts 2.5 s instead of 1.5', () {
+      final ({SimWorld world, int near, int far}) a =
+          nyxStepArena(stars: 1, talentChoices: <String, String>{'1': 'b'});
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.umbralStepRemaining, closeTo(2.5, 0.02));
+    });
+
+    /// `_updateFiring` runs before `_updateUltimate` within the same tick,
+    /// so pressing the button on a tick where an ordinary shot's cooldown
+    /// also happens to be ready would fire that shot *first*, unboosted —
+    /// racy, since exactly which tick that lands on depends on the fire
+    /// cooldown's own phase. Turning `autoFire` off for the press itself
+    /// removes the race outright rather than timing around it: no ordinary
+    /// shot can fire at all until it is switched back on, immediately
+    /// after, for the measurement that follows.
+    void fireUltimateWithoutRacing(SimWorld world) {
+      world.autoFire = false;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      world.autoFire = true;
+    }
+
+    test('guarantees the next shot crits at 300 % rather than rolling', () {
+      final double? normal = firstDamageDealt(nyxStepArena().world);
+
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.hero.ultimateCharge = 1.0;
+      fireUltimateWithoutRacing(a.world);
+      expect(a.world.hero.umbralStepGuaranteedCritShots, 3);
+      final double? boosted = firstDamageDealt(a.world);
+
+      expect(normal, isNotNull);
+      expect(boosted, isNotNull);
+      expect(boosted! / normal!, closeTo(3.00, 0.02));
+    });
+
+    test('the guarantee is spent after exactly 3 shots', () {
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.hero.ultimateCharge = 1.0;
+      fireUltimateWithoutRacing(a.world);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 300 && a.world.events.countOf(SimEventType.arrowFired) < 3;
+          t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.events.countOf(SimEventType.arrowFired), greaterThanOrEqualTo(3));
+      expect(a.world.hero.umbralStepGuaranteedCritShots, 0);
+    });
+
+    test('Perfect Step (★5b): 1 shot at 600 % instead of 3 at 300 %', () {
+      // Both ★5 (the baseline holds no talent at that node) so heroAtk's
+      // own star scaling matches on both sides.
+      final double? normal = firstDamageDealt(nyxStepArena(stars: 5).world);
+
+      final ({SimWorld world, int near, int far}) a =
+          nyxStepArena(stars: 5, talentChoices: <String, String>{'5': 'b'});
+      a.world.hero.ultimateCharge = 1.0;
+      fireUltimateWithoutRacing(a.world);
+      expect(a.world.hero.umbralStepGuaranteedCritShots, 1);
+      final double? boosted = firstDamageDealt(a.world);
+
+      expect(normal, isNotNull);
+      expect(boosted, isNotNull);
+      expect(boosted! / normal!, closeTo(6.00, 0.02));
+    });
+
+    test(
+        'Chain Kill (★3b): each stacked kill adds another +25 % move speed, '
+        'up to 3', () {
+      SimWorld buildWorld({
+        int stars = 0,
+        Map<String, String> talentChoices = const <String, String>{},
+      }) {
+        final SimWorld world = SimWorld(seed: 192, content: content)
+          ..autoFire = false;
+        world.spawnPlayer(4.0, 4.5);
+        HeroLoadoutResolver.apply(
+          world,
+          nyx,
+          HeroState(heroId: 'nyx', stars: stars, talentChoices: talentChoices),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+        return world;
+      }
+
+      // Both ★3 (unboosted holds no talent at that node) so heroMoveSpeed's
+      // own star scaling matches on both sides — only Chain Kill's stack
+      // multiplier should differ.
+      final SimWorld boosted =
+          buildWorld(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      final SimWorld unboosted = buildWorld(stars: 3);
+      final InputSnapshot moving = InputSnapshot()..set(1.0, 0.0);
+
+      boosted.hero.firstBloodSpeedRemaining = HeroRuntime.firstBloodSpeedDuration;
+      boosted.hero.firstBloodSpeedStacks = 3;
+      boosted.tick(moving);
+      unboosted.tick(moving);
+      expect(
+        boosted.entities.velX[boosted.player.index] /
+            unboosted.entities.velX[unboosted.player.index],
+        closeTo(1.75, 0.01), // 1 + 3 * 0.25
+      );
+    });
+
+    test('two real kills within the window stack to 2', () {
+      final SimWorld world = SimWorld(seed: 194, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        nyx,
+        const HeroState(
+            heroId: 'nyx', stars: 3, talentChoices: <String, String>{'3': 'b'}),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int first = world.spawnEnemy(EnemyArchetype.mote, 5.0, 4.5);
+      world.entities.maxHealth[first] = 1;
+      world.entities.health[first] = 1;
+      final int second = world.spawnEnemy(EnemyArchetype.mote, 5.5, 4.5);
+      world.entities.maxHealth[second] = 1;
+      world.entities.health[second] = 1;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200 && world.hero.firstBloodSpeedStacks < 2; t++) {
+        world.tick(idle);
+      }
+      expect(world.hero.firstBloodSpeedStacks, 2);
+    });
+
+    test(
+        'Shadowline (★3a): lays a damaging Windline segment while '
+        'untargetable', () {
+      final ({SimWorld world, int near, int far}) a =
+          nyxStepArena(stars: 3, talentChoices: <String, String>{'3': 'a'});
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final InputSnapshot idle = InputSnapshot();
+      bool sawShadowlineSegment = false;
+      for (int t = 0; t < 60 && !sawShadowlineSegment; t++) {
+        a.world.tick(idle);
+        for (int s = 0; s < a.world.windlines.capacity; s++) {
+          if (a.world.windlines.isAlive(s) &&
+              a.world.windlines.isShadowlineAt(s)) {
+            sawShadowlineSegment = true;
+            break;
+          }
+        }
+      }
+      expect(sawShadowlineSegment, isTrue);
+    });
+
+    test('a Shadowline-tagged segment damages an enemy standing on it', () {
+      final SimWorld world = SimWorld(seed: 195, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        nyx,
+        const HeroState(
+            heroId: 'nyx', stars: 3, talentChoices: <String, String>{'3': 'a'}),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 8.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      world.windlines.add(
+        fromX: 7.0,
+        fromY: 4.5,
+        toX: 9.0,
+        toY: 4.5,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 555,
+        isShadowline: true,
+      );
+
+      final double before = world.entities.health[target];
+      world.tick(InputSnapshot());
+      expect(world.entities.health[target], lessThan(before));
+    });
+
+    test('without Shadowline, the same tagged segment does nothing', () {
+      final SimWorld world = SimWorld(seed: 196, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        nyx,
+        const HeroState(heroId: 'nyx'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 8.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      world.windlines.add(
+        fromX: 7.0,
+        fromY: 4.5,
+        toX: 9.0,
+        toY: 4.5,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 556,
+        isShadowline: true,
+      );
+
+      final double before = world.entities.health[target];
+      world.tick(InputSnapshot());
+      expect(world.entities.health[target], before);
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -2799,10 +3090,11 @@ void main() {
       // Zero/Cascading Nail, Sable's whole kit (Miasma/Virulence/Fast
       // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma), and
       // Kade's whole kit (Pyre Line/Hot Iron/Deep Burn/Wildfire/Slow
-      // Burn/Long Pyre/Twin Pyre), and Iris's Weave.
+      // Burn/Long Pyre/Twin Pyre), Iris's Weave, and Nyx's Umbral
+      // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(67),
+        lessThanOrEqualTo(62),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -2930,13 +3222,20 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.thaneTempered,
 
   // nyxFirstBlood and nyxExecutionersEye are implemented — see the "First
-  // Blood" group.
-  HeroBehaviour.nyxUmbralStep,
-  HeroBehaviour.nyxDeeperShadow,
-  HeroBehaviour.nyxShadowline,
-  HeroBehaviour.nyxChainKill,
+  // Blood" group. nyxUmbralStep, nyxDeeperShadow, nyxShadowline,
+  // nyxChainKill and nyxPerfectStep are all implemented too — see the
+  // "Umbral Step" group. Untargetable is a new concept for the *player*
+  // (enemies already had one, for the Bounder's leap and the Gravebound's
+  // downed state) — checked in EnemyAttack.damagePlayer, the same "ignore
+  // this hit outright" spot Covenant/Ghost Step/Immortal Draw already use.
+  // Twin Step (T5a, "2 charges") stays pending: every hero's Ultimate today
+  // shares one single-charge meter (`ultimateCharge`/`ultimateReady`), and
+  // a second charge would mean restructuring that shared system rather
+  // than adding a hero-local check — a bigger, riskier change, and the
+  // card's own text does not say whether charge accumulation overflows
+  // into the second charge or fills it separately, an unanswered design
+  // question worth its own pass rather than a guess here.
   HeroBehaviour.nyxTwinStep,
-  HeroBehaviour.nyxPerfectStep,
 
   // irisWeave is implemented — see the "Weave" group. Its own data half
   // (Windline duration, the raised Confluence stack cap, and the 4th/5th

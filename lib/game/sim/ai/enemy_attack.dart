@@ -41,6 +41,11 @@ abstract final class EnemyAttack {
 
     final BoonRuntime? boons = ctx.boons;
 
+    // *Umbral Step* — the player is untargetable while this reads above
+    // zero, so an enemy attack simply cannot land. Same shape as the Boon
+    // checks below it, checked first since it needs no `boons` at all.
+    if ((ctx.hero?.umbralStepRemaining ?? 0) > 0) return 0;
+
     // ── Ignore the hit entirely ────────────────────────────────────────────
     // Covenant's opening grace, Ghost Step's dash window, and Immortal Draw's
     // Tier III. Checked before mitigation, because "no damage" is not "very

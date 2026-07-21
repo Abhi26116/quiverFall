@@ -111,6 +111,24 @@ class HeroRuntime {
   static const double firstBloodSpeedDuration = 1.5;
   static const double firstBloodSpeedBonus = 0.25;
 
+  /// *Chain Kill* (T3b) — how many kills' worth of [firstBloodSpeedBonus]
+  /// are currently stacked (cap 3), rather than the base card's flat
+  /// refresh. Only ever touched when the talent is held; irrelevant
+  /// otherwise, since the speed read site ignores it without the talent.
+  int firstBloodSpeedStacks = 0;
+
+  /// Seconds left on Nyx's *Umbral Step* untargetable window. Zero means
+  /// inactive — checked by [EnemyAttack.damagePlayer], the one place an
+  /// enemy hit is allowed to land, the same way Covenant/Ghost Step/Immortal
+  /// Draw already ignore a hit outright.
+  double umbralStepRemaining = 0;
+
+  /// Arrows left that are guaranteed crits at a fixed multiplier (300%, or
+  /// 600% for Perfect Step's single shot) rather than the player's own
+  /// composed crit chance/damage — consumed at fire time in
+  /// `SimWorld._applyArrowBoons`, since this is a guarantee, not odds.
+  int umbralStepGuaranteedCritShots = 0;
+
   /// Seconds left on Oriel's *Prism* — every arrow spawned while this reads
   /// above zero carries all four elements at once, checked wherever an
   /// arrow's element is assigned. Zero means inactive.
@@ -205,6 +223,9 @@ class HeroRuntime {
     flurryRemaining = 0;
     flurryRateMultiplier = 1.0;
     firstBloodSpeedRemaining = 0;
+    firstBloodSpeedStacks = 0;
+    umbralStepRemaining = 0;
+    umbralStepGuaranteedCritShots = 0;
     prismRemaining = 0;
     bloomRemaining = 0;
     bloomHealPerSecond = 0;
@@ -240,6 +261,9 @@ class HeroRuntime {
     // clearing the Kiting window at the same boundary.
     flurryRemaining = 0;
     firstBloodSpeedRemaining = 0;
+    firstBloodSpeedStacks = 0;
+    umbralStepRemaining = 0;
+    umbralStepGuaranteedCritShots = 0;
     prismRemaining = 0;
     bloomRemaining = 0;
     redDrawRemaining = 0;

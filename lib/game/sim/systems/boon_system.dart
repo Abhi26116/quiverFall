@@ -61,9 +61,12 @@ abstract final class BoonSystem {
     required double slow,
     required double damageFraction,
     required double dt,
+    bool hasShadowline = false,
   }) {
     final bool sunthread = boons.has(BoonBehaviour.sunthread);
-    if (slow <= 0 && damageFraction <= 0 && !sunthread) return;
+    if (slow <= 0 && damageFraction <= 0 && !sunthread && !hasShadowline) {
+      return;
+    }
 
     final int high = entities.highWater;
     for (int i = 0; i < high; i++) {
@@ -76,6 +79,7 @@ abstract final class BoonSystem {
 
       final int found = index.querySegment(x, y, x, y, r, _scratch);
       bool standing = false;
+      bool standingOnShadowline = false;
       for (int c = 0; c < found; c++) {
         final int seg = _scratch[c];
         if (!lines.isAlive(seg)) continue;
@@ -86,7 +90,7 @@ abstract final class BoonSystem {
         if (_pointNearSegment(x, y, lines.x0(seg), lines.y0(seg), lines.x1(seg),
             lines.y1(seg), r)) {
           standing = true;
-          break;
+          if (lines.isShadowlineAt(seg)) standingOnShadowline = true;
         }
       }
       if (!standing) continue;
@@ -99,9 +103,13 @@ abstract final class BoonSystem {
         enemies.windlineSlowFactor[i] = factor < 0.1 ? 0.1 : factor;
       }
 
-      if (damageFraction > 0 || sunthread) {
-        final double share =
-            damageFraction + (sunthread ? _sunthreadDamageFraction : 0);
+      if (damageFraction > 0 || sunthread || standingOnShadowline) {
+        // *Shadowline* (Nyx, T3a) — a tagged segment damages on its own
+        // rate (ADR 0010), on top of whatever Cutting-Lines-shaped share the
+        // build already has, exactly like Sunthread's own bonus above it.
+        final double share = damageFraction +
+            (sunthread ? _sunthreadDamageFraction : 0) +
+            (standingOnShadowline ? _nyxShadowlineDamageFraction : 0);
         entities.health[i] -= entities.maxHealth[i] * share * dt;
       }
 
@@ -116,6 +124,10 @@ abstract final class BoonSystem {
   /// Sunthread's own damage, on top of any Cutting Lines share.
   static const double _sunthreadDamageFraction = 0.010;
   static const double _sunthreadBlindSeconds = 0.6;
+
+  /// ADR 0010 — docs/07 gives Shadowline no rate; this borrows the same one
+  /// Iris's own Cutting Lines and Boon #66 already ship.
+  static const double _nyxShadowlineDamageFraction = 0.02;
 
   /// Windlines the player laid. Matches `ProjectileSystem`'s owner id.
   static const int _playerOwner = 0;

@@ -466,6 +466,10 @@ class SimWorld {
       hero.tempestNockRemaining -= dt;
       if (hero.tempestNockRemaining < 0) hero.tempestNockRemaining = 0;
     }
+    if (hero.umbralStepRemaining > 0) {
+      hero.umbralStepRemaining -= dt;
+      if (hero.umbralStepRemaining < 0) hero.umbralStepRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -572,6 +576,7 @@ class SimWorld {
       slow: windlineSlow,
       damageFraction: windlineDamageFraction,
       dt: dt,
+      hasShadowline: hero.has(HeroBehaviour.nyxShadowline),
     );
 
     // After everything that could have changed the player's state this frame,
@@ -836,6 +841,8 @@ class SimWorld {
       _fireSableMiasma();
     } else if (hero.has(HeroBehaviour.kadePyreLine)) {
       _fireKadePyreLine();
+    } else if (hero.has(HeroBehaviour.nyxUmbralStep)) {
+      _fireNyxUmbralStep();
     }
   }
 
@@ -1203,6 +1210,61 @@ class SimWorld {
     final double gapX = px - (x0 + dx * t);
     final double gapY = py - (y0 + dy * t);
     return gapX * gapX + gapY * gapY <= reach * reach;
+  }
+
+  /// *Umbral Step* — teleports to the single furthest enemy, becomes
+  /// untargetable (checked by [EnemyAttack.damagePlayer], the one place an
+  /// enemy hit can land), and loads guaranteed crits for the next 3 shots at
+  /// a fixed 300% — consumed in `_applyArrowBoons` rather than rolled,
+  /// since this is a guarantee, not odds. *Deeper Shadow* (T1b) only changes
+  /// the window's duration. *Perfect Step* (T5b) is a full replacement — 1
+  /// shot at 600% instead of 3 at 300%, the same "mutually exclusive branch
+  /// swaps every number" shape Wren's Wide/Focused Fan already established.
+  void _fireNyxUmbralStep() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+
+    final int furthest = _furthestEnemy(entities.posX[p], entities.posY[p]);
+    if (furthest >= 0) {
+      entities.posX[p] = entities.posX[furthest];
+      entities.posY[p] = entities.posY[furthest];
+    }
+
+    hero.umbralStepRemaining = hero.has(HeroBehaviour.nyxDeeperShadow)
+        ? _nyxDeeperShadowDuration
+        : _nyxUmbralStepDuration;
+    hero.umbralStepGuaranteedCritShots = hero.has(HeroBehaviour.nyxPerfectStep)
+        ? _nyxPerfectStepShots
+        : _nyxUmbralStepShots;
+  }
+
+  static const double _nyxUmbralStepDuration = 1.5;
+  static const double _nyxDeeperShadowDuration = 2.5;
+  static const int _nyxUmbralStepShots = 3;
+  static const int _nyxPerfectStepShots = 1;
+  static const double _nyxUmbralStepCritMultiplier = 3.00;
+  static const double _nyxPerfectStepCritMultiplier = 6.00;
+
+  /// The single furthest living, targetable enemy from ([fromX], [fromY]) —
+  /// the opposite of [FiringSystem.selectTarget], and unbounded by its own
+  /// `acquireRange` since a teleport is not an aimed shot. A linear scan:
+  /// this runs once per Ultimate press, not once per hit.
+  int _furthestEnemy(double fromX, double fromY) {
+    int furthest = -1;
+    double furthestDistSq = -1;
+    for (int i = 0; i < entities.highWater; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      if (enemies.isUntargetable(i)) continue;
+      final double dx = entities.posX[i] - fromX;
+      final double dy = entities.posY[i] - fromY;
+      final double distSq = dx * dx + dy * dy;
+      if (distSq > furthestDistSq) {
+        furthestDistSq = distSq;
+        furthest = i;
+      }
+    }
+    return furthest;
   }
 
   /// *Piercing Horizon* — one arrow (two, for Twin Horizon), Tier III,
@@ -1612,14 +1674,27 @@ class SimWorld {
     // Rolled once per arrow, not per target: an arrow that crit its first
     // victim and not its second would make crit unreadable on a piercing shot,
     // and would put an RNG call inside the hit loop.
-    if (combat.critChance > 0 && _critRng.nextDouble() < combat.critChance) {
+    //
+    // *Umbral Step* guarantees the next few shots crit at a fixed multiplier
+    // rather than the player's own composed one — a guarantee, not odds, so
+    // it is consumed here ahead of the roll rather than folded into
+    // `combat.critChance`, which would still leave it possible to miss.
+    if (hero.umbralStepGuaranteedCritShots > 0) {
+      hero.umbralStepGuaranteedCritShots--;
+      projectiles.wasCrit[i] = 1;
+      projectiles.damage[i] *= hero.has(HeroBehaviour.nyxPerfectStep)
+          ? _nyxPerfectStepCritMultiplier
+          : _nyxUmbralStepCritMultiplier;
+    } else if (combat.critChance > 0 &&
+        _critRng.nextDouble() < combat.critChance) {
       projectiles.wasCrit[i] = 1;
       projectiles.damage[i] *= combat.critMultiplier;
-      // *Deadeye* (#18) — crits punch through. The falloff exemption is applied
-      // at the hit, where the pierce index is known.
-      if (boons.has(BoonBehaviour.deadeye)) {
-        projectiles.pierceRemaining[i] += BoonRuntime.deadeyePierce;
-      }
+    }
+    // *Deadeye* (#18) — crits punch through, whatever put them there. The
+    // falloff exemption is applied at the hit, where the pierce index is
+    // known.
+    if (projectiles.wasCrit[i] == 1 && boons.has(BoonBehaviour.deadeye)) {
+      projectiles.pierceRemaining[i] += BoonRuntime.deadeyePierce;
     }
 
     // ── The big arrows ─────────────────────────────────────────────────────
@@ -1731,9 +1806,13 @@ class SimWorld {
     // every balance measurement taken before this was of a game where moving
     // was quietly worse than the design says.
     // *First Blood*'s kill-speed burst — a flat bonus on top of Momentum's,
-    // not a replacement for it.
+    // not a replacement for it. *Chain Kill* multiplies it by the stacked
+    // kill count (capped at 3 where the stacks themselves are counted);
+    // without that talent the stack count is never touched, so this always
+    // reads as a plain single bonus.
     final double firstBloodBonus = hero.firstBloodSpeedRemaining > 0
-        ? HeroRuntime.firstBloodSpeedBonus
+        ? HeroRuntime.firstBloodSpeedBonus *
+            (hero.has(HeroBehaviour.nyxChainKill) ? hero.firstBloodSpeedStacks : 1)
         : 0.0;
 
     final double speed = playerMoveSpeed *

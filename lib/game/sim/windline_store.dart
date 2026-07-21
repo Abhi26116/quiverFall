@@ -30,6 +30,7 @@ class WindlineStore implements PoolReport {
         _owner = Int32List(capacity),
         _serial = Int32List(capacity),
         _trail = Int32List(capacity),
+        _shadowline = Uint8List(capacity),
         _alive = Uint8List(capacity);
 
   final int capacity;
@@ -63,6 +64,11 @@ class WindlineStore implements PoolReport {
   /// own, which is not the mechanic — the mechanic is threading *distinct*
   /// lines.
   final Int32List _trail;
+
+  /// Nyx's *Shadowline* (T3a) — set for a segment laid while Umbral Step's
+  /// untargetable window was live. Read by [BoonSystem.applyWindlineField]
+  /// to damage regardless of the player's own `windlineDamage` stat.
+  final Uint8List _shadowline;
 
   final Uint8List _alive;
 
@@ -154,6 +160,8 @@ class WindlineStore implements PoolReport {
   /// -1 when the segment carries no element.
   int elementAt(int i) => _element[i];
 
+  bool isShadowlineAt(int i) => _shadowline[i] == 1;
+
   /// Adds a segment and returns its slot, or -1 if the segment is degenerate.
   ///
   /// Zero-length segments are rejected outright: they can never be crossed, and
@@ -168,6 +176,7 @@ class WindlineStore implements PoolReport {
     required int ownerIndex,
     required int trailId,
     int elementIndex = -1,
+    bool isShadowline = false,
   }) {
     final double dx = toX - fromX;
     final double dy = toY - fromY;
@@ -184,6 +193,7 @@ class WindlineStore implements PoolReport {
     _y0[slot] = fromY;
     _x1[slot] = toX;
     _y1[slot] = toY;
+    _shadowline[slot] = isShadowline ? 1 : 0;
     _expiry[slot] = expiresAt;
     _owner[slot] = ownerIndex;
     _element[slot] = elementIndex;

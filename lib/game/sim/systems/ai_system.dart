@@ -470,9 +470,19 @@ abstract final class AiSystem {
     }
 
     // *First Blood* — a kill grants a speed burst. Refreshes rather than
-    // stacks; Chain Kill (T3b) is the talent that changes that.
+    // stacks by default; *Chain Kill* (T3b) stacks it instead, up to 3,
+    // read at the same move-speed site that already reads
+    // `firstBloodSpeedBonus` — a kill that lands while the window is
+    // already running adds a stack, one that lands after it has expired
+    // starts a fresh single stack.
     final HeroRuntime? hero = ctx.hero;
     if (hero != null && hero.has(HeroBehaviour.nyxFirstBlood)) {
+      if (hero.has(HeroBehaviour.nyxChainKill)) {
+        hero.firstBloodSpeedStacks = hero.firstBloodSpeedRemaining > 0 &&
+                hero.firstBloodSpeedStacks < _nyxChainKillMaxStacks
+            ? hero.firstBloodSpeedStacks + 1
+            : 1;
+      }
       hero.firstBloodSpeedRemaining = HeroRuntime.firstBloodSpeedDuration;
     }
 
@@ -547,6 +557,8 @@ abstract final class AiSystem {
   /// place that needs to know the current cap.
   static const int _sableFastActingMaxStacks = 8;
   static const int _sableVirulenceMaxStacks = 12;
+
+  static const int _nyxChainKillMaxStacks = 3;
 
   /// Nearest other living enemy to [slot], for *Contagion*. A linear scan
   /// rather than a [SpatialHash] query: this runs once per kill, not once
