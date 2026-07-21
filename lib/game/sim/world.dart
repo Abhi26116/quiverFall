@@ -368,6 +368,13 @@ class SimWorld {
 
   static const int _critRngLabel = 0xC217;
 
+  /// Mirelle's Reflection rolls draw from their own stream, for the same
+  /// reason crits do — a hero whose kit is entirely "how many extra rolls
+  /// happened this shot" must not perturb anything else's seeded sequence.
+  late final Rng _mirelleDuplicateRng = _rng.split(_mirelleDuplicateRngLabel);
+
+  static const int _mirelleDuplicateRngLabel = 0x11201E;
+
   /// Sub-generator access, so each subsystem draws from an independent stream.
   ///
   /// Without this, adding one extra Boon draw would shift every subsequent
@@ -1133,6 +1140,7 @@ class SimWorld {
     DrawTier tier,
     double damageScale, {
     int extraPierce = 0,
+    int mirelleDuplicateDepth = 0,
   }) {
     final EntityId id = entities.spawn(EntityKind.projectile);
     if (id.isNone) return;
@@ -1169,7 +1177,65 @@ class SimWorld {
       x: x,
       y: y,
     );
+
+    _applyMirelleReflection(x, y, angle, tier, damageScale, mirelleDuplicateDepth);
   }
+
+  /// *Reflection* — each arrow has a chance to spawn one more, which can
+  /// itself duplicate again (geometric), up to a total arrow count from one
+  /// original shot. *Truer Mirror* (T1a) raises the chance; *Deeper Mirror*
+  /// (T1b) raises the cap; *Silvered* (T3a) removes the duplicate's own
+  /// damage penalty; *Fractured* (T3b) spreads duplicates wide instead of
+  /// firing them dead on top of the arrow that made them. The damage share
+  /// compounds down the chain on purpose — a duplicate of a duplicate is a
+  /// weaker arrow than its parent, the same way pierce falloff weakens with
+  /// distance rather than resetting per hit.
+  void _applyMirelleReflection(
+    double x,
+    double y,
+    double angle,
+    DrawTier tier,
+    double damageScale,
+    int depth,
+  ) {
+    if (!hero.has(HeroBehaviour.mirelleReflection)) return;
+    final int cap = hero.has(HeroBehaviour.mirelleDeeperMirror)
+        ? _mirelleDeeperMirrorCap
+        : _mirelleReflectionCap;
+    if (depth + 1 >= cap) return;
+
+    final double chance = hero.has(HeroBehaviour.mirelleTruerMirror)
+        ? _mirelleTruerMirrorChance
+        : _mirelleReflectionChance;
+    if (_mirelleDuplicateRng.nextDouble() >= chance) return;
+
+    final double share = hero.has(HeroBehaviour.mirelleSilvered)
+        ? 1.0
+        : _mirelleReflectionDamageShare;
+    double duplicateAngle = angle;
+    if (hero.has(HeroBehaviour.mirelleFractured)) {
+      duplicateAngle += (_mirelleDuplicateRng.nextDouble() * 2 - 1) *
+          _mirelleFracturedSpreadRadians;
+    }
+
+    _spawnArrow(
+      x,
+      y,
+      duplicateAngle,
+      tier,
+      damageScale * share,
+      mirelleDuplicateDepth: depth + 1,
+    );
+  }
+
+  static const double _mirelleReflectionChance = 0.25;
+  static const double _mirelleTruerMirrorChance = 0.35;
+  static const int _mirelleReflectionCap = 4;
+  static const int _mirelleDeeperMirrorCap = 6;
+  static const double _mirelleReflectionDamageShare = 0.85;
+
+  /// ±20° — Fractured's own card text.
+  static const double _mirelleFracturedSpreadRadians = 20 * math.pi / 180;
 
   /// Oriel: *Spectrum* cycles the equipped arrow's own element away in
   /// favour of Ember → Frost → Storm → Toxin, one per shot; *Prism* replaces

@@ -42,6 +42,7 @@ void main() {
   final HeroDefinition lira = heroes.byArchetype(HeroArchetype.lira)!;
   final HeroDefinition bram = heroes.byArchetype(HeroArchetype.bram)!;
   final HeroDefinition thane = heroes.byArchetype(HeroArchetype.thane)!;
+  final HeroDefinition mirelle = heroes.byArchetype(HeroArchetype.mirelle)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -1682,6 +1683,146 @@ void main() {
     });
   });
 
+  group('Reflection', () {
+    ({SimWorld world, int target}) mirelleArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 91, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        mirelle,
+        HeroState(heroId: 'mirelle', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    /// (damage, angle) for every arrow fired over [ticks].
+    List<({double damage, double angle})> arrowsOver(SimWorld world, int ticks) {
+      final List<({double damage, double angle})> out =
+          <({double damage, double angle})>[];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < ticks; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) != SimEventType.arrowFired) continue;
+          final int slot = world.events.entityAAt(e);
+          out.add((
+            damage: world.projectiles.damage[slot],
+            angle: math.atan2(
+                world.entities.velY[slot], world.entities.velX[slot]),
+          ));
+        }
+        world.events.clear();
+      }
+      return out;
+    }
+
+    test('duplicates roughly 25 % of shots, each duplicate at 85 % damage', () {
+      final ({SimWorld world, int target}) a = mirelleArena();
+      final List<({double damage, double angle})> arrows =
+          arrowsOver(a.world, 3000);
+      expect(arrows, isNotEmpty);
+
+      final double fullDamage = a.world.playerAttack;
+      // Every arrow's damage must be a power of 0.85 down from full — proof
+      // the geometric cascade never exceeds the 4-arrow cap (a 5th
+      // generation would read as fullDamage * 0.85^4, outside this set).
+      final Set<double> allowedShares = <double>{1.0, 0.85, 0.85 * 0.85, 0.85 * 0.85 * 0.85};
+      for (final ({double damage, double angle}) arrow in arrows) {
+        final double share = arrow.damage / fullDamage;
+        final bool matched =
+            allowedShares.any((double s) => (s - share).abs() < 1e-6);
+        expect(matched, isTrue, reason: 'unexpected damage share $share');
+      }
+
+      // More arrows landed than shots fired — duplication is actually
+      // happening, not just declared.
+      final int duplicates =
+          arrows.where((({double damage, double angle}) a) => a.damage < fullDamage - 1e-6).length;
+      expect(duplicates, greaterThan(0));
+    });
+
+    test('Truer Mirror (★1a) raises the chance, so duplicates happen more often', () {
+      final ({SimWorld world, int target}) base = mirelleArena();
+      final ({SimWorld world, int target}) truer = mirelleArena(
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+      );
+
+      double duplicateFraction(SimWorld world) {
+        final List<({double damage, double angle})> arrows =
+            arrowsOver(world, 3000);
+        final double fullDamage = world.playerAttack;
+        final int duplicates = arrows
+            .where((({double damage, double angle}) a) =>
+                a.damage < fullDamage - 1e-6)
+            .length;
+        return duplicates / arrows.length;
+      }
+
+      expect(duplicateFraction(truer.world), greaterThan(duplicateFraction(base.world)));
+    });
+
+    test('Silvered (★3a): duplicates deal full damage, not 85 %', () {
+      final ({SimWorld world, int target}) a = mirelleArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+      final List<({double damage, double angle})> arrows =
+          arrowsOver(a.world, 3000);
+      expect(arrows, isNotEmpty);
+      for (final ({double damage, double angle}) arrow in arrows) {
+        expect(arrow.damage, closeTo(a.world.playerAttack, 1e-6));
+      }
+    });
+
+    test('Fractured (★3b): some duplicates spread away from the original angle', () {
+      final ({SimWorld world, int target}) a = mirelleArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+      );
+      final List<({double damage, double angle})> arrows =
+          arrowsOver(a.world, 3000);
+      // The target sits due east of the player: an unspread shot's angle is
+      // ~0. Fractured must produce at least one arrow measurably off that.
+      final bool sawSpread =
+          arrows.any((({double damage, double angle}) a) => a.angle.abs() > 0.05);
+      expect(sawSpread, isTrue);
+    });
+
+    test('Deeper Mirror (★1b): raises the cap, so more arrows land per shot on average', () {
+      final ({SimWorld world, int target}) base = mirelleArena();
+      final ({SimWorld world, int target}) deeper = mirelleArena(
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      );
+
+      double arrowsPerShot(SimWorld world) {
+        // A "shot" is any arrowFired whose damage equals the full share —
+        // every duplicate cascade starts from exactly one of those.
+        final List<({double damage, double angle})> arrows =
+            arrowsOver(world, 6000);
+        final double fullDamage = world.playerAttack;
+        final int shots = arrows
+            .where((({double damage, double angle}) a) =>
+                (a.damage - fullDamage).abs() < 1e-6)
+            .length;
+        return arrows.length / shots;
+      }
+
+      expect(arrowsPerShot(deeper.world), greaterThan(arrowsPerShot(base.world)));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1713,12 +1854,13 @@ void main() {
       // Vane's Distance/Steady/Piercing Horizon/Twin Horizon/Sundering
       // Horizon, Halden's Verdict/Judgment Spear/Final Verdict/Twin Spear,
       // Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom, Bram's
-      // Heavy Ordnance/Wider Blast/Denser Blast, and Thane's
+      // Heavy Ordnance/Wider Blast/Denser Blast, Thane's
       // Bloodtide/Red Draw/Deeper Tide/Last Stand/Frenzy/Long Red/
-      // Crimson Draw.
+      // Crimson Draw, and Mirelle's Reflection/Truer Mirror/Deeper
+      // Mirror/Silvered/Fractured.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(100),
+        lessThanOrEqualTo(95),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -1887,12 +2029,13 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.ashlinEternal,
   HeroBehaviour.ashlinSupernova,
 
-  HeroBehaviour.mirelleReflection,
+  // mirelleReflection, mirelleTruerMirror, mirelleDeeperMirror,
+  // mirelleSilvered and mirelleFractured are implemented — see the
+  // "Reflection" group. Hall of Mirrors and its two ★5 variants stay
+  // pending: "a mirror clone of the player fights alongside" needs a
+  // companion entity — an AI-driven ally that mimics the player's own
+  // shooting, the same missing piece that blocks Zea's Skyhawk.
   HeroBehaviour.mirelleHallOfMirrors,
-  HeroBehaviour.mirelleTruerMirror,
-  HeroBehaviour.mirelleDeeperMirror,
-  HeroBehaviour.mirelleSilvered,
-  HeroBehaviour.mirelleFractured,
   HeroBehaviour.mirelleEndlessHall,
   HeroBehaviour.mirelleTwinWarden,
 
