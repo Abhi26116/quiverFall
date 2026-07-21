@@ -567,6 +567,34 @@ abstract final class ProjectileSystem {
       store.health[player] = healed > cap ? cap : healed;
     }
 
+    // *Heavy Ordnance* — splash never applies elements, which is why this
+    // reads `toHealth` and stops there rather than calling back into
+    // `_applyElement`. Deliberately a linear scan over `store.highWater`
+    // rather than a `SpatialHash.queryRadius` call: this runs from inside
+    // `_resolveHits`'s own candidate loop, which is still reading results
+    // out of `SpatialHash`'s single shared query buffer — a nested query
+    // here would silently corrupt that iteration. The scan only runs on a
+    // confirmed hit, not every tick, so its cost is bounded by how often
+    // Bram's arrows actually land.
+    if (hero != null && hero.has(HeroBehaviour.bramHeavyOrdnance) && enemies != null) {
+      final bool denser = hero.has(HeroBehaviour.bramDenserBlast);
+      final double radius = denser
+          ? _bramDenserBlastRadius
+          : (hero.has(HeroBehaviour.bramWiderBlast)
+              ? _bramWiderBlastRadius
+              : _bramSplashRadius);
+      final double fraction =
+          denser ? _bramDenserBlastFraction : _bramSplashFraction;
+      _applyBramSplash(
+        store: store,
+        primaryTarget: target,
+        x: store.posX[target],
+        y: store.posY[target],
+        radius: radius,
+        splashDamage: toHealth * fraction,
+      );
+    }
+
     // Death is **not** resolved here. [AiSystem]'s death pass owns it, because a
     // death can mean a detonation, a revival or a split, and those must not
     // depend on which system happened to land the killing tick. Without an
@@ -581,6 +609,35 @@ abstract final class ProjectileSystem {
       store.despawn(store.idAt(target));
     }
   }
+
+  /// Raw damage to every other living enemy within [radius] of ([x], [y]).
+  /// No armour, shield or element interaction — a splash is a flat number,
+  /// not a second arrow.
+  static void _applyBramSplash({
+    required EntityStore store,
+    required int primaryTarget,
+    required double x,
+    required double y,
+    required double radius,
+    required double splashDamage,
+  }) {
+    final double radiusSq = radius * radius;
+    for (int i = 0; i < store.highWater; i++) {
+      if (i == primaryTarget) continue;
+      if (store.alive[i] == 0) continue;
+      if (store.kind[i] != EntityKind.enemy.index) continue;
+      final double dx = store.posX[i] - x;
+      final double dy = store.posY[i] - y;
+      if (dx * dx + dy * dy > radiusSq) continue;
+      store.health[i] -= splashDamage;
+    }
+  }
+
+  static const double _bramSplashRadius = 1.6;
+  static const double _bramSplashFraction = 0.45;
+  static const double _bramWiderBlastRadius = 2.2;
+  static const double _bramDenserBlastRadius = 1.2;
+  static const double _bramDenserBlastFraction = 0.65;
 
   /// Applies the arrow's element, and lets adapting enemies adapt.
   ///

@@ -40,6 +40,7 @@ void main() {
   final HeroDefinition vane = heroes.byArchetype(HeroArchetype.vane)!;
   final HeroDefinition halden = heroes.byArchetype(HeroArchetype.halden)!;
   final HeroDefinition lira = heroes.byArchetype(HeroArchetype.lira)!;
+  final HeroDefinition bram = heroes.byArchetype(HeroArchetype.bram)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -1383,6 +1384,122 @@ void main() {
     });
   });
 
+  group('Heavy Ordnance', () {
+    /// A primary target 8 u east of the player, and a second, undamaged
+    /// "nearby" enemy [offset] u further east still — far enough along the
+    /// same line that a non-piercing Tier I arrow can only ever reach it
+    /// through splash, never a direct hit.
+    ({SimWorld world, int primary, int nearby}) bramArena({
+      double offset = 1.0,
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 71, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        bram,
+        HeroState(heroId: 'bram', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final int nearby =
+          world.spawnEnemy(EnemyArchetype.mote, 12.0 + offset, 4.5);
+      world.enemies.speedScale[nearby] = 0;
+      world.entities.maxHealth[nearby] = 1e9;
+      world.entities.health[nearby] = 1e9;
+      return (world: world, primary: primary, nearby: nearby);
+    }
+
+    /// Runs until the primary target's first hit, returning the damage each
+    /// of the two enemies took over that span.
+    ({double primaryDamage, double nearbyDamage})? damageFromFirstHit(
+      SimWorld world,
+      int primary,
+      int nearby,
+    ) {
+      final double primaryBefore = world.entities.health[primary];
+      final double nearbyBefore = world.entities.health[nearby];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+        if (world.events.countOf(SimEventType.damageDealt) > 0) {
+          return (
+            primaryDamage: primaryBefore - world.entities.health[primary],
+            nearbyDamage: nearbyBefore - world.entities.health[nearby],
+          );
+        }
+      }
+      return null;
+    }
+
+    test('splashes 45 % of the direct hit to a nearby enemy within 1.6 u', () {
+      final ({SimWorld world, int primary, int nearby}) a = bramArena();
+      final ({double primaryDamage, double nearbyDamage})? result =
+          damageFromFirstHit(a.world, a.primary, a.nearby);
+      expect(result, isNotNull);
+      expect(
+        result!.nearbyDamage,
+        closeTo(result.primaryDamage * 0.45, 0.5),
+      );
+    });
+
+    test('does nothing beyond 1.6 u without Wider Blast', () {
+      final ({SimWorld world, int primary, int nearby}) a =
+          bramArena(offset: 2.0);
+      final ({double primaryDamage, double nearbyDamage})? result =
+          damageFromFirstHit(a.world, a.primary, a.nearby);
+      expect(result, isNotNull);
+      expect(result!.nearbyDamage, 0);
+    });
+
+    test('Wider Blast (★1a): reaches 2.2 u', () {
+      final ({SimWorld world, int primary, int nearby}) a = bramArena(
+        offset: 2.0,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'a'},
+      );
+      final ({double primaryDamage, double nearbyDamage})? result =
+          damageFromFirstHit(a.world, a.primary, a.nearby);
+      expect(result, isNotNull);
+      expect(
+        result!.nearbyDamage,
+        closeTo(result.primaryDamage * 0.45, 0.5),
+      );
+    });
+
+    test('Denser Blast (★1b): 65 % splash, shrunk to a 1.2 u radius', () {
+      final ({SimWorld world, int primary, int nearby}) close = bramArena(
+        offset: 0.5,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      );
+      final ({double primaryDamage, double nearbyDamage})? result =
+          damageFromFirstHit(close.world, close.primary, close.nearby);
+      expect(result, isNotNull);
+      expect(
+        result!.nearbyDamage,
+        closeTo(result.primaryDamage * 0.65, 0.5),
+      );
+
+      final ({SimWorld world, int primary, int nearby}) far = bramArena(
+        offset: 1.4, // inside the base 1.6 u radius, outside Denser's 1.2 u
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      );
+      final ({double primaryDamage, double nearbyDamage})? beyond =
+          damageFromFirstHit(far.world, far.primary, far.nearby);
+      expect(beyond, isNotNull);
+      expect(beyond!.nearbyDamage, 0);
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -1413,10 +1530,11 @@ void main() {
       // Blood plus Executioner's Eye, Oriel's Spectrum/Prism/Endless Prism,
       // Vane's Distance/Steady/Piercing Horizon/Twin Horizon/Sundering
       // Horizon, Halden's Verdict/Judgment Spear/Final Verdict/Twin Spear,
-      // and Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom.
+      // Lira's Lifebound/Verdant Bloom/Endless Bloom/Blood Bloom, and
+      // Bram's Heavy Ordnance/Wider Blast/Denser Blast.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(110),
+        lessThanOrEqualTo(107),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -1440,10 +1558,14 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.wrenWardensLattice,
   HeroBehaviour.wrenWardensFury,
 
-  HeroBehaviour.bramHeavyOrdnance,
+  // bramHeavyOrdnance, bramWiderBlast and bramDenserBlast are implemented —
+  // see the "Heavy Ordnance" group.
   HeroBehaviour.bramMortarRain,
-  HeroBehaviour.bramWiderBlast,
-  HeroBehaviour.bramDenserBlast,
+  // Concussion needs a stagger effect Rush-family enemies do not have a
+  // hook for yet, and Incendiary needs a chance roll on top of splash —
+  // both plausible, neither built. Mortar Rain and its two ★5 variants need
+  // the hazard/telegraph system extended to a player-triggered volley,
+  // which nothing before now has asked of it.
   HeroBehaviour.bramConcussion,
   HeroBehaviour.bramIncendiary,
   HeroBehaviour.bramSaturation,
