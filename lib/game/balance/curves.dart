@@ -121,6 +121,23 @@ abstract final class Curves {
   /// campaign progress and become a gold dump with no purpose.
   static int heroLevelCap(int chaptersCleared) => 8 * (chaptersCleared + 1);
 
+  /// docs/04 §4.3: "40 to unlock, then 30 / 80 / 180 / 400 / 900." Index 0 is
+  /// the unlock cost (star 0 -> 1); indices 1-5 are the cost of buying star
+  /// [star] having already reached `star - 1` — `heroStarCost(1)` is what
+  /// takes ★1 to ★2, matching `HeroState.stars` starting at 1 on unlock.
+  ///
+  /// Six numbers rather than a formula: the sequence is not geometric (40 to
+  /// 30 drops before climbing again), so this is authored data, the same as
+  /// the Spire's per-node base costs.
+  static const List<int> _heroStarCosts = <int>[40, 30, 80, 180, 400, 900];
+
+  /// Shard cost to reach [star] (1-6) from `star - 1` (or from nothing, for
+  /// star 1 — the unlock cost).
+  static int heroStarCost(int star) {
+    assert(star >= 1 && star <= 6, 'stars run 1-6, got $star');
+    return _heroStarCosts[star - 1];
+  }
+
   // ── Bosses ────────────────────────────────────────────────────────────────
 
   /// Boss HP. [multiplier] is the per-boss value from docs/06.
