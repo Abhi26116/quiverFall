@@ -105,6 +105,13 @@ class ProjectileStore {
   /// actually happens, not on whichever hit happens to be resolving first.
   final Uint8List willChain = Uint8List(SimConfig.maxEntities);
 
+  /// Skimmer: bounces left off a wall or an enemy, shared between the two —
+  /// docs/08 says "ricochets 2x", not "2x each". Set to 2 at spawn only for
+  /// a Skimmer arrow; every other arrow leaves this at 0 and is retired on
+  /// its first wall hit or when pierce runs out, same as before this arrow
+  /// existed.
+  final Int32List ricochetsLeft = Int32List(SimConfig.maxEntities);
+
   /// Distance flown since the last Windline segment was emitted.
   ///
   /// Segments are emitted per distance travelled rather than per tick. Per-tick
@@ -143,6 +150,7 @@ class ProjectileStore {
     sinceLastSegment[slot] = 0;
     distanceFlown[slot] = 0;
     crossedCount[slot] = 0;
+    ricochetsLeft[slot] = 0;
   }
 
   bool hasCrossed(int slot, int serial) {

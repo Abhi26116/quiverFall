@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/arrow_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
@@ -69,10 +70,41 @@ abstract final class ProjectileSystem {
       final double toX = fromX + store.velX[i] * dt;
       final double toY = fromY + store.velY[i] * dt;
 
+      // Ghostshaft phases through interior walls entirely — the trade for
+      // that is a short 8 u range, checked below — but still respects the
+      // arena's own boundary, since there is nothing beyond it to simulate.
+      final bool ghostshaftPhase =
+          hero?.hasArrow(ArrowBehaviour.ghostshaftPhase) ?? false;
+
       // Walls stop arrows outright. Cover blocks projectiles but not movement,
       // which is what makes "break line of sight" a real answer to Longeye.
-      if (arena.circleHitsWall(toX, toY, store.radius[i]) ||
-          !arena.containsPoint(toX, toY)) {
+      final bool blockedByWall =
+          !ghostshaftPhase && arena.circleHitsWall(toX, toY, store.radius[i]);
+      final bool leftArena = !arena.containsPoint(toX, toY);
+      if (blockedByWall || leftArena) {
+        // Skimmer ricochets off whatever stopped it instead — a shared
+        // counter of 2 with its own enemy-ricochet half in `_resolveHits`
+        // below (docs/08: "ricochets 2x off walls or enemies", one pool,
+        // not 2 of each). The reflected arrow simply waits out the rest of
+        // this tick rather than also resuming movement in the new
+        // direction — imperceptible at tick granularity, and it rules out
+        // an infinite reflect loop in a tight corner.
+        if (projectiles.ricochetsLeft[i] > 0) {
+          projectiles.ricochetsLeft[i]--;
+          _layForcedSegment(
+            store: store,
+            projectiles: projectiles,
+            lines: lines,
+            hero: hero,
+            slot: i,
+            x: fromX,
+            y: fromY,
+            now: now,
+            windlineDuration: windlineDuration,
+          );
+          _reflectOffWall(arena, store, i, toX, toY, blockedByWall);
+          continue;
+        }
         _missed(projectiles, combat, i);
         _retire(
             store, projectiles, lines, i, fromX, fromY, now, windlineDuration);
@@ -89,6 +121,12 @@ abstract final class ProjectileSystem {
       final double step = _length(toX - fromX, toY - fromY);
       projectiles.sinceLastSegment[i] += step;
       projectiles.distanceFlown[i] += step;
+
+      if (ghostshaftPhase && projectiles.distanceFlown[i] > _ghostshaftRange) {
+        _missed(projectiles, combat, i);
+        _retire(store, projectiles, lines, i, toX, toY, now, windlineDuration);
+        continue;
+      }
 
       // Confluence is resolved on the swept path *before* hits, so an arrow
       // that threads a line and strikes an enemy in the same tick carries the
@@ -139,36 +177,100 @@ abstract final class ProjectileSystem {
       // segment spans the whole accumulated stretch, so the polyline is
       // continuous — it is emitted less often, not made of gaps.
       if (projectiles.sinceLastSegment[i] >= segmentLength) {
-        final double back = projectiles.sinceLastSegment[i];
-        final double dirX = store.velX[i];
-        final double dirY = store.velY[i];
-        final double dirLen = _length(dirX, dirY);
-        final double ux = dirLen > 0 ? dirX / dirLen : 0;
-        final double uy = dirLen > 0 ? dirY / dirLen : 0;
-
-        lines.add(
-          fromX: toX - ux * back,
-          fromY: toY - uy * back,
-          toX: toX,
-          toY: toY,
-          expiresAt: now + windlineDuration,
-          ownerIndex: _playerOwner,
-          trailId: projectiles.trailId[i],
-          elementIndex: projectiles.element[i],
-          // *Shadowline* (Nyx, T3a) — a segment laid while Umbral Step's
-          // untargetable window is live also deals damage; ADR 0010.
-          isShadowline: (hero?.umbralStepRemaining ?? 0) > 0,
-          // *Phoenix Trail* (Ashlin, T3b) — same shape, Ashlin's own
-          // invulnerability window instead of Nyx's.
-          isPhoenixTrail: (hero?.ashlinInvulnRemaining ?? 0) > 0,
+        _layForcedSegment(
+          store: store,
+          projectiles: projectiles,
+          lines: lines,
+          hero: hero,
+          slot: i,
+          x: toX,
+          y: toY,
+          now: now,
+          windlineDuration: windlineDuration,
         );
-        projectiles.sinceLastSegment[i] = 0;
       }
 
       store.posX[i] = toX;
       store.posY[i] = toY;
     }
   }
+
+  /// Emits a Windline segment spanning everything accumulated in
+  /// `sinceLastSegment` since the last one, ending at ([x], [y]) — the
+  /// periodic per-[SimConfig.windlineSegmentLength] cut during ordinary
+  /// flight, and Skimmer's own forced cut at a ricochet point, are the same
+  /// operation at two different trigger conditions.
+  static void _layForcedSegment({
+    required EntityStore store,
+    required ProjectileStore projectiles,
+    required WindlineStore lines,
+    required HeroRuntime? hero,
+    required int slot,
+    required double x,
+    required double y,
+    required double now,
+    required double windlineDuration,
+  }) {
+    final double back = projectiles.sinceLastSegment[slot];
+    if (back <= 0) return;
+
+    final double dirX = store.velX[slot];
+    final double dirY = store.velY[slot];
+    final double dirLen = _length(dirX, dirY);
+    final double ux = dirLen > 0 ? dirX / dirLen : 0;
+    final double uy = dirLen > 0 ? dirY / dirLen : 0;
+
+    lines.add(
+      fromX: x - ux * back,
+      fromY: y - uy * back,
+      toX: x,
+      toY: y,
+      expiresAt: now + windlineDuration,
+      ownerIndex: _playerOwner,
+      trailId: projectiles.trailId[slot],
+      elementIndex: projectiles.element[slot],
+      // *Shadowline* (Nyx, T3a) — a segment laid while Umbral Step's
+      // untargetable window is live also deals damage; ADR 0010.
+      isShadowline: (hero?.umbralStepRemaining ?? 0) > 0,
+      // *Phoenix Trail* (Ashlin, T3b) — same shape, Ashlin's own
+      // invulnerability window instead of Nyx's.
+      isPhoenixTrail: (hero?.ashlinInvulnRemaining ?? 0) > 0,
+    );
+    projectiles.sinceLastSegment[slot] = 0;
+  }
+
+  static void _reflectOffWall(
+    Arena arena,
+    EntityStore store,
+    int slot,
+    double x,
+    double y,
+    bool hitWall,
+  ) {
+    if (hitWall) {
+      final int w = arena.wallHitBy(x, y, store.radius[slot]);
+      if (w >= 0) {
+        // Standard AABB reflection: the shallower-penetration axis is the
+        // one the arrow actually crossed, so that is the one that flips.
+        final double cx = _clampToRange(x, arena.wallLeft(w), arena.wallRight(w));
+        final double cy = _clampToRange(y, arena.wallTop(w), arena.wallBottom(w));
+        final double dx = x - cx;
+        final double dy = y - cy;
+        if (dx.abs() >= dy.abs()) {
+          store.velX[slot] = -store.velX[slot];
+        } else {
+          store.velY[slot] = -store.velY[slot];
+        }
+        return;
+      }
+    }
+    // The arena's own boundary — reflect whichever axis actually left it.
+    if (x < 0 || x > arena.width) store.velX[slot] = -store.velX[slot];
+    if (y < 0 || y > arena.height) store.velY[slot] = -store.velY[slot];
+  }
+
+  static double _clampToRange(double v, double lo, double hi) =>
+      v < lo ? lo : (v > hi ? hi : v);
 
   static void _resolveConfluence({
     required ProjectileStore projectiles,
@@ -258,6 +360,13 @@ abstract final class ProjectileSystem {
   /// the Hollow Warden its own owner id so its trails interact through the
   /// separate Discord rule rather than buffing the player.
   static const int _playerOwner = 0;
+
+  // ── Ghostshaft ────────────────────────────────────────────────────────────
+  // Phases through walls and shields, ignores plating entirely — the trade
+  // is a short range and no pierce. Checked both in `update`'s own movement
+  // loop (walls, range) and in `_applyHit` below (shield, plate).
+
+  static const double _ghostshaftRange = 8.0;
 
   // ── Nyx: First Blood ──────────────────────────────────────────────────────
 
@@ -355,6 +464,30 @@ abstract final class ProjectileSystem {
       );
 
       if (projectiles.pierceRemaining[slot] < 0) {
+        // Skimmer redirects toward the nearest other living enemy it has
+        // not already struck this flight, rather than stopping here —
+        // sharing the same `ricochetsLeft` pool the wall/boundary half in
+        // `update` spends from. No enemy left to bounce to falls through to
+        // the ordinary retire below, same as running out of charges would.
+        if (projectiles.ricochetsLeft[slot] > 0) {
+          final int next = _nearestUnhitEnemy(store, projectiles, slot, target);
+          if (next >= 0) {
+            projectiles.ricochetsLeft[slot]--;
+            // One more hit is now owed before pierce runs out again — the
+            // same "just enough to reach the next target" reset a fresh
+            // arrow's own pierceRemaining already represents.
+            projectiles.pierceRemaining[slot] = 0;
+            final double dx = store.posX[next] - toX;
+            final double dy = store.posY[next] - toY;
+            final double len = _length(dx, dy);
+            if (len > 1e-6) {
+              final double speed = _length(store.velX[slot], store.velY[slot]);
+              store.velX[slot] = dx / len * speed;
+              store.velY[slot] = dy / len * speed;
+            }
+            return false;
+          }
+        }
         // The stub runs to the swept end rather than to the arrow's last
         // committed position, so a trail that ends in an enemy actually reaches
         // that enemy.
@@ -364,6 +497,39 @@ abstract final class ProjectileSystem {
       }
     }
     return false;
+  }
+
+  /// Nearest other living enemy [slot]'s own arrow has not already struck
+  /// this flight — Skimmer's own enemy-ricochet target. A linear scan
+  /// rather than a [SpatialHash] query: this runs from inside
+  /// `_resolveHits`'s own candidate loop, which is still reading results
+  /// out of `SpatialHash`'s single shared query buffer — a nested query
+  /// here would silently corrupt that iteration, the same reasoning
+  /// Bram's splash and Torv's chain already document.
+  static int _nearestUnhitEnemy(
+    EntityStore store,
+    ProjectileStore projectiles,
+    int slot,
+    int exclude,
+  ) {
+    final double x = store.posX[exclude];
+    final double y = store.posY[exclude];
+    int nearest = -1;
+    double nearestDistSq = double.infinity;
+    for (int i = 0; i < store.highWater; i++) {
+      if (i == exclude) continue;
+      if (store.alive[i] == 0) continue;
+      if (store.kind[i] != EntityKind.enemy.index) continue;
+      if (projectiles.hasHit(slot, store.idAt(i).raw)) continue;
+      final double dx = store.posX[i] - x;
+      final double dy = store.posY[i] - y;
+      final double distSq = dx * dx + dy * dy;
+      if (distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearest = i;
+      }
+    }
+    return nearest;
   }
 
   static void _applyHit({
@@ -388,9 +554,16 @@ abstract final class ProjectileSystem {
 
     final DrawTier tier = DrawTier.values[projectiles.drawTier[slot]];
 
+    // Ghostshaft ignores plating entirely — armour is not reduced by it, the
+    // same way the Draw tier's own armour clang never happens for this arrow.
+    final bool ghostshaftPhase =
+        hero != null && hero.hasArrow(ArrowBehaviour.ghostshaftPhase);
+
     // Armour is resolved here, not at fire time: the arrow carries the tier it
     // was fired at, and the plate state is read from the target now.
-    double armour = _armourFor(store, enemies, target, tier, fromX, fromY);
+    double armour = ghostshaftPhase
+        ? ArmourFactor.none
+        : _armourFor(store, enemies, target, tier, fromX, fromY);
 
     // *Rend* (#14) wears the plate down permanently, converging to a floor
     // rather than removing it — an enemy whose armour reached zero would stop
@@ -585,8 +758,13 @@ abstract final class ProjectileSystem {
     if (enemies != null) {
       // Shield, then plate, then health. The order is the fiction: a Weaver's
       // barrier sits outside the armour, and the armour sits outside the body.
-      toHealth = enemies.absorb(target, toHealth);
-      enemies.wearPlate(target, toHealth);
+      // Ghostshaft ignores both outright — "passes through walls and
+      // shields; ignores plating entirely" — rather than merely dealing full
+      // damage through them.
+      if (!ghostshaftPhase) {
+        toHealth = enemies.absorb(target, toHealth);
+        enemies.wearPlate(target, toHealth);
+      }
       // Damage taken during a wind-up is what a Ripper's stagger is measured
       // against — the game's parry, counted here because this is where damage
       // is known.

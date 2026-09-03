@@ -7,6 +7,7 @@ import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/arrow_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_runtime.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
@@ -1579,6 +1580,11 @@ class SimWorld {
       }
     }
 
+    if (hero.hasArrow(ArrowBehaviour.twinfangConverging)) {
+      _fireTwinfangConverging(x, y, angle, tier);
+      return;
+    }
+
     if (extra <= 0) {
       _spawnArrow(x, y, angle, tier, volleyDamageMultiplier);
       return;
@@ -1599,7 +1605,57 @@ class SimWorld {
   /// target", which reads as a downgrade.
   static const double volleySpreadRadians = 0.14;
 
-  void _spawnArrow(
+  /// Twinfang — two arrows that leave the bow slightly apart (ADR 0012) and
+  /// converge to cross exactly [_twinfangCrossDistance] ahead on the aim
+  /// line, each carrying a guaranteed Confluence stack from the moment they
+  /// spawn rather than one detected geometrically when the paths actually
+  /// meet — docs/08 itself prices the payoff as "a reliable ×1.4", which is
+  /// exactly one stack's own +40 % (`ConfluenceTuning.bonusFor(1)`), granted
+  /// unconditionally rather than left contingent on an enemy standing
+  /// precisely on the crossing point.
+  void _fireTwinfangConverging(double x, double y, double angle, DrawTier tier) {
+    final double crossX = x + math.cos(angle) * _twinfangCrossDistance;
+    final double crossY = y + math.sin(angle) * _twinfangCrossDistance;
+    final double perpX = -math.sin(angle);
+    final double perpY = math.cos(angle);
+
+    for (final double side in <double>[-1.0, 1.0]) {
+      final double spawnX = x + perpX * _twinfangSpawnOffset * side;
+      final double spawnY = y + perpY * _twinfangSpawnOffset * side;
+      final double arrowAngle =
+          math.atan2(crossY - spawnY, crossX - spawnX);
+      final int i = _spawnArrow(
+        spawnX,
+        spawnY,
+        arrowAngle,
+        tier,
+        volleyDamageMultiplier,
+      );
+      if (i >= 0) {
+        projectiles.confluenceStacks[i] = _twinfangGuaranteedStacks;
+        projectiles.confluenceBonus[i] =
+            ConfluenceTuning.bonusFor(_twinfangGuaranteedStacks) *
+                confluenceDamageMultiplier;
+      }
+    }
+  }
+
+  static const double _twinfangCrossDistance = 6.0;
+  static const double _twinfangSpawnOffset = 0.3; // ADR 0012
+  static const int _twinfangGuaranteedStacks = 1;
+
+  /// Skimmer — docs/08: "ricochets 2x off walls or enemies", one shared
+  /// counter rather than 2 of each. See `ProjectileSystem` for where a
+  /// ricochet is actually resolved (the wall/boundary reflection and the
+  /// nearest-unhit-enemy redirect both live there, alongside the wall check
+  /// and hit resolution they extend).
+  static const int _skimmerRicochetCount = 2;
+
+  /// Returns the spawned arrow's own entity slot, or -1 if the entity pool
+  /// was full — most callers ignore the return; Twinfang's own guaranteed
+  /// Confluence stack is the one thing that needs to touch the arrow again
+  /// right after spawning it.
+  int _spawnArrow(
     double x,
     double y,
     double angle,
@@ -1609,7 +1665,7 @@ class SimWorld {
     int mirelleDuplicateDepth = 0,
   }) {
     final EntityId id = entities.spawn(EntityKind.projectile);
-    if (id.isNone) return;
+    if (id.isNone) return -1;
 
     final int i = id.index;
     entities.posX[i] = x;
@@ -1631,6 +1687,9 @@ class SimWorld {
     projectiles.drawTier[i] = tier.index;
     projectiles.lifetime[i] = arrowLifetime;
     projectiles.element[i] = _arrowElementIndex();
+    if (hero.hasArrow(ArrowBehaviour.skimmerRicochet)) {
+      projectiles.ricochetsLeft[i] = _skimmerRicochetCount;
+    }
     _applyOrielElementCycle(i);
     _applyTorvArc(i);
 
@@ -1646,6 +1705,7 @@ class SimWorld {
     );
 
     _applyMirelleReflection(x, y, angle, tier, damageScale, mirelleDuplicateDepth);
+    return i;
   }
 
   /// *Reflection* — each arrow has a chance to spawn one more, which can
@@ -1709,12 +1769,18 @@ class SimWorld {
   /// that with all four at once for its own window. Prism wins when both are
   /// live, which is every tick it runs — Spectrum is Oriel's passive, always
   /// on, and Prism is layered on top of it rather than instead of it.
+  ///
+  /// Prismshaft cycles the identical rotation independent of Spectrum — "the
+  /// same idea as Oriel's Spectrum passive" per [ArrowBehaviour]'s own doc
+  /// comment — so it reads `hero.cycleIndex` through the same call rather
+  /// than a second implementation of one rotation.
   void _applyOrielElementCycle(int i) {
     if (hero.prismRemaining > 0 && hero.has(HeroBehaviour.orielPrism)) {
       projectiles.elementMask[i] = _allElements;
       return;
     }
-    if (hero.has(HeroBehaviour.orielSpectrum)) {
+    if (hero.has(HeroBehaviour.orielSpectrum) ||
+        hero.hasArrow(ArrowBehaviour.prismshaftCycle)) {
       projectiles.element[i] = SimElement.values[hero.cycleIndex].index;
       hero.cycleIndex = (hero.cycleIndex + 1) % SimElement.values.length;
     }
