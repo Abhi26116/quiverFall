@@ -57,6 +57,17 @@ abstract final class ElementSystem {
       if (store.alive[i] == 0) continue;
       if (store.kind[i] != EntityKind.enemy.index) continue;
 
+      // A multi-body boss's child redirects its DoT damage to whatever
+      // entity holds the shared pool, the same `linkedHealthSlot` link
+      // `ProjectileSystem._applyHit` follows for a direct hit — Burn/Toxin/
+      // Bleed stacks still live on the child itself (each body catches fire
+      // independently), only the resulting damage and its %-of-max-HP basis
+      // follow the link, so a stacking DoT drains the boss's real bar
+      // rather than a decorative field nothing else reads.
+      final int healthSlot = (enemies != null && enemies.linkedHealthSlot[i] >= 0)
+          ? enemies.linkedHealthSlot[i]
+          : i;
+
       if (status.reactionCooldown[i] > 0) {
         status.reactionCooldown[i] -= dt;
       }
@@ -84,12 +95,15 @@ abstract final class ElementSystem {
           status.burnStacks[i] = 0;
           status.burnRemaining[i] = 0;
         } else {
-          damage += store.maxHealth[i] * burnPerSecond * status.burnStacks[i] * dt;
+          damage += store.maxHealth[healthSlot] *
+              burnPerSecond *
+              status.burnStacks[i] *
+              dt;
         }
       }
 
       if (status.toxinStacks[i] > 0) {
-        damage += store.maxHealth[i] *
+        damage += store.maxHealth[healthSlot] *
             ElementTuning.toxinPerStackPerSecond *
             status.toxinStacks[i] *
             dt;
@@ -107,24 +121,26 @@ abstract final class ElementSystem {
           enemies.bleedStacks[i] = 0;
           enemies.bleedRemaining[i] = 0;
         } else {
-          damage +=
-              store.maxHealth[i] * bleedPerSecond * enemies.bleedStacks[i] * dt;
+          damage += store.maxHealth[healthSlot] *
+              bleedPerSecond *
+              enemies.bleedStacks[i] *
+              dt;
         }
       }
 
       if (damage <= 0) continue;
 
-      store.health[i] -= damage;
+      store.health[healthSlot] -= damage;
 
-      if (store.health[i] <= 0 && !deferDeath) {
+      if (store.health[healthSlot] <= 0 && !deferDeath) {
         events.emit(
           SimEventType.entityDied,
-          entityA: i,
-          x: store.posX[i],
-          y: store.posY[i],
+          entityA: healthSlot,
+          x: store.posX[healthSlot],
+          y: store.posY[healthSlot],
         );
-        status.clearSlot(i);
-        store.despawn(store.idAt(i));
+        status.clearSlot(healthSlot);
+        store.despawn(store.idAt(healthSlot));
       }
     }
   }

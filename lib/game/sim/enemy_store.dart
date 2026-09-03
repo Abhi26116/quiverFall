@@ -92,7 +92,11 @@ class EnemyStore {
         bleedStacks = Uint8List(capacity),
         bleedRemaining = Float64List(capacity),
         bossIndex = Int32List(capacity),
-        bossPhase = Uint8List(capacity);
+        bossPhase = Uint8List(capacity),
+        linkedHealthSlot = Int32List(capacity),
+        bossChildIndex = Uint8List(capacity),
+        bossTimer = Float64List(capacity),
+        bossActiveChildIndex = Uint8List(capacity);
 
   final int _capacity;
 
@@ -262,6 +266,43 @@ class EnemyStore {
   /// why the two can never fall out of sync.
   final Uint8List bossPhase;
 
+  /// Points a multi-body boss's child (an effigy, a segment, a sigil) at the
+  /// entity holding its *real* health, or -1 for a slot whose own `health`
+  /// field is the real one — the ordinary case, and every non-boss enemy.
+  ///
+  /// Exists because docs/06 keeps re-raising the identical shape: Cinder
+  /// Choir's three effigies, Skarn's 1→2→4 split, Coilspine's 24 segments,
+  /// Thrall's nine sigils — several bodies, one shared pool. Built generic
+  /// against Cinder Choir (`CinderChoirSystem`), the first boss to need it,
+  /// on the theory that a second and third consumer are already named in the
+  /// GDD rather than hypothetical. `ProjectileSystem._applyHit` is the one
+  /// place damage is actually redirected; plate, shield and stagger tracking
+  /// stay on the hit slot itself — only the health write follows the link,
+  /// because a shared pool with independent armour is the entire point (only
+  /// the lit effigy lets damage through at all).
+  final Int32List linkedHealthSlot;
+
+  /// This child's fixed ordinal position (0-based) among its boss's other
+  /// children, set once at spawn. Meaningless (0) on anything that is not a
+  /// linked child. A boss's own system reads this alongside
+  /// [bossActiveChildIndex] to know which specific child is the currently
+  /// active one, the same way [linkedHealthSlot] answers "which one pool".
+  final Uint8List bossChildIndex;
+
+  /// A generic countdown a boss's own system owns and interprets — Cinder
+  /// Choir's rotation timer today, some other boss's own cadence later.
+  /// Meaningless (0) on anything that is not a boss primary. One field
+  /// rather than a per-boss name because exactly one scripted timer is ever
+  /// live on a given boss at a time; a boss that genuinely needs two
+  /// concurrent cadences will need its own second field when that boss is
+  /// actually built, not a speculative one added ahead of it.
+  final Float64List bossTimer;
+
+  /// Which [bossChildIndex] is currently the "active" one — Cinder Choir's
+  /// lit, vulnerable effigy. Meaningless (0) on anything that is not a boss
+  /// primary; read and written only by that boss's own system.
+  final Uint8List bossActiveChildIndex;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -368,6 +409,10 @@ class EnemyStore {
     bleedRemaining[slot] = 0;
     bossIndex[slot] = -1;
     bossPhase[slot] = 0;
+    linkedHealthSlot[slot] = -1;
+    bossChildIndex[slot] = 0;
+    bossTimer[slot] = 0;
+    bossActiveChildIndex[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

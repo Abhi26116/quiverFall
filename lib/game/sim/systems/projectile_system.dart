@@ -628,6 +628,15 @@ abstract final class ProjectileSystem {
     final int pierceIndex = projectiles.hitCount[slot];
     projectiles.recordHit(slot, targetId);
 
+    // A multi-body boss's child (Cinder Choir's effigies today) redirects its
+    // *health* to whatever entity holds the shared pool — `linkedHealthSlot`'s
+    // own doc comment. Everything else about the hit (armour, plate, shield,
+    // stagger tracking) stays keyed on `target` itself: a shared pool with
+    // independent per-child armour is the entire point of the mechanic.
+    final int healthSlot = (enemies != null && enemies.linkedHealthSlot[target] >= 0)
+        ? enemies.linkedHealthSlot[target]
+        : target;
+
     final DrawTier tier = DrawTier.values[projectiles.drawTier[slot]];
 
     // Ghostshaft ignores plating entirely — armour is not reduced by it, the
@@ -674,9 +683,9 @@ abstract final class ProjectileSystem {
     // The build's conditional terms, resolved against *this* target and *this*
     // shot. They sum into one `boonDamageSum` rather than each multiplying the
     // total — docs/04 §4.1 rule 1, and the reason a twenty-Boon run is linear.
-    final double maxHp = store.maxHealth[target];
+    final double maxHp = store.maxHealth[healthSlot];
     final double targetHealthFraction =
-        maxHp > 0 ? store.health[target] / maxHp : 1.0;
+        maxHp > 0 ? store.health[healthSlot] / maxHp : 1.0;
 
     double boonSum = 0;
     if (!combat.isInert) {
@@ -839,14 +848,20 @@ abstract final class ProjectileSystem {
 
     // *Cull* (#20) finishes anything left below its threshold. Non-elites only:
     // an execute that worked on Riftborn would delete the roster's mechanics
-    // rather than reward clearing fodder.
+    // rather than reward clearing fodder — a boss (and any of its linked
+    // children, sharing that same pool) is exempt for the identical reason,
+    // and more severely so: a boss's own HP is a `×22`-`×140` multiplier, so
+    // a threshold sized for common-enemy HP would delete a double-digit
+    // percentage of a boss bar in one stray low-roll hit.
     if (boons.has(BoonBehaviour.cull) &&
         enemies != null &&
         !enemies.isElite(target) &&
-        store.health[target] > 0 &&
-        store.health[target] <
-            store.maxHealth[target] * BoonRuntime.cullThreshold) {
-      store.health[target] = 0;
+        !enemies.isBoss(target) &&
+        enemies.linkedHealthSlot[target] < 0 &&
+        store.health[healthSlot] > 0 &&
+        store.health[healthSlot] <
+            store.maxHealth[healthSlot] * BoonRuntime.cullThreshold) {
+      store.health[healthSlot] = 0;
     }
 
     double toHealth = damage;
@@ -866,7 +881,7 @@ abstract final class ProjectileSystem {
       enemies.damageDuringWindUp[target] += toHealth;
     }
 
-    store.health[target] -= toHealth;
+    store.health[healthSlot] -= toHealth;
     projectiles.pierceRemaining[slot]--;
 
     _applyElement(

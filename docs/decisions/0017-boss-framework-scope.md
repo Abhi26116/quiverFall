@@ -81,7 +81,9 @@ rotating every 6s" mechanic — the multi-body/shared-vulnerability question
 this session weighed and did not resolve — is real, boss-specific design and
 code, the same category of work as a single hero's kit, and belongs in its
 own pass with its own tests, not bundled into the generic primitive's own
-commit.
+commit. **Update, same day:** that pass happened next — see ADR 0018, which
+resolved the question this paragraph left open (a shared pool across several
+physical bodies, `EnemyStore.linkedHealthSlot`) for P1/P2. P3 is still open.
 
 **No spawn integration.** `RoomKind.boss` still spawns nothing — `spawnBoss`
 is a direct test/tool entry point, not wired into `room_composer.dart` or

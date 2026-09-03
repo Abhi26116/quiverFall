@@ -28,6 +28,7 @@ import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/ai_system.dart';
 import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
+import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
@@ -595,6 +596,17 @@ class SimWorld {
       enemies: enemies,
       content: content,
       events: events,
+    );
+
+    // Each boss's own bespoke mechanic shares this same slot rather than
+    // claiming a new `SystemOrder` entry per archetype — see
+    // `CinderChoirSystem`'s own doc comment. After `BossPhaseSystem`, so a
+    // phase change this tick is already visible to it.
+    CinderChoirSystem.update(
+      store: entities,
+      enemies: enemies,
+      content: content,
+      dt: dt,
     );
 
     // ── ai ─────────────────────────────────────────────────────────────────
@@ -2320,6 +2332,29 @@ class SimWorld {
     enemies.bossIndex[slot] = bossIndex;
     return slot;
   }
+
+  /// Places The Cinder Choir — three effigies and the primary that holds
+  /// their shared health. Test/tool entry point, the same role [spawnBoss]
+  /// plays for the generic case; [CinderChoirSystem.spawn] does the real
+  /// work. Returns the primary's slot.
+  int spawnCinderChoir(
+    double x,
+    double y, {
+    required double health,
+    double triangleRadius = 2.2,
+    double effigyRadius = 0.5,
+  }) =>
+      CinderChoirSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+        triangleRadius: triangleRadius,
+        effigyRadius: effigyRadius,
+      );
 
   /// Starts a room. Waves release from here on, on the spawn system's schedule.
   void beginRoom(RoomPlan plan) {
