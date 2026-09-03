@@ -120,6 +120,13 @@ class FeedbackDirector {
         case SimEventType.ultimateUsed:
         case SimEventType.playerDashed:
           break;
+        // docs/06 §6.0 rule 1 wants this "a hard visual and musical
+        // transition" — a dedicated boss juice pass (screen-wide flash, its
+        // own SfxCue) belongs with the first boss that actually ships a
+        // fight, not bolted onto the generic director ahead of any boss
+        // having a phase-specific look to cut to.
+        case SimEventType.bossPhaseChanged:
+          break;
       }
     }
   }

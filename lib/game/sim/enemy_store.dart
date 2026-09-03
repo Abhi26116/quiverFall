@@ -90,7 +90,9 @@ class EnemyStore {
         telegraphSerial = Int32List(capacity),
         markedRemaining = Float64List(capacity),
         bleedStacks = Uint8List(capacity),
-        bleedRemaining = Float64List(capacity);
+        bleedRemaining = Float64List(capacity),
+        bossIndex = Int32List(capacity),
+        bossPhase = Uint8List(capacity);
 
   final int _capacity;
 
@@ -245,6 +247,21 @@ class EnemyStore {
   final Uint8List bleedStacks;
   final Float64List bleedRemaining;
 
+  /// Index into `ContentLibrary.bosses.all`, or -1 for an ordinary enemy.
+  ///
+  /// Mirrors `EntityStore.contentIndex`'s own "pointer into content, not a
+  /// string, not a duplicated flag" shape — kept as a second field rather
+  /// than repurposing `contentIndex` itself, since an ordinary enemy still
+  /// needs its own `EnemyDefinition` looked up the normal way even while a
+  /// boss occupies the same slot type. `BossPhaseSystem` is the one reader.
+  final Int32List bossIndex;
+
+  /// Current phase, 0-based. Advances only forward, only in
+  /// `BossPhaseSystem`, by comparing live HP fraction against
+  /// `BossDefinition.phaseThresholds` — see that field's own doc comment for
+  /// why the two can never fall out of sync.
+  final Uint8List bossPhase;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -259,6 +276,8 @@ class EnemyStore {
   bool isPlated(int slot) => plateHealth[slot] > 0;
 
   bool isElite(int slot) => elite[slot] == 1;
+
+  bool isBoss(int slot) => bossIndex[slot] >= 0;
 
   bool isUntargetable(int slot) => untargetable[slot] == 1;
 
@@ -347,6 +366,8 @@ class EnemyStore {
     markedRemaining[slot] = 0;
     bleedStacks[slot] = 0;
     bleedRemaining[slot] = 0;
+    bossIndex[slot] = -1;
+    bossPhase[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

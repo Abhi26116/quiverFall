@@ -125,6 +125,7 @@ class FeelTelemetry {
         case SimEventType.ultimateReady:
         case SimEventType.ultimateUsed:
         case SimEventType.playerDashed:
+        case SimEventType.bossPhaseChanged:
           break;
       }
     }

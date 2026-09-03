@@ -92,6 +92,11 @@ void main() {
           'projectile',
           'windlineExpiry',
           'element',
+          // Phase 11. After element (a DoT tick can cross a phase threshold
+          // exactly like a direct hit), before ai (so a boss's own family
+          // tree reads this tick's phase). No-op for every pre-Phase-11
+          // seeded run — nothing before now could ever spawn a boss.
+          'bossPhase',
           'ai',
           'hazard',
           'spawn',

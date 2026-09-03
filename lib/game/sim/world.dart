@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/balance/damage.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
@@ -26,6 +27,7 @@ import 'package:quiverfall/game/sim/spatial_hash.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/ai_system.dart';
 import 'package:quiverfall/game/sim/systems/boon_system.dart';
+import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
@@ -66,6 +68,14 @@ enum SystemOrder {
   projectile,
   windlineExpiry,
   element,
+  // Phase 11. After elements, for the identical "sees this tick's damage,
+  // including a DoT tick" reason `element` itself sits after `projectile`;
+  // before `ai` so a boss's own family tree reads this tick's phase, not
+  // last tick's. No replay or balance number was voided: no world before
+  // Phase 11 could ever hold a boss (`EnemyStore.bossIndex` starts at -1 and
+  // nothing before now ever sets it), so this slot is a no-op for every
+  // pre-existing seeded run.
+  bossPhase,
   ai,
   // Ordnance moves after the AI that fired it, so a shell launched this tick
   // starts flying this tick and its landing ring is never a frame's worth of
@@ -573,6 +583,18 @@ class SimWorld {
       deferDeath: true,
       hero: hero,
       enemies: enemies,
+    );
+
+    // ── boss phases ────────────────────────────────────────────────────────
+    // After elements, for the identical reason: a DoT tick can cross a phase
+    // threshold exactly like a direct hit can, and this needs to see that
+    // damage already applied. Before the AI, so a boss's own family tree
+    // reads this tick's phase, not last tick's.
+    BossPhaseSystem.update(
+      store: entities,
+      enemies: enemies,
+      content: content,
+      events: events,
     );
 
     // ── ai ─────────────────────────────────────────────────────────────────
@@ -2267,6 +2289,36 @@ class SimWorld {
     if (index < 0) return -1;
     _refreshAiContext(SimConfig.fixedStep);
     return EnemySpawner.spawn(ai, contentIndex: index, x: x, y: y);
+  }
+
+  /// Places a boss from the content table, tagged for [BossPhaseSystem].
+  ///
+  /// Built on [spawnAt] rather than [EnemySpawner.spawn]: a boss has no
+  /// [EnemyDefinition] to resolve radius, speed or plate data from —
+  /// [BossDefinition] is deliberately leaner (see its own doc comment), so a
+  /// boss's own hitbox and movement are bespoke, arena-specific work that
+  /// lands with its actual fight, not invented here as a placeholder. [health]
+  /// is likewise required rather than defaulted, the same reasoning
+  /// [spawnAt]'s own doc comment gives: it comes from `Curves.bossHp`, which
+  /// only the caller can resolve — `lib/game/sim` reads pre-resolved numbers,
+  /// it does not import `Curves` (the same split [enemyHpBase] already keeps
+  /// for ordinary enemies).
+  int spawnBoss(
+    BossArchetype archetype,
+    double x,
+    double y, {
+    required double radius,
+    required double health,
+  }) {
+    final int bossIndex = content.bosses.indexOfArchetype(archetype);
+    if (bossIndex < 0) return -1;
+    final EntityId id =
+        spawnAt(EntityKind.enemy, x, y, radius: radius, health: health);
+    if (id.isNone) return -1;
+    final int slot = id.index;
+    enemies.reset(slot);
+    enemies.bossIndex[slot] = bossIndex;
+    return slot;
   }
 
   /// Starts a room. Waves release from here on, on the spawn system's schedule.

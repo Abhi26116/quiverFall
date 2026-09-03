@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:quiverfall/game/arrows/affix_catalogue.dart';
 import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
+import 'package:quiverfall/game/content/boss_catalogue.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/heroes/hero_catalogue.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
@@ -43,6 +44,7 @@ class ContentLibrary {
     required this.heroes,
     required this.arrows,
     required this.affixes,
+    required this.bosses,
   }) : _byArchetype = enemyIndexByArchetype;
 
   /// Ordered enemy table. Entities reference definitions by *index* into this
@@ -68,10 +70,21 @@ class ContentLibrary {
   /// load in here would just be a second source of truth for the same
   /// content. A feature that only needs one catalogue (a test, the balance
   /// harness) can keep constructing it directly instead — nothing requires
-  /// going through [ContentLibrary].
+  /// going through [ContentLibrary]. Bosses, unlike Boons, *are* here
+  /// ([bosses] below) — `BossPhaseSystem` sits on the sim's own hot tick
+  /// path the same way enemy AI does, so it needs the identical
+  /// load-once-at-bootstrap treatment [enemies] already gets, not a
+  /// feature-local load a screen might skip.
   final HeroCatalogue heroes;
   final ArrowCatalogue arrows;
   final AffixCatalogue affixes;
+
+  /// The 20 bosses of docs/06-bosses.md. Kept in its own [BossCatalogue]
+  /// rather than a plain list, the same shape [heroes]/[arrows]/[affixes]
+  /// use, since a boss's own phase system needs to look one up by
+  /// [BossArchetype] on the hot path (`BossPhaseSystem`) the way enemy AI
+  /// resolves an [EnemyDefinition].
+  final BossCatalogue bosses;
 
   /// Archetype ordinal to table index. The AI resolves a definition on every
   /// enemy on every tick, so this has to be an array read.
@@ -85,6 +98,7 @@ class ContentLibrary {
         heroes: HeroCatalogue.empty(),
         arrows: ArrowCatalogue.empty(),
         affixes: AffixCatalogue.empty(),
+        bosses: BossCatalogue.empty(),
       );
 
   /// Parses and validates content.
@@ -97,6 +111,7 @@ class ContentLibrary {
     String? heroesJson,
     String? arrowsJson,
     String? affixesJson,
+    String? bossesJson,
   }) {
     final List<ContentError> errors = <ContentError>[];
 
@@ -121,6 +136,11 @@ class ContentLibrary {
     final AffixCatalogue affixes = affixesJson == null
         ? AffixCatalogue.empty()
         : _unwrap(AffixCatalogue.parse(affixesJson), errors, AffixCatalogue.empty());
+    if (errors.isNotEmpty) return (null, errors);
+
+    final BossCatalogue bosses = bossesJson == null
+        ? BossCatalogue.empty()
+        : _unwrap(BossCatalogue.parse(bossesJson), errors, BossCatalogue.empty());
     if (errors.isNotEmpty) return (null, errors);
 
     final Map<String, int> byId = <String, int>{};
@@ -152,6 +172,7 @@ class ContentLibrary {
         heroes: heroes,
         arrows: arrows,
         affixes: affixes,
+        bosses: bosses,
       ),
       const <ContentError>[],
     );

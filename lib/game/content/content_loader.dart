@@ -31,6 +31,8 @@ abstract final class ContentLoader {
         await rootBundle.loadString('assets/data/arrows.json');
     final String affixes =
         await rootBundle.loadString('assets/data/affixes.json');
+    final String bosses =
+        await rootBundle.loadString('assets/data/bosses.json');
 
     final (ContentLibrary?, List<ContentError>) parsed = ContentLibrary.parse(
       enemiesJson: enemies,
@@ -38,6 +40,7 @@ abstract final class ContentLoader {
       heroesJson: heroes,
       arrowsJson: arrows,
       affixesJson: affixes,
+      bossesJson: bosses,
     );
 
     final ContentLibrary? library = parsed.$1;

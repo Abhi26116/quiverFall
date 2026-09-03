@@ -39,6 +39,13 @@ enum SimEventType {
   /// *Dash* (#49) and its evolutions fired. Exists for audio and VFX; the
   /// mechanic itself does not read it.
   playerDashed,
+
+  /// A boss crossed one of its own HP thresholds — `entityA` is the boss,
+  /// `valueA` the new phase index (0-based), `valueB` the HP fraction that
+  /// triggered it. docs/06 §6.0 rule 1: "a hard visual and musical
+  /// transition," which only the view layer can deliver, the same reason
+  /// [telegraphStarted] exists for audio rather than being silent state.
+  bossPhaseChanged,
 }
 
 /// Fixed-size event ring buffer.

@@ -1,0 +1,173 @@
+{
+  "bosses": [
+    {
+      "id": "cinderChoir",
+      "name": "The Cinder Choir",
+      "tier": "campaign",
+      "chapter": 1,
+      "hpMultiplier": 22,
+      "targetDurationSeconds": 55,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "gauntIronTide",
+      "name": "Gaunt, the Iron Tide",
+      "tier": "campaign",
+      "chapter": 2,
+      "hpMultiplier": 30,
+      "targetDurationSeconds": 60,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "silversong",
+      "name": "Silversong",
+      "tier": "campaign",
+      "chapter": 3,
+      "hpMultiplier": 34,
+      "targetDurationSeconds": 62,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "hollowWarden",
+      "name": "The Hollow Warden",
+      "tier": "campaign",
+      "chapter": 4,
+      "hpMultiplier": 36,
+      "targetDurationSeconds": 70,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "vermillion",
+      "name": "Vermillion, the Long Burn",
+      "tier": "campaign",
+      "chapter": 5,
+      "hpMultiplier": 40,
+      "targetDurationSeconds": 65,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "rimefather",
+      "name": "Rimefather",
+      "tier": "campaign",
+      "chapter": 6,
+      "hpMultiplier": 44,
+      "targetDurationSeconds": 70,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "arclight",
+      "name": "Arclight",
+      "tier": "campaign",
+      "chapter": 7,
+      "hpMultiplier": 48,
+      "targetDurationSeconds": 68,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "greenMother",
+      "name": "The Green Mother",
+      "tier": "campaign",
+      "chapter": 8,
+      "hpMultiplier": 52,
+      "targetDurationSeconds": 75,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "thrallOfNine",
+      "name": "Thrall of the Nine",
+      "tier": "campaign",
+      "chapter": 9,
+      "hpMultiplier": 56,
+      "targetDurationSeconds": 80,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "weepingGate",
+      "name": "The Weeping Gate",
+      "tier": "campaign",
+      "chapter": 10,
+      "hpMultiplier": 70,
+      "targetDurationSeconds": 85,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "skarnUnmade",
+      "name": "Skarn the Unmade",
+      "tier": "campaign",
+      "chapter": 11,
+      "hpMultiplier": 62,
+      "targetDurationSeconds": 85,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "quiverfall",
+      "name": "The Quiverfall",
+      "tier": "campaign",
+      "chapter": 12,
+      "hpMultiplier": 90,
+      "targetDurationSeconds": 110,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "ashenChoir",
+      "name": "The Ashen Choir",
+      "tier": "elite",
+      "hpMultiplier": 48,
+      "targetDurationSeconds": 70,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "umbralTwin",
+      "name": "Umbral Twin",
+      "tier": "event",
+      "hpMultiplier": 58,
+      "targetDurationSeconds": 80,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "bellweather",
+      "name": "Bellweather",
+      "tier": "event",
+      "hpMultiplier": 54,
+      "targetDurationSeconds": 75,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "paleJudge",
+      "name": "The Pale Judge",
+      "tier": "event",
+      "hpMultiplier": 66,
+      "targetDurationSeconds": 90,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "theLoom",
+      "name": "The Loom",
+      "tier": "endless",
+      "hpMultiplier": 75,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "coilspine",
+      "name": "Coilspine",
+      "tier": "endless",
+      "hpMultiplier": 85,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "motherOfMotes",
+      "name": "Mother of Motes",
+      "tier": "endless",
+      "hpMultiplier": 70,
+      "phaseThresholds": [0.66, 0.33]
+    },
+    {
+      "id": "lastWarden",
+      "name": "The Last Warden",
+      "tier": "endless",
+      "hpMultiplier": 140,
+      "targetDurationSeconds": 150,
+      "phaseThresholds": [0.8, 0.6, 0.4, 0.2]
+    }
+  ]
+}
