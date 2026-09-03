@@ -5,6 +5,7 @@ import 'package:quiverfall/core/theme/tokens.dart';
 import 'package:quiverfall/data/models/player_save.dart';
 import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/data/repositories/player_repository.dart';
+import 'package:quiverfall/features/heroes/presentation/hero_compare_screen.dart';
 import 'package:quiverfall/game/balance/curves.dart' as balance;
 import 'package:quiverfall/game/heroes/hero_catalogue.dart';
 import 'package:quiverfall/game/heroes/hero_definition.dart';
@@ -36,6 +37,7 @@ class HeroScreen extends StatefulWidget {
 
 class _HeroScreenState extends State<HeroScreen> {
   late final PageController _pageController;
+  late int _currentIndex;
 
   @override
   void initState() {
@@ -43,8 +45,8 @@ class _HeroScreenState extends State<HeroScreen> {
     final String equippedId = widget.repository.save.profile.equippedHeroId;
     final int startIndex =
         widget.heroes.all.indexWhere((HeroDefinition h) => h.key == equippedId);
-    _pageController =
-        PageController(initialPage: startIndex < 0 ? 0 : startIndex);
+    _currentIndex = startIndex < 0 ? 0 : startIndex;
+    _pageController = PageController(initialPage: _currentIndex);
   }
 
   @override
@@ -79,10 +81,25 @@ class _HeroScreenState extends State<HeroScreen> {
               body: Center(child: CircularProgressIndicator()));
         }
         return Scaffold(
-          appBar: AppBar(title: const Text('HEROES')),
+          appBar: AppBar(
+            title: const Text('HEROES'),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => HeroCompareScreen(
+                    heroes: widget.heroes,
+                    save: save,
+                    initialLeftKey: widget.heroes.all[_currentIndex].key,
+                  ),
+                )),
+                child: const Text('Compare'),
+              ),
+            ],
+          ),
           body: PageView.builder(
             controller: _pageController,
             itemCount: widget.heroes.all.length,
+            onPageChanged: (int i) => setState(() => _currentIndex = i),
             itemBuilder: (BuildContext context, int i) {
               final HeroDefinition def = widget.heroes.all[i];
               final HeroState state =
