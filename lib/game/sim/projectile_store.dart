@@ -105,6 +105,13 @@ class ProjectileStore {
   /// actually happens, not on whichever hit happens to be resolving first.
   final Uint8List willChain = Uint8List(SimConfig.maxEntities);
 
+  /// Kestrel's *Bleed*: set at release for every 4th arrow, the exact same
+  /// "decided once at the bow" shape [willChain] already uses for Torv's
+  /// own Arc mark — a proc rolled/counted per shot must apply to whichever
+  /// hit that specific shot eventually lands, not to whichever hit happens
+  /// to resolve first.
+  final Uint8List willBleed = Uint8List(SimConfig.maxEntities);
+
   /// Skimmer: bounces left off a wall or an enemy, shared between the two —
   /// docs/08 says "ricochets 2x", not "2x each". Set to 2 at spawn only for
   /// a Skimmer arrow; every other arrow leaves this at 0 and is retired on
@@ -144,6 +151,7 @@ class ProjectileStore {
     elementMask[slot] = 0;
     wasCrit[slot] = 0;
     willChain[slot] = 0;
+    willBleed[slot] = 0;
     damage[slot] = 0;
     pierceRemaining[slot] = 0;
     drawTier[slot] = 0;

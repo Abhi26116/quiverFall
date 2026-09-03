@@ -88,7 +88,9 @@ class EnemyStore {
         variant = Uint8List(capacity),
         telegraphSlot = Int32List(capacity),
         telegraphSerial = Int32List(capacity),
-        markedRemaining = Float64List(capacity);
+        markedRemaining = Float64List(capacity),
+        bleedStacks = Uint8List(capacity),
+        bleedRemaining = Float64List(capacity);
 
   final int _capacity;
 
@@ -227,6 +229,22 @@ class EnemyStore {
   /// `enrageRemaining`).
   final Float64List markedRemaining;
 
+  /// Kestrel's *Bleed* (T3b) — a non-elemental damage-over-time. Deliberately
+  /// not on [StatusStore]: that class's own doc comment frames it as
+  /// "four elements, four different shapes of state" — Bleed does not react,
+  /// does not pair with Confluence, and touches no [SimElement] at all, so
+  /// living here (the same "per-enemy timed status that is not an element"
+  /// spot [markedRemaining] already established for Vane's own Marked) keeps
+  /// that class's stated scope honest rather than smuggling in a fifth kind
+  /// under it. `stacks` exists (not just a bool) so a future stacking
+  /// consumer (Rook's own *Crush*, "grouped enemies take stacking 5 %/s" —
+  /// pending on this exact primitive) has somewhere to grow into; Kestrel's
+  /// own trigger only ever sets it to a flat 1, never increments it. Ticked
+  /// in `ElementSystem.update` alongside Burn/Toxin — the same shared
+  /// damage-then-death routine, not a second copy of it.
+  final Uint8List bleedStacks;
+  final Float64List bleedRemaining;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -327,6 +345,8 @@ class EnemyStore {
     enrageRemaining[slot] = 0;
     slowRemaining[slot] = 0;
     markedRemaining[slot] = 0;
+    bleedStacks[slot] = 0;
+    bleedRemaining[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

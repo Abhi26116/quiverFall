@@ -979,6 +979,18 @@ abstract final class ProjectileSystem {
       );
     }
 
+    // *Bleed* (Kestrel T3b) — the tagged 4th arrow applies its own bleed to
+    // whatever it hits. A flat set to 1, not an increment: "every 4th arrow
+    // applies *a* bleed" reads as one DoT refreshed on reapplication, not a
+    // stacking one — see ADR 0015.
+    if (hero != null &&
+        hero.has(HeroBehaviour.kestrelBleed) &&
+        enemies != null &&
+        projectiles.willBleed[slot] == 1) {
+      enemies.bleedStacks[target] = 1;
+      enemies.bleedRemaining[target] = _kestrelBleedDuration;
+    }
+
     // *Pull*'s crit-displacement half. Moves the target toward the shooter
     // (the player, not the arrow's own tick-local `fromX`/`fromY`, which sits
     // almost on top of the impact point and would clamp the pull to nearly
@@ -1097,6 +1109,11 @@ abstract final class ProjectileSystem {
   static const int _torvArcTargets = 3;
   static const int _torvWideArcTargets = 5;
   static const int _torvTempestNockTargets = 5;
+
+  /// docs/07 §7.1: "every 4th arrow applies a 3 s bleed" — the duration is
+  /// the one number the card actually states; the %/s it deals lives on
+  /// `ElementSystem._bleedPerSecond` (ADR 0015), next to the tick itself.
+  static const double _kestrelBleedDuration = 3.0;
 
   /// Counts other living enemies within [_rookGroupingRadius] of [target] —
   /// a linear scan for the same reason [_applyBramSplash] is one.

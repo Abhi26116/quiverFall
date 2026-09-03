@@ -566,6 +566,7 @@ class SimWorld {
       dt: dt,
       deferDeath: true,
       hero: hero,
+      enemies: enemies,
     );
 
     // ── ai ─────────────────────────────────────────────────────────────────
@@ -1733,6 +1734,7 @@ class SimWorld {
     if (ricochets > 0) projectiles.ricochetsLeft[i] = ricochets;
     _applyOrielElementCycle(i);
     _applyTorvArc(i);
+    _applyKestrelBleed(i);
 
     _applyArrowBoons(i, tier);
 
@@ -1859,6 +1861,21 @@ class SimWorld {
 
   static const int _torvArcEvery = 5;
   static const int _torvFrequentArcEvery = 3;
+
+  /// Kestrel: *Bleed* (T3b) — "every 4th arrow applies a 3 s bleed", tagged
+  /// at release exactly like Torv's own Arc mark above (and sharing the
+  /// same [HeroRuntime.arrowsFired] counter — the two are never equipped
+  /// together, since exactly one hero is ever equipped, so nothing about
+  /// sharing it is a real collision).
+  void _applyKestrelBleed(int i) {
+    if (!hero.has(HeroBehaviour.kestrelBleed)) return;
+    hero.arrowsFired++;
+    if (hero.arrowsFired % _kestrelBleedEvery == 0) {
+      projectiles.willBleed[i] = 1;
+    }
+  }
+
+  static const int _kestrelBleedEvery = 4;
 
   /// The element the next arrow carries.
   ///

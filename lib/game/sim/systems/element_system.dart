@@ -1,6 +1,7 @@
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/elements.dart';
+import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
@@ -11,6 +12,12 @@ import 'package:quiverfall/game/sim/status_store.dart';
 /// is what makes them boss-killers and deliberately poor against fodder — the
 /// other half of the split that keeps element choice meaningful late
 /// (docs/08-arrows.md §8.2).
+///
+/// Kestrel's own non-elemental *Bleed* (`EnemyStore.bleedStacks`) ticks here
+/// too, alongside — not instead of — the four elements: it needs the exact
+/// same "apply damage, check death, emit the event, despawn" routine this
+/// class already is, and a second copy of that routine elsewhere would be
+/// the real inconsistency, not one extra DoT source reusing it.
 abstract final class ElementSystem {
   /// [deferDeath] hands corpses to [AiSystem]'s death pass instead of reaping
   /// them here.
@@ -28,6 +35,7 @@ abstract final class ElementSystem {
     required double dt,
     bool deferDeath = false,
     HeroRuntime? hero,
+    EnemyStore? enemies,
   }) {
     final int high = store.highWater;
 
@@ -77,6 +85,20 @@ abstract final class ElementSystem {
             ElementTuning.toxinPerStackPerSecond *
             status.toxinStacks[i] *
             dt;
+      }
+
+      // *Bleed* (Kestrel T3b) — ADR 0015: no %/s is stated anywhere for it,
+      // so this reuses Burn's own rate rather than inventing a fresh number,
+      // the closest existing analog (a stacking, duration-based DoT).
+      if (enemies != null && enemies.bleedStacks[i] > 0) {
+        enemies.bleedRemaining[i] -= dt;
+        if (enemies.bleedRemaining[i] <= 0) {
+          enemies.bleedStacks[i] = 0;
+          enemies.bleedRemaining[i] = 0;
+        } else {
+          damage +=
+              store.maxHealth[i] * _bleedPerSecond * enemies.bleedStacks[i] * dt;
+        }
       }
 
       if (damage <= 0) continue;
@@ -146,6 +168,11 @@ abstract final class ElementSystem {
   }
 
   static const double _kadeDeepBurnPerSecond = 0.06;
+
+  /// ADR 0015 — Kestrel's own Bleed rate, anchored to Burn's own base
+  /// (`ElementTuning.burnPerSecond`) since docs/07 states a duration (3 s)
+  /// but no %/s for it at all.
+  static const double _bleedPerSecond = ElementTuning.burnPerSecond;
 
   static int _bitCount(int mask) {
     int n = 0;

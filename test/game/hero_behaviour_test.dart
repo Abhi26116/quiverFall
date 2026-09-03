@@ -565,6 +565,113 @@ void main() {
     });
   });
 
+  group('Bleed', () {
+    test('every 4th arrow fired is tagged to bleed, not the others', () {
+      final ({SimWorld world, int target}) a = kestrelArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      final List<int> bleedFlags = <int>[];
+      // Events accumulate across ticks (cleared only on a room boundary,
+      // not every tick), so re-scanning from index 0 on every iteration
+      // would reprocess the same early ticks' events over and over — this
+      // cursor is what keeps each event read exactly once. Read willBleed
+      // the instant each arrow spawns, not from a slot index kept around
+      // for later — that slot can be recycled by a later arrow well before
+      // this loop ends.
+      int eventsSeen = 0;
+      for (int t = 0; t < 300 && bleedFlags.length < 5; t++) {
+        a.world.tick(idle);
+        for (int e = eventsSeen; e < a.world.events.count; e++) {
+          if (a.world.events.typeAt(e) == SimEventType.arrowFired) {
+            final int slot = a.world.events.entityAAt(e);
+            bleedFlags.add(a.world.projectiles.willBleed[slot]);
+          }
+        }
+        eventsSeen = a.world.events.count;
+      }
+      expect(bleedFlags.length, greaterThanOrEqualTo(5));
+      for (int idx = 0; idx < bleedFlags.length; idx++) {
+        final bool shouldBleed = (idx + 1) % 4 == 0;
+        expect(bleedFlags[idx], shouldBleed ? 1 : 0, reason: 'arrow #${idx + 1}');
+      }
+    });
+
+    test('the 4th arrow applies a bleed stack and its 3s duration to the target', () {
+      final ({SimWorld world, int target}) a = kestrelArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 300; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.bleedStacks[a.target], 1);
+      expect(a.world.enemies.bleedRemaining[a.target], greaterThan(0));
+      expect(a.world.enemies.bleedRemaining[a.target], lessThanOrEqualTo(3.0));
+    });
+
+    test('without the talent, no arrow is ever tagged to bleed', () {
+      final ({SimWorld world, int target}) a = kestrelArena();
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 300; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.bleedStacks[a.target], 0);
+    });
+
+    test("a bleed stack deals damage at Burn's own 4%/s rate", () {
+      final ({SimWorld world, int target}) a = kestrelArena()
+        ..world.autoFire = false;
+      a.world.enemies.bleedStacks[a.target] = 1;
+      a.world.enemies.bleedRemaining[a.target] = 3.0;
+      final double maxHp = a.world.entities.maxHealth[a.target];
+      final double before = a.world.entities.health[a.target];
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60; t++) {
+        a.world.tick(idle);
+      }
+      final double lost = before - a.world.entities.health[a.target];
+      expect(lost, closeTo(maxHp * 0.04, maxHp * 0.04 * 0.15));
+    });
+
+    test('bleed expires after its duration and stops dealing damage', () {
+      final ({SimWorld world, int target}) a = kestrelArena()
+        ..world.autoFire = false;
+      a.world.enemies.bleedStacks[a.target] = 1;
+      a.world.enemies.bleedRemaining[a.target] = 0.05;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 10; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.bleedStacks[a.target], 0);
+
+      final double afterExpiry = a.world.entities.health[a.target];
+      for (int t = 0; t < 30; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.entities.health[a.target], afterExpiry);
+    });
+
+    test('Freeze suppresses Bleed damage, same as it does Burn', () {
+      final ({SimWorld world, int target}) a = kestrelArena()
+        ..world.autoFire = false;
+      a.world.enemies.bleedStacks[a.target] = 1;
+      a.world.enemies.bleedRemaining[a.target] = 3.0;
+      a.world.status.frozenRemaining[a.target] = 1.0;
+      final double before = a.world.entities.health[a.target];
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 30; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.entities.health[a.target], before);
+    });
+  });
+
   group('the three innate elements — same numbers as an arrow\'s own', () {
     test('Kindling applies Burn on a Tier III hit, never before', () {
       final ({SimWorld world, int target}) a = heroArena(kade);
@@ -3743,12 +3850,12 @@ void main() {
       // Burn/Long Pyre/Twin Pyre), Iris's Weave, Nyx's Umbral
       // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step, Ashlin's
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
-      // Body/Phoenix Trail/Supernova, Vane's Marked, and Corvin's whole kit
+      // Body/Phoenix Trail/Supernova, Vane's Marked, Corvin's whole kit
       // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
-      // Carom/Perfect Carom).
+      // Carom/Perfect Carom), and Kestrel's Bleed.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(47),
+        lessThanOrEqualTo(46),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -3786,14 +3893,12 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.bramPrecisionStrike,
 
   // kestrelFlurry, its two ★5 variants, and kestrelSharperNock are
-  // implemented — see hero_behaviour_test.dart's Flurry group.
-  //
-  // Bleed needs a status that does not exist yet: burnStacks/toxinStacks
-  // both live on StatusStore with their own ElementSystem tick logic, and
-  // "every 4th arrow applies a 3 s bleed" is a fifth kind of DoT, not a
-  // reuse of either. Real work for whichever hero or arrow needs it first —
-  // the same call BoonBehaviour.stormfoot's own ledger entry made for chains.
-  HeroBehaviour.kestrelBleed,
+  // implemented — see hero_behaviour_test.dart's Flurry group. kestrelBleed
+  // is implemented too — see the "Bleed" group. ADR 0015 covers the fifth-
+  // DoT primitive it needed (EnemyStore.bleedStacks/bleedRemaining, ticked
+  // in ElementSystem alongside Burn/Toxin rather than living on StatusStore,
+  // which is deliberately elemental-only) and the two numbers docs/07 never
+  // states for it.
 
   HeroBehaviour.ovrinAegisPin,
   HeroBehaviour.ovrinRiposte,
