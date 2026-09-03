@@ -421,6 +421,30 @@ abstract final class ProjectileSystem {
 
   static const double _liraLifeboundTierThreeBonus = 0.02;
 
+  // ── Lira: Overheal ─────────────────────────────────────────────────────────
+
+  /// docs/07 §7.1: Overheal's own stated cap — "up to 30 % HP". No shared
+  /// heal-clamp helper exists anywhere in the sim (Lifebound's own lifesteal
+  /// above and Verdant Bloom's regen in `SimWorld` both compute their clamp
+  /// inline, independently), so this stays scoped to lifesteal's own call
+  /// site; `SimWorld`'s own Bloom tick carries an identical block rather
+  /// than reaching across files for one three-line helper. ADR 0016 records
+  /// why Overheal only catches these two heal sources — Lira's own — and
+  /// not the wider, unaudited BoonSystem regen/shield surface Thane's own
+  /// Tempered was deferred over for the identical reason.
+  static const double _liraOverhealShieldCap = 0.30;
+
+  static void _applyLiraOverheal(
+    HeroRuntime? hero,
+    double overflow,
+    double maxHealth,
+  ) {
+    if (hero == null || !hero.has(HeroBehaviour.liraOverheal)) return;
+    final double cap = maxHealth * _liraOverhealShieldCap;
+    final double newShield = hero.overhealShield + overflow;
+    hero.overhealShield = newShield > cap ? cap : newShield;
+  }
+
   // ── Thane: Bloodtide ───────────────────────────────────────────────────────
 
   static const double _thaneBloodtidePerMissingFraction = 1.2;
@@ -895,9 +919,14 @@ abstract final class ProjectileSystem {
           tier == DrawTier.three) {
         effectiveLifesteal += _liraLifeboundTierThreeBonus;
       }
-      final double healed = store.health[player] + toHealth * effectiveLifesteal;
       final double cap = store.maxHealth[player];
-      store.health[player] = healed > cap ? cap : healed;
+      final double healed = store.health[player] + toHealth * effectiveLifesteal;
+      if (healed > cap) {
+        store.health[player] = cap;
+        _applyLiraOverheal(hero, healed - cap, cap);
+      } else {
+        store.health[player] = healed;
+      }
     }
 
     // *Heavy Ordnance* — splash never applies elements, which is why this

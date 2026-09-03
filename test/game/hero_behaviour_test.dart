@@ -1717,6 +1717,115 @@ void main() {
     });
   });
 
+  group('Overheal', () {
+    /// Health pinned just under max — any heal at all overflows almost
+    /// entirely, so a single lifesteal tick or Bloom pulse is enough to
+    /// observe the shield forming.
+    ({SimWorld world, int target}) nearMaxHealthArena({
+      required bool talent,
+      bool autoFire = true,
+    }) {
+      final SimWorld world = SimWorld(seed: 65, content: content)
+        ..autoFire = autoFire;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        lira,
+        HeroState(
+          heroId: 'lira',
+          stars: talent ? 3 : 0,
+          talentChoices: talent ? const <String, String>{'3': 'a'} : const {},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int p = world.player.index;
+      world.entities.health[p] = world.entities.maxHealth[p] - 0.5;
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    test("Lifebound's own lifesteal overflow becomes a shield", () {
+      final ({SimWorld world, int target}) a =
+          nearMaxHealthArena(talent: true);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.hero.overhealShield > 0) break;
+      }
+      expect(a.world.hero.overhealShield, greaterThan(0));
+      expect(
+        a.world.entities.health[a.world.player.index],
+        closeTo(a.world.entities.maxHealth[a.world.player.index], 1e-6),
+      );
+    });
+
+    test('without the talent, lifesteal overflow forms no shield', () {
+      final ({SimWorld world, int target}) a =
+          nearMaxHealthArena(talent: false);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.overhealShield, 0);
+    });
+
+    test("Verdant Bloom's own regen overflow becomes a shield too", () {
+      final ({SimWorld world, int target}) a =
+          nearMaxHealthArena(talent: true, autoFire: false);
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      // One tick's own heal pulse (~maxHp * 0.10 / 60) is smaller than the
+      // 0.5 HP gap the arena starts with — several ticks' worth of pulses
+      // are needed before the accumulated heal actually overflows.
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 30; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.overhealShield, greaterThan(0));
+    });
+
+    test('the shield caps at 30% max HP no matter how much overflows', () {
+      final ({SimWorld world, int target}) a =
+          nearMaxHealthArena(talent: true, autoFire: false);
+      final int p = a.world.player.index;
+      final double maxHp = a.world.entities.maxHealth[p];
+      a.world.entities.health[p] = maxHp; // already full — every drop of heal overflows
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 300; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.overhealShield, closeTo(maxHp * 0.30, 1e-6));
+    });
+
+    test('the shield absorbs damage before HP, independent of Shieldweave', () {
+      final ({SimWorld world, int target}) a = nearMaxHealthArena(
+        talent: true,
+        autoFire: false,
+      );
+      final int p = a.world.player.index;
+      final double maxHp = a.world.entities.maxHealth[p];
+      a.world.entities.health[p] = maxHp;
+      a.world.hero.overhealShield = maxHp * 0.10;
+      a.world.boons.shield = 0; // Shieldweave's own pool, untouched
+
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.05, source: -1);
+
+      expect(dealt, closeTo(0, 1e-6),
+          reason: 'a hit smaller than the shield should cost no HP at all');
+      expect(a.world.entities.health[p], closeTo(maxHp, 1e-6));
+      expect(a.world.hero.overhealShield, closeTo(maxHp * 0.05, 1e-6));
+    });
+  });
+
   group('Heavy Ordnance', () {
     /// A primary target 8 u east of the player, and a second, undamaged
     /// "nearby" enemy [offset] u further east still — far enough along the
@@ -3940,10 +4049,11 @@ void main() {
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
       // Body/Phoenix Trail/Supernova, Vane's Marked, Corvin's whole kit
       // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
-      // Carom/Perfect Carom), Kestrel's Bleed, and Rook's Crush.
+      // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush, and Lira's
+      // Overheal.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(45),
+        lessThanOrEqualTo(44),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4039,9 +4149,13 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // hero whose entire kit is reachable with nothing deferred.
 
   // liraLifebound, liraVerdantBloom, liraEndlessBloom and liraBloodBloom are
-  // implemented — see the "Lifebound and Verdant Bloom" group.
+  // implemented — see the "Lifebound and Verdant Bloom" group. liraOverheal
+  // is implemented too — see the "Overheal" group; ADR 0016 covers which
+  // heal sources it catches (Lira's own two) and which it deliberately
+  // does not (Boon-granted healing — the same unaudited-surface reasoning
+  // Thane's own Tempered was deferred over). Lira is the fourth hero (after
+  // Sable, Kade, Corvin) with nothing deferred.
   // liraDeepRoots never joined this enum — one StatModifier on lifesteal.
-  HeroBehaviour.liraOverheal,
 
   // corvinBounce, corvinCaroms, corvinTrueBounce, corvinHardBounce,
   // corvinDoubleBounce, corvinEndlessCarom and corvinPerfectCarom are all

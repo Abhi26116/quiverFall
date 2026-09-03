@@ -461,10 +461,15 @@ class SimWorld {
       if (hero.bloomRemaining < 0) hero.bloomRemaining = 0;
       if (hero.bloomHealPerSecond > 0 && !player.isNone) {
         final int p = player.index;
-        final double healed = entities.health[p] +
-            entities.maxHealth[p] * hero.bloomHealPerSecond * dt;
         final double cap = entities.maxHealth[p];
-        entities.health[p] = healed > cap ? cap : healed;
+        final double healed =
+            entities.health[p] + cap * hero.bloomHealPerSecond * dt;
+        if (healed > cap) {
+          entities.health[p] = cap;
+          _applyLiraOverheal(healed - cap, cap);
+        } else {
+          entities.health[p] = healed;
+        }
       }
     }
     if (hero.redDrawRemaining > 0) {
@@ -962,6 +967,21 @@ class SimWorld {
   static const double _liraEndlessBloomDuration = 8.0;
   static const double _liraEndlessBloomHealFraction = 0.60;
   static const double _liraBloodBloomDamageBonus = 0.80;
+
+  /// *Overheal* (T3a) — the healing Bloom's own clamp would otherwise waste
+  /// becomes a shield instead, capped at 30 % max HP. `ProjectileSystem`
+  /// carries an identical block for Lifebound's own lifesteal — no shared
+  /// heal-clamp helper exists anywhere in the sim (see that file's own copy
+  /// of this constant for why), so this one covers only what happens inside
+  /// `SimWorld`'s own tick. ADR 0016 covers the full scope decision.
+  static const double _liraOverhealShieldCap = 0.30;
+
+  void _applyLiraOverheal(double overflow, double maxHealth) {
+    if (!hero.has(HeroBehaviour.liraOverheal)) return;
+    final double cap = maxHealth * _liraOverhealShieldCap;
+    final double newShield = hero.overhealShield + overflow;
+    hero.overhealShield = newShield > cap ? cap : newShield;
+  }
 
   /// *Glacier Nail* — a direct freeze at the nearest target (the same
   /// selection [FiringSystem.selectTarget] already uses to aim every other

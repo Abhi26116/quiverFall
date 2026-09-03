@@ -155,6 +155,16 @@ class HeroRuntime {
   /// Bloom's +25 %, or Blood Bloom's +80 % in its place.
   double bloomDamageBonus = 0;
 
+  /// Lira's *Overheal* (T3a) — a shield sourced from her own excess
+  /// healing (Lifebound's lifesteal, Verdant Bloom's own regen), capped at
+  /// 30 % max HP. Kept separate from `BoonRuntime.shield` (Shieldweave's
+  /// own Momentum-based pool) rather than sharing it: that pool's own
+  /// capacity-shrink rule is about Momentum, has nothing to do with Lira's
+  /// heals, and would silently eat this shield the moment Momentum
+  /// dropped. Consumed the same way in `EnemyAttack`'s own damage path,
+  /// as a second, independent pool.
+  double overhealShield = 0;
+
   /// Seconds left on Thane's *Red Draw*. Zero means inactive.
   double redDrawRemaining = 0;
 
@@ -272,6 +282,7 @@ class HeroRuntime {
     bloomRemaining = 0;
     bloomHealPerSecond = 0;
     bloomDamageBonus = 0;
+    overhealShield = 0;
     redDrawRemaining = 0;
     redDrawDamageBonus = 0;
     redDrawFireRateMultiplier = 1.0;

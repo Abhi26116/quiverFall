@@ -111,6 +111,18 @@ abstract final class EnemyAttack {
       }
     }
 
+    // *Overheal* (Lira T3a) — a second, independent shield pool (never
+    // shared with Shieldweave's own `boons.shield` above — see
+    // `HeroRuntime.overhealShield`'s own doc comment for why), spent the
+    // same way once Shieldweave's own pool is exhausted.
+    final HeroRuntime? hero = ctx.hero;
+    if (hero != null && hero.overhealShield > 0) {
+      final double absorbed =
+          dealt < hero.overhealShield ? dealt : hero.overhealShield;
+      hero.overhealShield -= absorbed;
+      dealt -= absorbed;
+    }
+
     ctx.entities.health[p] -= dealt;
 
     // ── Refuse to die ──────────────────────────────────────────────────────
@@ -120,7 +132,6 @@ abstract final class EnemyAttack {
     // cheapest first — so a player holding more than one spends the
     // cheapest before the others.
     if (ctx.entities.health[p] <= 0) {
-      final HeroRuntime? hero = ctx.hero;
       if (boons != null &&
           boons.has(BoonBehaviour.guardianAngel) &&
           !boons.guardianAngelSpent) {
