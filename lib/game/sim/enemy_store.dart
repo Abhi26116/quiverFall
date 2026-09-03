@@ -87,7 +87,8 @@ class EnemyStore {
         untargetable = Uint8List(capacity),
         variant = Uint8List(capacity),
         telegraphSlot = Int32List(capacity),
-        telegraphSerial = Int32List(capacity);
+        telegraphSerial = Int32List(capacity),
+        markedRemaining = Float64List(capacity);
 
   final int _capacity;
 
@@ -219,6 +220,13 @@ class EnemyStore {
   /// Auto-aim skips these. Airborne Bounders and Gravebound corpses.
   final Uint8List untargetable;
 
+  /// Vane's *Marked* (T3a) — seconds left on the +25 % damage-taken window
+  /// a hit beyond 8 u opens. Read as a plain boonSum term in
+  /// `ProjectileSystem._applyHit`, the same shape every other per-target
+  /// timed bonus in this file already uses (`slowRemaining`,
+  /// `enrageRemaining`).
+  final Float64List markedRemaining;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -318,6 +326,7 @@ class EnemyStore {
     speedScale[slot] = 1.0;
     enrageRemaining[slot] = 0;
     slowRemaining[slot] = 0;
+    markedRemaining[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

@@ -270,6 +270,9 @@ abstract final class ProjectileSystem {
 
   static const double _vaneCloseRangeThreshold = 3.0;
   static const double _vaneCloseRangePenalty = -0.30;
+  static const double _vaneMarkedThreshold = 8.0;
+  static const double _vaneMarkedDuration = 5.0;
+  static const double _vaneMarkedBonus = 0.25;
 
   // ── Halden: Verdict ────────────────────────────────────────────────────────
 
@@ -462,6 +465,15 @@ abstract final class ProjectileSystem {
       boonSum += _vaneCloseRangePenalty;
     }
 
+    // *Marked* (T3a) — reads whatever mark this target is already carrying
+    // from an earlier hit; the hit that lands the mark itself (below, after
+    // damage resolves) does not get its own bonus retroactively, the same
+    // "applies to what comes after, not what caused it" shape Kindling's
+    // own Burn already has.
+    if (enemies != null && enemies.markedRemaining[target] > 0) {
+      boonSum += _vaneMarkedBonus;
+    }
+
     // *Verdict* — only the elite half is reachable before Phase 11 builds
     // bosses. "+40 % to bosses and elites" and "boss attacks deal -15 %"
     // both need an `isBoss` check that does not exist on EnemyStore yet;
@@ -540,6 +552,16 @@ abstract final class ProjectileSystem {
       pierceIndex: effectivePierceIndex,
       armourFactor: armour,
     );
+
+    // *Marked* — a hit landed from beyond 8 u opens (or refreshes) the
+    // window itself; read above, ahead of this resolve, so the hit that
+    // lands the mark is never boosted by its own mark.
+    if (hero != null &&
+        hero.has(HeroBehaviour.vaneMarked) &&
+        enemies != null &&
+        projectiles.distanceFlown[slot] > _vaneMarkedThreshold) {
+      enemies.markedRemaining[target] = _vaneMarkedDuration;
+    }
 
     // Streak and last-target are updated after the hit is resolved, so
     // *Follow Through* rewards the arrow *after* the one that landed and

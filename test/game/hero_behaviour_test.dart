@@ -1073,6 +1073,134 @@ void main() {
         closeTo(world.playerAttack * 14.0, 1e-9),
       );
     });
+
+    /// The player near the west wall and a stationary target 11 u away —
+    /// beyond Marked's 8 u threshold, still inside `SimConfig.arenaWidth`'s
+    /// 16 u — an out-of-bounds target is never actually hit at all
+    /// (ProjectileSystem discards any arrow whose flight leaves
+    /// `arena.containsPoint`), which the Weave group's own arena ran into
+    /// first.
+    ({SimWorld world, int target}) markedArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 46, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(1.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        HeroState(heroId: 'vane', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      return (world: world, target: target);
+    }
+
+    /// The `valueA` of the world's own first `damageDealt` event.
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('a mark on the target adds +25 % damage', () {
+      // Two separate worlds' own *first* hit, rather than a second hit in
+      // the same one: standing still for longer between two sequential
+      // hits also escalates Draw tier, which would confound the ratio with
+      // a second, unrelated multiplier.
+      final ({SimWorld world, int target}) unmarked = markedArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+      final double? plain = firstDamageDealt(unmarked.world);
+
+      final ({SimWorld world, int target}) marked = markedArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+      marked.world.enemies.markedRemaining[marked.target] = 5.0;
+      final double? boosted = firstDamageDealt(marked.world);
+
+      expect(plain, isNotNull);
+      expect(boosted, isNotNull);
+      // Marked's own +25 % is additive with Vane's own Distance term
+      // (docs/04 §4.1 rule 1 — every boonSum term sums within one source),
+      // not a clean 1.25x on its own: at ~11 u, Distance alone already
+      // contributes 0.06 * 11 = 0.66, so the ratio is
+      // (1 + 0.66 + 0.25) / (1 + 0.66).
+      expect(boosted! / plain!, closeTo(1.91 / 1.66, 0.02));
+    });
+
+    test('a hit beyond 8 u marks the target', () {
+      final ({SimWorld world, int target}) a = markedArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 200 && a.world.enemies.markedRemaining[a.target] == 0;
+          t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.markedRemaining[a.target], greaterThan(0));
+    });
+
+    test('a hit from within 8 u does not mark the target', () {
+      final SimWorld world = SimWorld(seed: 48, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        vane,
+        const HeroState(
+            heroId: 'vane', stars: 3, talentChoices: <String, String>{'3': 'a'}),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 10.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120; t++) {
+        world.tick(idle);
+      }
+      expect(world.enemies.markedRemaining[target], 0);
+    });
+
+    test('the mark expires after 5 s once nothing keeps refreshing it', () {
+      final ({SimWorld world, int target}) a = markedArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 120 && a.world.enemies.markedRemaining[a.target] == 0;
+          t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.markedRemaining[a.target], greaterThan(0));
+
+      // Stop landing new beyond-8 u hits, or every one would refresh it.
+      a.world.autoFire = false;
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.markedRemaining[a.target], 0);
+    });
   });
 
   group('Verdict and Judgment Spear', () {
@@ -3338,12 +3466,12 @@ void main() {
       // Acting/Contagion/Corrosion/Lasting Miasma/Concentrated Miasma), and
       // Kade's whole kit (Pyre Line/Hot Iron/Deep Burn/Wildfire/Slow
       // Burn/Long Pyre/Twin Pyre), Iris's Weave, Nyx's Umbral
-      // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step, and Ashlin's
+      // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step, Ashlin's
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
-      // Body/Phoenix Trail/Supernova.
+      // Body/Phoenix Trail/Supernova, and Vane's Marked.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(55),
+        lessThanOrEqualTo(54),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -3453,11 +3581,13 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.corvinEndlessCarom,
   HeroBehaviour.corvinPerfectCarom,
 
-  // vaneDistance, vaneSteady, vanePiercingHorizon, vaneTwinHorizon and
-  // vaneSunderingHorizon are implemented — see the "Distance and Piercing
-  // Horizon" group. vaneFarsight never joined this enum — one StatModifier
-  // on damagePerDistanceCap.
-  HeroBehaviour.vaneMarked,
+  // vaneDistance, vaneSteady, vanePiercingHorizon, vaneTwinHorizon,
+  // vaneSunderingHorizon and vaneMarked are all implemented — see the
+  // "Distance and Piercing Horizon" group. Marked needed a genuinely new
+  // per-enemy timed field (`EnemyStore.markedRemaining`) rather than reuse
+  // of `slowRemaining`/`enrageRemaining`'s own shape, since it is a damage
+  // multiplier, not a speed one. vaneFarsight never joined this enum — one
+  // StatModifier on damagePerDistanceCap.
 
   // thaneBloodtide, thaneRedDraw, thaneDeeperTide, thaneLastStand,
   // thaneFrenzy, thaneLongRed and thaneCrimsonDraw are implemented — see
