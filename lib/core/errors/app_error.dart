@@ -152,3 +152,71 @@ final class NavigationError extends AppError {
           message: 'A run is already in progress.',
         );
 }
+
+/// Rejects a crafting, refinement, or affix-reroll spend before it touches
+/// [Wallet] or [InventoryState] — see `ArrowWorkshop`
+/// (`lib/game/arrows/arrow_workshop.dart`). Every constructor here names the
+/// exact precondition that failed, so a UI can tell "not enough gold" from
+/// "not enough materials" from "that slot is locked" without parsing
+/// [message].
+@immutable
+final class EconomyError extends AppError {
+  const EconomyError({required super.code, required super.message, super.cause});
+
+  const EconomyError.insufficientGold({required int need, required int have})
+      : this(
+          code: 'economy_insufficient_gold',
+          message: 'Needs $need gold, have $have.',
+        );
+
+  const EconomyError.insufficientMaterials({
+    required int tier,
+    required int need,
+    required int have,
+  }) : this(
+          code: 'economy_insufficient_materials',
+          message: 'Needs $need tier-$tier materials, have $have.',
+        );
+
+  const EconomyError.unknownArrow(String arrowId)
+      : this(
+          code: 'economy_unknown_arrow',
+          message: 'No arrow definition for "$arrowId".',
+        );
+
+  const EconomyError.arrowAlreadyOwned(String arrowId)
+      : this(
+          code: 'economy_arrow_already_owned',
+          message: 'Arrow "$arrowId" is already owned.',
+        );
+
+  const EconomyError.arrowNotOwned(String arrowId)
+      : this(
+          code: 'economy_arrow_not_owned',
+          message: 'Arrow "$arrowId" is not owned.',
+        );
+
+  const EconomyError.maxRefined(String arrowId)
+      : this(
+          code: 'economy_max_refined',
+          message: 'Arrow "$arrowId" is already at its highest refinement.',
+        );
+
+  const EconomyError.slotOutOfRange(int slot)
+      : this(
+          code: 'economy_slot_out_of_range',
+          message: 'Affix slot $slot does not exist on this arrow.',
+        );
+
+  const EconomyError.slotLocked(int slot)
+      : this(
+          code: 'economy_slot_locked',
+          message: 'Affix slot $slot is locked against reroll.',
+        );
+
+  const EconomyError.lockLimitReached()
+      : this(
+          code: 'economy_lock_limit_reached',
+          message: 'At most 2 affix slots may be locked at once.',
+        );
+}
