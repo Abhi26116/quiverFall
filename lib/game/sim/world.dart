@@ -376,6 +376,14 @@ class SimWorld {
 
   static const int _mirelleDuplicateRngLabel = 0x11201E;
 
+  /// The *Echoing* affix's own proc rolls draw from their own stream too —
+  /// same reasoning as Mirelle's Reflection, which this otherwise mirrors:
+  /// an arrow's own trinkets should not perturb anything else's seeded
+  /// sequence.
+  late final Rng _echoRng = _rng.split(_echoRngLabel);
+
+  static const int _echoRngLabel = 0xEC40;
+
   /// Sub-generator access, so each subsystem draws from an independent stream.
   ///
   /// Without this, adding one extra Boon draw would shift every subsequent
@@ -1663,6 +1671,7 @@ class SimWorld {
     double damageScale, {
     int extraPierce = 0,
     int mirelleDuplicateDepth = 0,
+    bool isEcho = false,
   }) {
     final EntityId id = entities.spawn(EntityKind.projectile);
     if (id.isNone) return -1;
@@ -1705,7 +1714,22 @@ class SimWorld {
     );
 
     _applyMirelleReflection(x, y, angle, tier, damageScale, mirelleDuplicateDepth);
+    // Echoing's own second arrow never echoes again — "a second arrow", not
+    // a chain — so this is skipped for the echo itself the same way Mirelle
+    // never re-triggers Torv's Arc counter on a duplicate.
+    if (!isEcho) _applyEchoing(x, y, angle, tier, damageScale);
     return i;
+  }
+
+  /// *Echoing* — a flat per-shot chance (summed across whichever rolled
+  /// affix slots carry it) to fire one exact extra arrow, at the same
+  /// damage and in the same direction as the shot that triggered it. No
+  /// card text mentions a damage penalty or a spread, unlike Mirelle's own
+  /// Reflection, so neither is applied here.
+  void _applyEchoing(double x, double y, double angle, DrawTier tier, double damageScale) {
+    if (hero.echoChance <= 0) return;
+    if (_echoRng.nextDouble() >= hero.echoChance) return;
+    _spawnArrow(x, y, angle, tier, damageScale, isEcho: true);
   }
 
   /// *Reflection* — each arrow has a chance to spawn one more, which can

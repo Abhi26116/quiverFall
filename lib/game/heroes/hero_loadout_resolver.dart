@@ -1,5 +1,7 @@
 import 'package:quiverfall/data/models/inventory.dart';
 import 'package:quiverfall/data/models/progression.dart';
+import 'package:quiverfall/game/arrows/affix_catalogue.dart';
+import 'package:quiverfall/game/arrows/affix_definition.dart';
 import 'package:quiverfall/game/arrows/arrow_definition.dart';
 import 'package:quiverfall/game/arrows/arrow_refinement.dart';
 import 'package:quiverfall/game/balance/curves.dart';
@@ -7,6 +9,7 @@ import 'package:quiverfall/game/boons/boon_inventory.dart';
 import 'package:quiverfall/game/boons/loadout_resolver.dart';
 import 'package:quiverfall/game/heroes/hero_definition.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/affix_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_stats.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
@@ -48,6 +51,7 @@ abstract final class HeroLoadoutResolver {
     ArrowDefinition arrow,
     ArrowInstance arrowInstance, {
     BoonInventory? boons,
+    AffixCatalogue? affixes,
   }) {
     final double heroAtk =
         Curves.heroStat(hero.stats.atk, heroState.level, heroState.stars);
@@ -96,6 +100,25 @@ abstract final class HeroLoadoutResolver {
       _compose(combined, m);
     }
 
+    // Rolled affixes — sixteen of the seventeen are a value into an
+    // existing channel, composed exactly like an arrow's own modifiers
+    // just above; Echoing alone has no channel and is read directly onto
+    // `HeroRuntime.echoChance` instead, the same "per-build number read
+    // once at loadout time" shape `chargePerDamage` already uses.
+    double echoChance = 0;
+    if (affixes != null) {
+      for (final Affix rolled in arrowInstance.affixes) {
+        final AffixDefinition? def = affixes.byKey(rolled.affixId);
+        if (def == null) continue;
+        final StatChannel? channel = def.channel;
+        if (channel != null) {
+          _compose(combined, StatModifier(channel, rolled.value));
+        } else if (def.behaviour == AffixBehaviour.echoing) {
+          echoChance += rolled.value;
+        }
+      }
+    }
+
     LoadoutResolver.apply(
       world,
       combined,
@@ -119,6 +142,7 @@ abstract final class HeroLoadoutResolver {
     world.hero
       ..setHeroActive(heroActive)
       ..setArrowActive(arrow.behaviour)
+      ..echoChance = echoChance
       // ADR 0006: the hero's own base ATK and fire rate, not the composed
       // build — Boons and the arrow change how fast damage adds up, not how
       // fast that damage fills the bar. `ultimateChargeRate` is the one

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:quiverfall/data/models/inventory.dart';
 import 'package:quiverfall/data/models/progression.dart';
+import 'package:quiverfall/game/arrows/affix_catalogue.dart';
 import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
 import 'package:quiverfall/game/arrows/arrow_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
@@ -16,6 +17,7 @@ import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
+import 'affix_test_support.dart';
 import 'arrow_test_support.dart';
 import 'enemy_test_support.dart';
 import 'hero_test_support.dart';
@@ -24,10 +26,14 @@ import 'hero_test_support.dart';
 /// is for heroes. Only 4 of the 12 arrows carry an [ArrowBehaviour] (the
 /// rest are plain StatModifiers, already exercised by `arrow_catalogue_test`
 /// and `HeroLoadoutResolver`'s own tests), and all 4 are implemented here —
-/// unlike the hero ledger, there is currently nothing left pending.
+/// unlike the hero ledger, there is currently nothing left pending. The
+/// "Affixes" group at the end is the same story for the one affix
+/// (Echoing) that needed code rather than a rolled value into an existing
+/// channel.
 void main() {
   final HeroCatalogue heroes = loadHeroes();
   final ArrowCatalogue arrows = loadArrows();
+  final AffixCatalogue affixes = loadAffixes();
   final ContentLibrary content = loadEnemies();
 
   // A hero with no passive that touches elements, Confluence, or damage —
@@ -41,7 +47,12 @@ void main() {
   final ArrowDefinition ghostshaft = arrows.byArchetype(ArrowArchetype.ghostshaft)!;
   final ArrowDefinition prismshaft = arrows.byArchetype(ArrowArchetype.prismshaft)!;
 
-  SimWorld buildWorld(ArrowDefinition arrow, {Arena? arena, double playerX = 4.0}) {
+  SimWorld buildWorld(
+    ArrowDefinition arrow, {
+    Arena? arena,
+    double playerX = 4.0,
+    List<Affix> instanceAffixes = const <Affix>[],
+  }) {
     final SimWorld world = SimWorld(seed: 301, content: content, arena: arena)
       ..autoFire = true;
     world.spawnPlayer(playerX, 4.5);
@@ -50,7 +61,8 @@ void main() {
       wren,
       const HeroState(heroId: 'wren'),
       arrow,
-      ArrowInstance(arrowId: arrow.key),
+      ArrowInstance(arrowId: arrow.key, affixes: instanceAffixes),
+      affixes: affixes,
     );
     return world;
   }
@@ -296,6 +308,98 @@ void main() {
         world.tick(idle);
       }
       expect(world.entities.health[target], lessThan(1e9));
+    });
+  });
+
+  group('Affixes', () {
+    Affix rolled(String key, double value) => Affix(affixId: key, value: value);
+
+    test('a channel affix composes exactly like an arrow\'s own modifier', () {
+      final SimWorld plainWorld = buildWorld(ashShaft);
+      spawnTarget(plainWorld, 12.0);
+      final double? plain = firstDamageDealt(plainWorld);
+
+      final SimWorld sharpWorld = buildWorld(
+        ashShaft,
+        instanceAffixes: <Affix>[rolled('sharpened', 0.06)],
+      );
+      spawnTarget(sharpWorld, 12.0);
+      final double? sharp = firstDamageDealt(sharpWorld);
+
+      expect(plain, isNotNull);
+      expect(sharp, isNotNull);
+      expect(sharp! / plain!, closeTo(1.06, 0.02));
+    });
+
+    test('Piercing adds +1 pierce, reaching a second enemy in line', () {
+      final SimWorld world = buildWorld(
+        ashShaft,
+        instanceAffixes: <Affix>[rolled('piercing', 1.0)],
+      );
+      final int primary = spawnTarget(world, 8.0);
+      final int secondary = spawnTarget(world, 9.0);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        world.tick(idle);
+      }
+      expect(world.entities.health[primary], lessThan(1e9));
+      expect(world.entities.health[secondary], lessThan(1e9));
+    });
+
+    test('without an AffixCatalogue, an arrow instance\'s affixes are ignored',
+        () {
+      final SimWorld world = SimWorld(seed: 302, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        wren,
+        const HeroState(heroId: 'wren'),
+        ashShaft,
+        ArrowInstance(
+          arrowId: 'ash_shaft',
+          affixes: <Affix>[rolled('keen', 0.05)],
+        ),
+        // No `affixes:` catalogue passed.
+      );
+      // Wren's own Trueshot already grants +8 % crit chance on its own;
+      // Keen's own +5 % must not also land without a catalogue to resolve
+      // "keen" against.
+      expect(world.combat.critChance, closeTo(0.08, 1e-6));
+    });
+
+    test('Echoing sums its own chance across every rolled slot that carries it',
+        () {
+      final SimWorld world = buildWorld(
+        ashShaft,
+        instanceAffixes: <Affix>[rolled('echoing', 0.10), rolled('echoing', 0.05)],
+      );
+      expect(world.hero.echoChance, closeTo(0.15, 1e-9));
+    });
+
+    test('Echoing fires roughly its own extra share of arrows', () {
+      final SimWorld baseline = buildWorld(ashShaft);
+      spawnTarget(baseline, 12.0);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600; t++) {
+        baseline.tick(idle);
+      }
+      final int baseArrows = baseline.events.countOf(SimEventType.arrowFired);
+
+      final SimWorld echoing = buildWorld(
+        ashShaft,
+        instanceAffixes: <Affix>[rolled('echoing', 0.50)],
+      );
+      spawnTarget(echoing, 12.0);
+      for (int t = 0; t < 600; t++) {
+        echoing.tick(idle);
+      }
+      final int echoArrows = echoing.events.countOf(SimEventType.arrowFired);
+
+      expect(baseArrows, greaterThan(0));
+      // ~1.5x as many arrows at a 50 % echo chance — a generous tolerance,
+      // since this is one seeded sample rather than a driven RNG check.
+      expect(echoArrows / baseArrows, closeTo(1.5, 0.25));
     });
   });
 }

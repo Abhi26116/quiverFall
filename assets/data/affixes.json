@@ -1,0 +1,174 @@
+{
+  "affixes": [
+    {
+      "archetype": "sharpened",
+      "key": "sharpened",
+      "name": "Sharpened",
+      "rarity": "common",
+      "description": "+4-9% damage",
+      "channel": "damage",
+      "minValue": 0.04,
+      "maxValue": 0.09
+    },
+    {
+      "archetype": "keen",
+      "key": "keen",
+      "name": "Keen",
+      "rarity": "common",
+      "description": "+2-5% crit chance",
+      "channel": "critChance",
+      "minValue": 0.02,
+      "maxValue": 0.05
+    },
+    {
+      "archetype": "swift",
+      "key": "swift",
+      "name": "Swift",
+      "rarity": "common",
+      "description": "+3-7% fire rate",
+      "channel": "fireRate",
+      "minValue": 0.03,
+      "maxValue": 0.07
+    },
+    {
+      "archetype": "wide",
+      "key": "wide",
+      "name": "Wide",
+      "rarity": "common",
+      "description": "+5-12% hitbox",
+      "channel": "arrowRadius",
+      "minValue": 0.05,
+      "maxValue": 0.12
+    },
+    {
+      "archetype": "fleet",
+      "key": "fleet",
+      "name": "Fleet",
+      "rarity": "common",
+      "description": "+4-10% projectile speed",
+      "channel": "projectileSpeed",
+      "minValue": 0.04,
+      "maxValue": 0.10
+    },
+    {
+      "archetype": "weaving",
+      "key": "weaving",
+      "name": "Weaving",
+      "rarity": "rare",
+      "description": "+0.15-0.40s Windline duration",
+      "channel": "windlineDuration",
+      "minValue": 0.15,
+      "maxValue": 0.40
+    },
+    {
+      "archetype": "confluent",
+      "key": "confluent",
+      "name": "Confluent",
+      "rarity": "rare",
+      "description": "+6-15% Confluence damage",
+      "channel": "confluenceDamage",
+      "minValue": 0.06,
+      "maxValue": 0.15
+    },
+    {
+      "archetype": "piercing",
+      "key": "piercing",
+      "name": "Piercing",
+      "rarity": "rare",
+      "description": "+1 pierce",
+      "channel": "pierce",
+      "minValue": 1.0,
+      "maxValue": 1.0
+    },
+    {
+      "archetype": "kindled",
+      "key": "kindled",
+      "name": "Kindled",
+      "rarity": "rare",
+      "description": "+5-12% Ember damage",
+      "channel": "emberDamage",
+      "minValue": 0.05,
+      "maxValue": 0.12
+    },
+    {
+      "archetype": "rimed",
+      "key": "rimed",
+      "name": "Rimed",
+      "rarity": "rare",
+      "description": "+5-12% Frost effect",
+      "channel": "frostEffect",
+      "minValue": 0.05,
+      "maxValue": 0.12
+    },
+    {
+      "archetype": "charged",
+      "key": "charged",
+      "name": "Charged",
+      "rarity": "rare",
+      "description": "+5-12% Storm damage",
+      "channel": "stormDamage",
+      "minValue": 0.05,
+      "maxValue": 0.12
+    },
+    {
+      "archetype": "blighted",
+      "key": "blighted",
+      "name": "Blighted",
+      "rarity": "rare",
+      "description": "+5-12% Toxin damage",
+      "channel": "toxinDamage",
+      "minValue": 0.05,
+      "maxValue": 0.12
+    },
+    {
+      "archetype": "executioner",
+      "key": "executioner",
+      "name": "Executioner",
+      "rarity": "rare",
+      "description": "+8-20% crit damage",
+      "channel": "critDamage",
+      "minValue": 0.08,
+      "maxValue": 0.20
+    },
+    {
+      "archetype": "fortune",
+      "key": "fortune",
+      "name": "Fortune",
+      "rarity": "rare",
+      "description": "+3-8% gold",
+      "channel": "goldMultiplier",
+      "minValue": 0.03,
+      "maxValue": 0.08
+    },
+    {
+      "archetype": "threaded",
+      "key": "threaded",
+      "name": "Threaded",
+      "rarity": "epic",
+      "description": "Confluence cap +1",
+      "channel": "confluenceStacks",
+      "minValue": 1.0,
+      "maxValue": 1.0
+    },
+    {
+      "archetype": "resonant",
+      "key": "resonant",
+      "name": "Resonant",
+      "rarity": "epic",
+      "description": "Reactions deal +20-35%",
+      "channel": "reactionDamage",
+      "minValue": 0.20,
+      "maxValue": 0.35
+    },
+    {
+      "archetype": "echoing",
+      "key": "echoing",
+      "name": "Echoing",
+      "rarity": "epic",
+      "description": "8-15% chance to fire a second arrow",
+      "behaviour": "echoing",
+      "minValue": 0.08,
+      "maxValue": 0.15
+    }
+  ]
+}

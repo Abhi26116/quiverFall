@@ -61,6 +61,14 @@ class HeroRuntime {
   /// dividing by zero.
   double chargePerDamage = 0;
 
+  /// The *Echoing* affix's own chance to fire one extra arrow per shot —
+  /// summed across whichever rolled affix slots carry it, by
+  /// `HeroLoadoutResolver.apply`. A per-build number read directly, the
+  /// same shape as [chargePerDamage], rather than a `StatChannel`: nothing
+  /// else in the game currently grants an echo chance, so there is no
+  /// composed pool to add it to yet.
+  double echoChance = 0;
+
   /// Adds this hit's share of Ultimate charge. [rawDamage] is the damage the
   /// hit actually dealt — pre-mitigation makes an armoured target charge the
   /// Ultimate slower than a fodder one, which is backwards for a resource
@@ -237,6 +245,7 @@ class HeroRuntime {
     }
     ultimateCharge = 0;
     chargePerDamage = 0;
+    echoChance = 0;
     _readyAnnounced = false;
     flurryRemaining = 0;
     flurryRateMultiplier = 1.0;
