@@ -6,8 +6,10 @@ import 'package:quiverfall/data/repositories/player_repository.dart';
 import 'package:quiverfall/features/devtools/sim_bench_screen.dart';
 import 'package:quiverfall/features/gameplay/application/run_coordinator.dart';
 import 'package:quiverfall/features/gameplay/presentation/game_screen.dart';
+import 'package:quiverfall/features/heroes/presentation/hero_screen.dart';
 import 'package:quiverfall/features/menu/presentation/menu_screen.dart';
 import 'package:quiverfall/features/shell/placeholder_screen.dart';
+import 'package:quiverfall/game/content/content_library.dart';
 
 /// Every route in the game, in one file.
 ///
@@ -20,11 +22,14 @@ class AppRouter {
   AppRouter({
     required PlayerRepository repository,
     required RunCoordinator runs,
+    required ContentLibrary content,
   })  : _repository = repository,
-        _runs = runs;
+        _runs = runs,
+        _content = content;
 
   final PlayerRepository _repository;
   final RunCoordinator _runs;
+  final ContentLibrary _content;
 
   late final GoRouter router = GoRouter(
     initialLocation: Routes.menu,
@@ -93,11 +98,8 @@ class AppRouter {
       ),
       GoRoute(
         path: Routes.heroes,
-        builder: (_, __) => const PlaceholderScreen(
-          title: 'Heroes',
-          buildPhase: 10,
-          detail: '20 heroes, passives, ultimates, talent trees.',
-        ),
+        builder: (_, __) =>
+            HeroScreen(repository: _repository, heroes: _content.heroes),
       ),
       GoRoute(
         path: Routes.gear,

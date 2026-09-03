@@ -15,6 +15,8 @@ import 'package:quiverfall/data/models/player_save.dart';
 import 'package:quiverfall/data/models/run_snapshot.dart';
 import 'package:quiverfall/data/repositories/player_repository.dart';
 import 'package:quiverfall/features/gameplay/application/run_coordinator.dart';
+import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/content/content_loader.dart';
 import 'package:quiverfall/services/device/device_benchmark.dart';
 import 'package:quiverfall/services/device/quality_controller.dart';
 
@@ -43,7 +45,7 @@ Future<Result<void, BootstrapFailure>> bootstrap() async {
   if (data.isErr) return data;
 
   _registerServices();
-  _registerGame();
+  await _registerGame();
 
   return _loadSave(logger);
 }
@@ -121,12 +123,21 @@ void _registerServices() {
   // Phases 1–15 may depend on them.
 }
 
-void _registerGame() {
+Future<void> _registerGame() async {
+  // Loaded once, here, rather than lazily by the first screen that needs it:
+  // Hero/Gear/Loadout are menu-reachable screens, not gameplay, so they can
+  // be the *first* thing a session touches — GameScreen's own
+  // `ContentLoader.load()` call just returns this same cached instance later
+  // (`ContentLoader.cached` is set the moment this resolves).
+  final ContentLibrary content = await ContentLoader.load();
+  locator.registerSingleton<ContentLibrary>(content);
+
   locator.registerSingleton<RunCoordinator>(RunCoordinator());
   locator.registerLazySingleton<AppRouter>(
     () => AppRouter(
       repository: locator<PlayerRepository>(),
       runs: locator<RunCoordinator>(),
+      content: content,
     ),
   );
 }
