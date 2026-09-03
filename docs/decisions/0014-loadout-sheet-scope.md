@@ -2,9 +2,31 @@
 
 **Phase** 10
 **Date** 2026-09-03
-**Status** Accepted as a deliberate scope boundary, not a bug.
+**Status** Partially resolved (2026-09-03, same day) — see the update below.
+The GameScreen half this ADR flagged is now built; Vigor spend is not.
 **Severity** Medium. The screen this ADR is about works completely; what it
-hands off to does not consume everything it's given yet.
+hands off to did not consume everything it was given yet.
+
+---
+
+## Update — GameScreen now reads the claimed loadout
+
+The "what's deliberately not built here" section below described exactly
+the next piece of work, and that is what got built next: `GameScreen`
+gained `heroId`/`heroState`/`arrowId`/`arrowInstance` (all nullable —
+`null` keeps the old hero-blind `lawfulAttackFor` placeholder, for the
+smoke test, the dev bench, and any deep link that reaches `/game` outside
+the Loadout Sheet), resolved against the loaded `ContentLibrary` and
+applied via `HeroLoadoutResolver.apply` immediately after `StageRunner`
+spawns the player — *after*, specifically, because `apply`'s own max-health
+clamp silently no-ops against a player that does not exist yet.
+`AppRouter`'s `/game` route now reads `RunCoordinator.activeRun` and
+`PlayerRepository.save` to supply them, and also reads the real
+`chapter`/`stage` from the claimed `RunSnapshot.stage` rather than always
+defaulting to 1/1.
+
+Vigor is still not spent on DESCEND — that half is untouched, for the exact
+reason stated below.
 
 ---
 

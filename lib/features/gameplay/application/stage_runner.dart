@@ -357,19 +357,25 @@ class StageRunner {
     return max > 0 ? max : _defaultMaxHealth;
   }
 
-  /// Phase 10 computes real player HP from the hero and the Spire. Until then
-  /// every enemy's damage is a *fraction* of max HP, so the absolute number
-  /// changes nothing about the fight.
+  /// `GameScreen` now calls `HeroLoadoutResolver.apply` once a real hero is
+  /// known, which sets the player entity's real max HP directly — this is
+  /// only ever read when that never happened (a caller building a
+  /// [SimWorld] with no chosen build at all, `stage_runner_test.dart`
+  /// included) or the player is not currently alive. Every enemy's damage is
+  /// a *fraction* of max HP regardless, so even this placeholder's absolute
+  /// number never changes anything about a fight's balance.
   static const double _defaultMaxHealth = 100;
 }
 
-/// Player HP used until Phase 10 supplies a real loadout.
-const double kDefaultPlayerHealth = 100;
-
 /// Attack that lands TTK inside the 0.8–1.6 s band of Design Law 1.
 ///
-/// Two Tier-III arrows kill a x1.0 common enemy. Phase 10 replaces this with
-/// the composed hero/arrow/Spire value.
+/// Two Tier-III arrows kill a x1.0 common enemy. The generic placeholder
+/// `buildStageWorld` sets `world.playerAttack` to — `GameScreen` overwrites
+/// it with the real composed hero/arrow value via `HeroLoadoutResolver.apply`
+/// once a build is actually chosen; callers with no hero to supply (tests,
+/// tools) keep this number as-is. Spire is not part of that composed value
+/// yet either way — the Spire itself is still Phase 13's own gap, not this
+/// one's.
 double lawfulAttackFor(int globalStage) =>
     Curves.enemyHp(globalStage) / (2.10 * 2);
 

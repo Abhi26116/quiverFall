@@ -4,10 +4,13 @@ import 'package:flutter/scheduler.dart';
 import 'package:quiverfall/core/di/service_locator.dart';
 import 'package:quiverfall/core/routing/routes.dart';
 import 'package:quiverfall/core/theme/tokens.dart';
+import 'package:quiverfall/data/models/inventory.dart';
+import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
 import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
 import 'package:quiverfall/features/gameplay/presentation/boon_choice.dart';
 import 'package:quiverfall/features/gameplay/presentation/shrine.dart';
+import 'package:quiverfall/game/arrows/arrow_definition.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_content_loader.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
@@ -15,6 +18,8 @@ import 'package:quiverfall/game/boons/synergy_catalogue.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/content_loader.dart';
 import 'package:quiverfall/game/feel/cues.dart';
+import 'package:quiverfall/game/heroes/hero_definition.dart';
+import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
 import 'package:quiverfall/game/level/level_generator.dart';
 import 'package:quiverfall/game/level/stage_blueprint.dart';
 import 'package:quiverfall/game/sim/world.dart';
@@ -33,15 +38,21 @@ import 'package:quiverfall/view/quiverfall_game.dart';
 /// else Phase 6 deferred — a pause sheet, an ultimate button, a victory flow —
 /// still is not here.
 ///
-/// Phase 8 replaces the hard-coded room with the real level generator and the
-/// `RunCoordinator` handshake; Phase 15 replaces the HUD with the production
-/// one.
+/// Phase 8 replaced the hard-coded room with the real level generator;
+/// Task 7 (Phase 10) landed the other half of that same doc line, the
+/// `RunCoordinator` handshake — `AppRouter`'s own `/game` route now resolves
+/// [heroId]/[arrowId] from the claimed run and passes them here. Phase 15
+/// replaces the HUD with the production one.
 class GameScreen extends StatefulWidget {
   const GameScreen({
     this.chapter = 1,
     this.stage = 1,
     this.playerId = 'local',
     this.showTelemetry = true,
+    this.heroId,
+    this.heroState,
+    this.arrowId,
+    this.arrowInstance,
     super.key,
   });
 
@@ -56,6 +67,21 @@ class GameScreen extends StatefulWidget {
   /// numbers behind the gate have to be readable off the device by whoever is
   /// running the session.
   final bool showTelemetry;
+
+  /// The build to play this run with, resolved against the loaded
+  /// [ContentLibrary] in [_GameScreenState._start] rather than passed as
+  /// already-resolved [HeroDefinition]/[ArrowDefinition] objects — content
+  /// lookups all happen in the one place this screen already does them,
+  /// alongside the enemy table and the Boon catalogue.
+  ///
+  /// Null (the smoke test's and dev bench's own default, and any deep link
+  /// that reaches `/game` without going through the Loadout Sheet) means "no
+  /// chosen build" — the sim keeps the generic [lawfulAttackFor] baseline it
+  /// always has, rather than crashing on a build that was never supplied.
+  final String? heroId;
+  final HeroState? heroState;
+  final String? arrowId;
+  final ArrowInstance? arrowInstance;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -158,6 +184,34 @@ class _GameScreenState extends State<GameScreen>
         boonCatalogue: boons.$1,
         synergies: boons.$2,
       )..start();
+
+      // The chosen build, applied *after* `start()` — not inside
+      // `buildStageWorld`, before it — because `start()` is what spawns the
+      // player entity, and `HeroLoadoutResolver.apply`'s own max-health
+      // clamp silently no-ops against a player that does not exist yet
+      // (`LoadoutResolver._applyMaxHealth`'s own `if (world.player.isNone)
+      // return;` guard). Every hero_behaviour_test.dart arena already
+      // spawns before applying for the same reason.
+      final HeroDefinition? hero =
+          widget.heroId == null ? null : content.heroes.byKey(widget.heroId!);
+      final ArrowDefinition? arrow = widget.arrowId == null
+          ? null
+          : content.arrows.byKey(widget.arrowId!);
+      final HeroState? heroState = widget.heroState;
+      final ArrowInstance? arrowInstance = widget.arrowInstance;
+      if (hero != null &&
+          heroState != null &&
+          arrow != null &&
+          arrowInstance != null) {
+        HeroLoadoutResolver.apply(
+          sim,
+          hero,
+          heroState,
+          arrow,
+          arrowInstance,
+          affixes: content.affixes,
+        );
+      }
 
       setState(() {
         _runner = runner;

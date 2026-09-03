@@ -76,7 +76,21 @@ class AppRouter {
               RouteGuards.game(_repository.saveNotifier.value, _runs);
           return rejection == null ? null : Routes.menu;
         },
-        builder: (_, __) => const GameScreen(),
+        builder: (_, __) {
+          // The guard above already requires an active run, but `_starting`
+          // (claimed, not yet completed) also satisfies it — this stays
+          // null-safe rather than assuming `completeStart` already ran.
+          final RunSnapshot? snapshot = _runs.activeRun.value;
+          if (snapshot == null) return const GameScreen();
+          return GameScreen(
+            chapter: snapshot.stage.chapter,
+            stage: snapshot.stage.stage,
+            heroId: snapshot.heroId,
+            heroState: _repository.save.heroes[snapshot.heroId],
+            arrowId: snapshot.arrowId,
+            arrowInstance: _repository.save.inventory.arrows[snapshot.arrowId],
+          );
+        },
       ),
       GoRoute(
         path: Routes.spire,
