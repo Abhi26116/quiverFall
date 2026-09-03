@@ -11,6 +11,7 @@ import 'package:quiverfall/game/heroes/hero_catalogue.dart';
 import 'package:quiverfall/game/heroes/hero_definition.dart';
 import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
 import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
+import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
@@ -51,6 +52,7 @@ void main() {
   final HeroDefinition rook = heroes.byArchetype(HeroArchetype.rook)!;
   final HeroDefinition iris = heroes.byArchetype(HeroArchetype.iris)!;
   final HeroDefinition ashlin = heroes.byArchetype(HeroArchetype.ashlin)!;
+  final HeroDefinition corvin = heroes.byArchetype(HeroArchetype.corvin)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -64,6 +66,32 @@ void main() {
       world,
       hero,
       HeroState(heroId: hero.key),
+      ashShaft,
+      const ArrowInstance(arrowId: 'ash_shaft'),
+    );
+    final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+    world.enemies.speedScale[mote] = 0;
+    world.entities.maxHealth[mote] = 1e9;
+    world.entities.health[mote] = 1e9;
+    return (world: world, target: mote);
+  }
+
+  /// Same shape as [heroArena], but for Corvin's own tests, which need an
+  /// [Arena] with an interior wall to ricochet off of — none of the other
+  /// heroes above needed geometry, only a stationary target.
+  ({SimWorld world, int target}) corvinArena({
+    Arena? arena,
+    double playerX = 4.0,
+    Map<String, String> talentChoices = const <String, String>{},
+    int stars = 0,
+  }) {
+    final SimWorld world =
+        SimWorld(seed: 13, content: content, arena: arena)..autoFire = true;
+    world.spawnPlayer(playerX, 4.5);
+    HeroLoadoutResolver.apply(
+      world,
+      corvin,
+      HeroState(heroId: 'corvin', stars: stars, talentChoices: talentChoices),
       ashShaft,
       const ArrowInstance(arrowId: 'ash_shaft'),
     );
@@ -3425,6 +3453,253 @@ void main() {
     });
   });
 
+  group('Bounce and Caroms', () {
+    test('Bounce grants an ordinary arrow one ricochet off a wall', () {
+      final Arena arena =
+          Arena.standard(walls: <Rect>[const Rect(5.0, 3.0, 5.3, 6.0)]);
+      final ({SimWorld world, int target}) a =
+          corvinArena(arena: arena, playerX: 2.0);
+
+      a.world.tick(InputSnapshot());
+      int? slot;
+      for (int e = 0; e < a.world.events.count; e++) {
+        if (a.world.events.typeAt(e) == SimEventType.arrowFired) {
+          slot = a.world.events.entityAAt(e);
+        }
+      }
+      expect(slot, isNotNull);
+      expect(a.world.projectiles.ricochetsLeft[slot!], 1);
+    });
+
+    test('a ricocheted arrow lays a new Windline segment', () {
+      final Arena arena =
+          Arena.standard(walls: <Rect>[const Rect(5.0, 3.0, 5.3, 6.0)]);
+      final ({SimWorld world, int target}) a =
+          corvinArena(arena: arena, playerX: 2.0);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 20; t++) {
+        a.world.tick(idle);
+      }
+      int aliveSegments = 0;
+      for (int s = 0; s < a.world.windlines.capacity; s++) {
+        if (a.world.windlines.isAlive(s)) aliveSegments++;
+      }
+      expect(aliveSegments, greaterThan(0),
+          reason: 'the ricochet point itself should have cut a segment, '
+              'not just the arrow\'s own periodic trail');
+    });
+
+    test('Caroms grants 4 ricochets to arrows fired during it', () {
+      final ({SimWorld world, int target}) a = corvinArena();
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.caromsRemaining,
+          closeTo(HeroRuntime.caromsDuration, 1e-9));
+
+      a.world.autoFire = true;
+      a.world.tick(InputSnapshot());
+      int? slot;
+      for (int e = 0; e < a.world.events.count; e++) {
+        if (a.world.events.typeAt(e) == SimEventType.arrowFired) {
+          slot = a.world.events.entityAAt(e);
+        }
+      }
+      expect(slot, isNotNull);
+      expect(a.world.projectiles.ricochetsLeft[slot!], 4);
+    });
+
+    test(
+        'True Bounce (★1a) redirects a wall ricochet toward the nearest enemy',
+        () {
+      final Arena arena =
+          Arena.standard(walls: <Rect>[const Rect(5.0, 3.0, 5.3, 6.0)]);
+      final ({SimWorld world, int target}) a = corvinArena(
+        arena: arena,
+        playerX: 2.0,
+        stars: 1,
+        talentChoices: const <String, String>{'1': 'a'},
+      );
+
+      a.world.tick(InputSnapshot());
+      int? slot;
+      for (int e = 0; e < a.world.events.count; e++) {
+        if (a.world.events.typeAt(e) == SimEventType.arrowFired) {
+          slot = a.world.events.entityAAt(e);
+        }
+      }
+      expect(slot, isNotNull);
+
+      // Spawned only *after* the shot fires, so it plays no part in
+      // auto-fire's own initial target choice (`corvinArena`'s far mote is
+      // what sends this shot due east into the wall) — only in which
+      // enemy True Bounce redirects the ricochet toward. Off the
+      // reflection axis: a plain angle-reflection off this vertical wall
+      // only flips velX, leaving velY at ~0 (the shot travels due east).
+      // Redirecting toward this enemy instead means velY turns positive.
+      final int seek = a.world.spawnEnemy(EnemyArchetype.mote, 3.0, 7.5);
+      a.world.enemies.speedScale[seek] = 0;
+
+      final InputSnapshot idle = InputSnapshot();
+      bool bounced = false;
+      for (int t = 0; t < 20; t++) {
+        a.world.tick(idle);
+        if (a.world.entities.alive[slot!] == 1 &&
+            a.world.entities.velX[slot] < 0) {
+          bounced = true;
+          break;
+        }
+      }
+      expect(bounced, isTrue);
+      expect(a.world.entities.velY[slot!], greaterThan(0));
+    });
+
+    test('Hard Bounce (★1b) adds +20% damage to a ricocheted hit', () {
+      ({SimWorld world, int primary, int secondary}) build(
+          {required bool hardBounce}) {
+        final SimWorld world = SimWorld(seed: 21, content: content)
+          ..autoFire = true;
+        world.spawnPlayer(4.0, 4.5);
+        HeroLoadoutResolver.apply(
+          world,
+          corvin,
+          HeroState(
+            // Both builds sit at ★1 — matched so Curves.heroStat's own
+            // +12%/star (attack, fire rate, everything) never leaks into
+            // this comparison, only the talent choice differs. Bare ★1
+            // with no talent picked leaves the T1 node inert, which is
+            // exactly the "no Hard Bounce" baseline this test wants.
+            heroId: 'corvin',
+            stars: 1,
+            talentChoices:
+                hardBounce ? const <String, String>{'1': 'b'} : const {},
+          ),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+        final int primary = world.spawnEnemy(EnemyArchetype.mote, 8.0, 4.5);
+        world.enemies.speedScale[primary] = 0;
+        world.entities.maxHealth[primary] = 1e9;
+        world.entities.health[primary] = 1e9;
+        final int secondary = world.spawnEnemy(EnemyArchetype.mote, 8.0, 6.0);
+        world.enemies.speedScale[secondary] = 0;
+        world.entities.maxHealth[secondary] = 1e9;
+        world.entities.health[secondary] = 1e9;
+        return (world: world, primary: primary, secondary: secondary);
+      }
+
+      final ({SimWorld world, int primary, int secondary}) base =
+          build(hardBounce: false);
+      final ({SimWorld world, int primary, int secondary}) hard =
+          build(hardBounce: true);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        base.world.tick(idle);
+        hard.world.tick(idle);
+      }
+
+      // Every hit `secondary` takes is a ricocheted one — it is never the
+      // first enemy in line — so its whole damage total isolates Hard
+      // Bounce's own bonus cleanly.
+      final double baseDamage = 1e9 - base.world.entities.health[base.secondary];
+      final double hardDamage = 1e9 - hard.world.entities.health[hard.secondary];
+      expect(baseDamage, greaterThan(0));
+      expect(hardDamage / baseDamage, closeTo(1.20, 0.05));
+    });
+
+    test('Double Bounce (★3b) raises the base ricochet grant to 2', () {
+      final ({SimWorld world, int target}) a = corvinArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+      a.world.tick(InputSnapshot());
+      int? slot;
+      for (int e = 0; e < a.world.events.count; e++) {
+        if (a.world.events.typeAt(e) == SimEventType.arrowFired) {
+          slot = a.world.events.entityAAt(e);
+        }
+      }
+      expect(slot, isNotNull);
+      expect(a.world.projectiles.ricochetsLeft[slot!], 2);
+    });
+
+    test('Endless Carom (★5a) extends Caroms from 6s to 10s', () {
+      final ({SimWorld world, int target}) a = corvinArena(
+        stars: 5,
+        talentChoices: const <String, String>{'5': 'a'},
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.caromsRemaining, closeTo(10.0, 1e-9));
+    });
+
+    test(
+        'Perfect Carom (★5b) skips pierce falloff on a ricocheted hit during Caroms',
+        () {
+      ({SimWorld world, int primary, int secondary}) build(
+          {required bool perfectCarom}) {
+        final SimWorld world = SimWorld(seed: 23, content: content)
+          ..autoFire = false;
+        world.spawnPlayer(4.0, 4.5);
+        HeroLoadoutResolver.apply(
+          world,
+          corvin,
+          HeroState(
+            // Both builds sit at ★5 — matched for the same reason the Hard
+            // Bounce comparison above matches its own pair: Curves.heroStat
+            // scales attack, fire rate, everything by star count, and an
+            // unmatched pair would size this ratio off that instead of off
+            // Perfect Carom itself.
+            heroId: 'corvin',
+            stars: 5,
+            talentChoices:
+                perfectCarom ? const <String, String>{'5': 'b'} : const {},
+          ),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+        final int primary = world.spawnEnemy(EnemyArchetype.mote, 8.0, 4.5);
+        world.enemies.speedScale[primary] = 0;
+        world.entities.maxHealth[primary] = 1e9;
+        world.entities.health[primary] = 1e9;
+        final int secondary = world.spawnEnemy(EnemyArchetype.mote, 8.0, 6.0);
+        world.enemies.speedScale[secondary] = 0;
+        world.entities.maxHealth[secondary] = 1e9;
+        world.entities.health[secondary] = 1e9;
+        // Caroms is the Ultimate itself — every Corvin has it regardless of
+        // talents — so both builds fire it, and only Perfect Carom's own
+        // talent differs between them.
+        world.hero.ultimateCharge = 1.0;
+        world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+        world.autoFire = true;
+        return (world: world, primary: primary, secondary: secondary);
+      }
+
+      final ({SimWorld world, int primary, int secondary}) base =
+          build(perfectCarom: false);
+      final ({SimWorld world, int primary, int secondary}) perfect =
+          build(perfectCarom: true);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        base.world.tick(idle);
+        perfect.world.tick(idle);
+      }
+
+      final double baseDamage = 1e9 - base.world.entities.health[base.secondary];
+      final double perfectDamage =
+          1e9 - perfect.world.entities.health[perfect.secondary];
+      expect(baseDamage, greaterThan(0));
+      // Without Perfect Carom, the ricocheted hit still eats the ordinary
+      // pierce-falloff curve (0.85^1); with it, that hit is exempt — the
+      // same ~1/0.85 gap Deadeye's own crit exemption produces elsewhere.
+      expect(perfectDamage / baseDamage, closeTo(1 / 0.85, 0.08));
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -3468,10 +3743,12 @@ void main() {
       // Burn/Long Pyre/Twin Pyre), Iris's Weave, Nyx's Umbral
       // Step/Deeper Shadow/Shadowline/Chain Kill/Perfect Step, Ashlin's
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
-      // Body/Phoenix Trail/Supernova, and Vane's Marked.
+      // Body/Phoenix Trail/Supernova, Vane's Marked, and Corvin's whole kit
+      // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
+      // Carom/Perfect Carom).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(54),
+        lessThanOrEqualTo(47),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -3573,13 +3850,14 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // liraDeepRoots never joined this enum — one StatModifier on lifesteal.
   HeroBehaviour.liraOverheal,
 
-  HeroBehaviour.corvinBounce,
-  HeroBehaviour.corvinCaroms,
-  HeroBehaviour.corvinTrueBounce,
-  HeroBehaviour.corvinHardBounce,
-  HeroBehaviour.corvinDoubleBounce,
-  HeroBehaviour.corvinEndlessCarom,
-  HeroBehaviour.corvinPerfectCarom,
+  // corvinBounce, corvinCaroms, corvinTrueBounce, corvinHardBounce,
+  // corvinDoubleBounce, corvinEndlessCarom and corvinPerfectCarom are all
+  // implemented — see the "Bounce and Caroms" group. Corvin is the third
+  // hero (after Sable and Kade) whose entire kit is reachable with nothing
+  // deferred. The reflection primitive itself — wall/enemy ricochet, and
+  // the forced Windline segment it lays — is entirely Skimmer's own code
+  // from Task 5 part 1; ADR 0012 already named Corvin as the reason that
+  // primitive was built shared rather than Skimmer-specific.
 
   // vaneDistance, vaneSteady, vanePiercingHorizon, vaneTwinHorizon,
   // vaneSunderingHorizon and vaneMarked are all implemented — see the

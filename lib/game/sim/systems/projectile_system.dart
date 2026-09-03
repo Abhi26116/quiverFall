@@ -91,6 +91,7 @@ abstract final class ProjectileSystem {
         // an infinite reflect loop in a tight corner.
         if (projectiles.ricochetsLeft[i] > 0) {
           projectiles.ricochetsLeft[i]--;
+          projectiles.hasRicocheted[i] = 1;
           _layForcedSegment(
             store: store,
             projectiles: projectiles,
@@ -102,7 +103,29 @@ abstract final class ProjectileSystem {
             now: now,
             windlineDuration: windlineDuration,
           );
-          _reflectOffWall(arena, store, i, toX, toY, blockedByWall);
+          // *True Bounce* (Corvin T1a) — a wall ricochet seeks the nearest
+          // enemy instead of angle-reflecting. The enemy-ricochet half
+          // already always seeks the nearest enemy on its own, so this is
+          // the one branch True Bounce actually changes anything for.
+          final int trueBounceTarget =
+              hero != null && hero.has(HeroBehaviour.corvinTrueBounce)
+                  ? _nearestUnhitEnemy(store, projectiles, i, toX, toY)
+                  : -1;
+          bool trueBounceRedirected = false;
+          if (trueBounceTarget >= 0) {
+            final double dx = store.posX[trueBounceTarget] - toX;
+            final double dy = store.posY[trueBounceTarget] - toY;
+            final double len = _length(dx, dy);
+            if (len > 1e-6) {
+              final double speed = _length(store.velX[i], store.velY[i]);
+              store.velX[i] = dx / len * speed;
+              store.velY[i] = dy / len * speed;
+              trueBounceRedirected = true;
+            }
+          }
+          if (!trueBounceRedirected) {
+            _reflectOffWall(arena, store, i, toX, toY, blockedByWall);
+          }
           continue;
         }
         _missed(projectiles, combat, i);
@@ -375,6 +398,13 @@ abstract final class ProjectileSystem {
   static const double _nyxExecutionersEyeThreshold = 0.20;
   static const double _nyxExecutionersEyeBonus = 0.35;
 
+  // ── Corvin: Bounce ──────────────────────────────────────────────────────────
+
+  /// "A ricochet deals 120 %" — expressed as the +20 % boonSum term, not a
+  /// standalone ×1.2, the same "conditional terms sum, not multiply" rule
+  /// every other hero bonus above and below this one follows.
+  static const double _corvinHardBounceBonus = 0.20;
+
   // ── Vane: Distance ─────────────────────────────────────────────────────────
 
   static const double _vaneCloseRangeThreshold = 3.0;
@@ -470,9 +500,27 @@ abstract final class ProjectileSystem {
         // `update` spends from. No enemy left to bounce to falls through to
         // the ordinary retire below, same as running out of charges would.
         if (projectiles.ricochetsLeft[slot] > 0) {
-          final int next = _nearestUnhitEnemy(store, projectiles, slot, target);
+          final int next = _nearestUnhitEnemy(
+              store, projectiles, slot, store.posX[target], store.posY[target],
+              exclude: target);
           if (next >= 0) {
             projectiles.ricochetsLeft[slot]--;
+            projectiles.hasRicocheted[slot] = 1;
+            // Corvin's own "a ricocheted arrow lays a new Windline" applies
+            // here too, not just off a wall — the wall half above always
+            // did this unconditionally, so this closes the same gap for the
+            // enemy half rather than gating it on Corvin specifically.
+            _layForcedSegment(
+              store: store,
+              projectiles: projectiles,
+              lines: lines,
+              hero: hero,
+              slot: slot,
+              x: toX,
+              y: toY,
+              now: now,
+              windlineDuration: windlineDuration,
+            );
             // One more hit is now owed before pierce runs out again — the
             // same "just enough to reach the next target" reset a fresh
             // arrow's own pierceRemaining already represents.
@@ -499,21 +547,25 @@ abstract final class ProjectileSystem {
     return false;
   }
 
-  /// Nearest other living enemy [slot]'s own arrow has not already struck
-  /// this flight — Skimmer's own enemy-ricochet target. A linear scan
-  /// rather than a [SpatialHash] query: this runs from inside
+  /// Nearest other living enemy to ([x], [y]) that [slot]'s own arrow has
+  /// not already struck this flight — Skimmer's own enemy-ricochet target,
+  /// and (from a wall) Corvin's *True Bounce*. A linear scan rather than a
+  /// [SpatialHash] query: the enemy-ricochet call site runs from inside
   /// `_resolveHits`'s own candidate loop, which is still reading results
   /// out of `SpatialHash`'s single shared query buffer — a nested query
-  /// here would silently corrupt that iteration, the same reasoning
-  /// Bram's splash and Torv's chain already document.
+  /// there would silently corrupt that iteration, the same reasoning
+  /// Bram's splash and Torv's chain already document. Coordinates rather
+  /// than an origin entity index, since a wall ricochet has no "entity just
+  /// hit" to read a position from; [exclude] is still an entity index, for
+  /// the enemy-ricochet call site's own "not the one I just hit" rule.
   static int _nearestUnhitEnemy(
     EntityStore store,
     ProjectileStore projectiles,
     int slot,
-    int exclude,
-  ) {
-    final double x = store.posX[exclude];
-    final double y = store.posY[exclude];
+    double x,
+    double y, {
+    int exclude = -1,
+  }) {
     int nearest = -1;
     double nearestDistSq = double.infinity;
     for (int i = 0; i < store.highWater; i++) {
@@ -583,7 +635,17 @@ abstract final class ProjectileSystem {
     // as a pierce index of zero rather than by removing the term, so the
     // falloff maths stays in one place.
     final bool deadeye = boons.has(BoonBehaviour.deadeye) && projectiles.wasCrit[slot] == 1;
-    final int effectivePierceIndex = deadeye ? 0 : pierceIndex;
+    // *Perfect Carom* (Corvin T5b) — "during Caroms, ricochets never lose
+    // damage". The pierce-falloff curve above is exactly what a ricocheted
+    // arrow's later hits would otherwise be losing to (a ricochet does not
+    // reset `hitCount`, only `pierceRemaining`), so this is the same "skip
+    // the curve" shape Deadeye already uses, gated on this hit having
+    // actually come from a ricochet.
+    final bool perfectCaromActive = hero != null &&
+        hero.caromsRemaining > 0 &&
+        hero.has(HeroBehaviour.corvinPerfectCarom) &&
+        projectiles.hasRicocheted[slot] == 1;
+    final int effectivePierceIndex = (deadeye || perfectCaromActive) ? 0 : pierceIndex;
 
     // The build's conditional terms, resolved against *this* target and *this*
     // shot. They sum into one `boonDamageSum` rather than each multiplying the
@@ -624,6 +686,15 @@ abstract final class ProjectileSystem {
           targetHealthFraction < _nyxExecutionersEyeThreshold) {
         boonSum += _nyxExecutionersEyeBonus;
       }
+    }
+
+    // *Hard Bounce* (Corvin T1b) — "a ricochet deals 120 %". Every hit this
+    // arrow lands after its first ricochet counts, not only the very next
+    // one, since [hasRicocheted] is never cleared once set.
+    if (hero != null &&
+        hero.has(HeroBehaviour.corvinHardBounce) &&
+        projectiles.hasRicocheted[slot] == 1) {
+      boonSum += _corvinHardBounceBonus;
     }
 
     // *Distance*'s close-range penalty. The per-unit bonus and its cap are

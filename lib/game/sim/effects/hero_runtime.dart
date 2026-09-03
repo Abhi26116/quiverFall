@@ -165,6 +165,15 @@ class HeroRuntime {
   /// duration, not just the periodic one *Arc* marks. Zero means inactive.
   double tempestNockRemaining = 0;
 
+  /// Seconds left on Corvin's *Caroms* — every arrow fired while this reads
+  /// above zero ricochets 4× instead of Bounce's own 1 (or Double Bounce's
+  /// 2), read at spawn time in `SimWorld._spawnArrow` the same way
+  /// [tempestNockRemaining] is read at spawn for Torv's own chain count.
+  /// Zero means inactive.
+  double caromsRemaining = 0;
+
+  static const double caromsDuration = 6.0;
+
   /// Seconds left on Sable's *Miasma* cloud. Zero means inactive. Unlike
   /// every other timed self-buff above, this one is a fixed zone rather
   /// than a buff on the player — [miasmaX]/[miasmaY] pin where it was cast,
@@ -261,6 +270,7 @@ class HeroRuntime {
     redDrawDamageBonus = 0;
     redDrawFireRateMultiplier = 1.0;
     tempestNockRemaining = 0;
+    caromsRemaining = 0;
     miasmaRemaining = 0;
     miasmaX = 0;
     miasmaY = 0;
@@ -297,6 +307,7 @@ class HeroRuntime {
     bloomRemaining = 0;
     redDrawRemaining = 0;
     tempestNockRemaining = 0;
+    caromsRemaining = 0;
     miasmaRemaining = 0;
     pyreLineRemaining = 0;
     ashlinInvulnRemaining = 0;

@@ -112,6 +112,15 @@ class ProjectileStore {
   /// existed.
   final Int32List ricochetsLeft = Int32List(SimConfig.maxEntities);
 
+  /// Set the moment this arrow's first ricochet happens (wall or enemy),
+  /// and never cleared again for the rest of its flight — Corvin's own
+  /// *Hard Bounce* ("a ricochet deals 120 %") and *Perfect Carom* ("during
+  /// Caroms, ricochets never lose damage") both key off this rather than
+  /// off [ricochetsLeft] being below its starting grant, since a Skimmer
+  /// arrow with no Corvin bonuses equipped still ricochets and this stays
+  /// meaningless for it either way.
+  final Uint8List hasRicocheted = Uint8List(SimConfig.maxEntities);
+
   /// Distance flown since the last Windline segment was emitted.
   ///
   /// Segments are emitted per distance travelled rather than per tick. Per-tick
@@ -151,6 +160,7 @@ class ProjectileStore {
     distanceFlown[slot] = 0;
     crossedCount[slot] = 0;
     ricochetsLeft[slot] = 0;
+    hasRicocheted[slot] = 0;
   }
 
   bool hasCrossed(int slot, int serial) {

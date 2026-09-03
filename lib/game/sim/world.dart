@@ -475,6 +475,10 @@ class SimWorld {
       hero.tempestNockRemaining -= dt;
       if (hero.tempestNockRemaining < 0) hero.tempestNockRemaining = 0;
     }
+    if (hero.caromsRemaining > 0) {
+      hero.caromsRemaining -= dt;
+      if (hero.caromsRemaining < 0) hero.caromsRemaining = 0;
+    }
     if (hero.umbralStepRemaining > 0) {
       hero.umbralStepRemaining -= dt;
       if (hero.umbralStepRemaining < 0) hero.umbralStepRemaining = 0;
@@ -877,8 +881,17 @@ class SimWorld {
       _fireNyxUmbralStep();
     } else if (hero.has(HeroBehaviour.ashlinRebirthNova)) {
       _fireAshlinRebirthNova();
+    } else if (hero.has(HeroBehaviour.corvinCaroms)) {
+      // A pure timed self-buff, the same shape as Tempest Nock above:
+      // every arrow spawned while `caromsRemaining` reads above zero picks
+      // up the raised ricochet count in `_spawnArrow`.
+      hero.caromsRemaining = hero.has(HeroBehaviour.corvinEndlessCarom)
+          ? _corvinEndlessCaromDuration
+          : HeroRuntime.caromsDuration;
     }
   }
+
+  static const double _corvinEndlessCaromDuration = 10.0;
 
   static const double _torvTempestNockDuration = 5.0;
   static const double _torvLongTempestDuration = 8.0;
@@ -1659,6 +1672,17 @@ class SimWorld {
   /// and hit resolution they extend).
   static const int _skimmerRicochetCount = 2;
 
+  /// Corvin's own *Bounce* — "arrows ricochet once off walls or enemies."
+  /// *Double Bounce* (T3b) raises the base grant to 2; *Caroms* (the
+  /// Ultimate) raises it to 4 for its own duration, *Endless Carom* (T5a)
+  /// only changing how long that duration lasts. Composed with whatever the
+  /// equipped arrow itself grants (Skimmer) by taking the larger of the
+  /// two — "ricochets once" reads as a floor for an ordinary arrow, not a
+  /// bonus bounce stacked on top of one that already ricochets more.
+  static const int _corvinBounceCount = 1;
+  static const int _corvinDoubleBounceCount = 2;
+  static const int _corvinCaromsCount = 4;
+
   /// Returns the spawned arrow's own entity slot, or -1 if the entity pool
   /// was full — most callers ignore the return; Twinfang's own guaranteed
   /// Confluence stack is the one thing that needs to touch the arrow again
@@ -1696,9 +1720,17 @@ class SimWorld {
     projectiles.drawTier[i] = tier.index;
     projectiles.lifetime[i] = arrowLifetime;
     projectiles.element[i] = _arrowElementIndex();
-    if (hero.hasArrow(ArrowBehaviour.skimmerRicochet)) {
-      projectiles.ricochetsLeft[i] = _skimmerRicochetCount;
+    int ricochets =
+        hero.hasArrow(ArrowBehaviour.skimmerRicochet) ? _skimmerRicochetCount : 0;
+    if (hero.has(HeroBehaviour.corvinBounce)) {
+      final int corvinRicochets = hero.caromsRemaining > 0
+          ? _corvinCaromsCount
+          : (hero.has(HeroBehaviour.corvinDoubleBounce)
+              ? _corvinDoubleBounceCount
+              : _corvinBounceCount);
+      if (corvinRicochets > ricochets) ricochets = corvinRicochets;
     }
+    if (ricochets > 0) projectiles.ricochetsLeft[i] = ricochets;
     _applyOrielElementCycle(i);
     _applyTorvArc(i);
 
