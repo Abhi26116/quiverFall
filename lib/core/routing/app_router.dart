@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quiverfall/core/routing/route_guards.dart';
 import 'package:quiverfall/core/routing/routes.dart';
+import 'package:quiverfall/data/models/run_snapshot.dart';
 import 'package:quiverfall/data/repositories/player_repository.dart';
 import 'package:quiverfall/features/devtools/sim_bench_screen.dart';
 import 'package:quiverfall/features/gameplay/application/run_coordinator.dart';
 import 'package:quiverfall/features/gameplay/presentation/game_screen.dart';
 import 'package:quiverfall/features/gear/presentation/gear_screen.dart';
 import 'package:quiverfall/features/heroes/presentation/hero_screen.dart';
+import 'package:quiverfall/features/loadout/presentation/loadout_screen.dart';
 import 'package:quiverfall/features/menu/presentation/menu_screen.dart';
 import 'package:quiverfall/features/shell/placeholder_screen.dart';
 import 'package:quiverfall/game/content/content_library.dart';
@@ -57,10 +59,12 @@ class AppRouter {
       ),
       GoRoute(
         path: Routes.loadout,
-        builder: (_, __) => const PlaceholderScreen(
-          title: 'Loadout',
-          buildPhase: 10,
-          detail: 'Hero, arrow and Mark selection before a descent.',
+        builder: (_, GoRouterState state) => LoadoutScreen(
+          repository: _repository,
+          runs: _runs,
+          heroes: _content.heroes,
+          arrows: _content.arrows,
+          stageRef: state.extra as StageRef?,
         ),
       ),
       GoRoute(
