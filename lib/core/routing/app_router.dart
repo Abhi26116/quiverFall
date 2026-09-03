@@ -39,7 +39,11 @@ class AppRouter {
     routes: <RouteBase>[
       GoRoute(
         path: Routes.menu,
-        builder: (_, __) => MenuScreen(repository: _repository),
+        builder: (_, __) => MenuScreen(
+          repository: _repository,
+          runs: _runs,
+          heroes: _content.heroes,
+        ),
       ),
       GoRoute(
         path: Routes.levels,

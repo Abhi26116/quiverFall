@@ -9,6 +9,7 @@ import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/data/models/run_snapshot.dart';
 import 'package:quiverfall/data/repositories/player_repository.dart';
 import 'package:quiverfall/features/gameplay/application/run_coordinator.dart';
+import 'package:quiverfall/features/gameplay/application/run_launcher.dart';
 import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
 import 'package:quiverfall/game/arrows/arrow_definition.dart';
 import 'package:quiverfall/game/arrows/arrow_refinement.dart';
@@ -72,48 +73,24 @@ class _LoadoutScreenState extends State<LoadoutScreen> {
   void _descend(PlayerSave save) {
     final StageRef ref = widget.stageRef ??
         StageRef(chapter: save.campaign.currentChapter, stage: save.campaign.currentStage);
+    final HeroDefinition heroDef = widget.heroes.byKey(_heroId)!;
 
-    final GuardRejection? rejection = RouteGuards.chapter(save, ref.chapter);
+    final GuardRejection? rejection = RunLauncher.launch(
+      repository: widget.repository,
+      runs: widget.runs,
+      save: save,
+      stageRef: ref,
+      heroId: _heroId,
+      arrowId: _arrowId,
+      heroDefinition: heroDef,
+      now: DateTime.now().toUtc(),
+    );
     if (rejection != null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(rejection.playerMessage)));
       return;
     }
-
-    if (!widget.runs.tryBeginStart()) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-            const SnackBar(content: Text('A descent is already underway.')));
-      return;
-    }
-
-    final HeroDefinition heroDef = widget.heroes.byKey(_heroId)!;
-    final HeroState heroState = save.heroes[_heroId] ?? HeroState(heroId: _heroId);
-    final int maxHp = balance.Curves
-        .heroStat(heroDef.stats.hp, heroState.level, heroState.stars)
-        .round();
-    final DateTime now = DateTime.now().toUtc();
-
-    final RunSnapshot snapshot = RunSnapshot(
-      runId: '${now.microsecondsSinceEpoch}',
-      seed: now.microsecondsSinceEpoch,
-      stage: ref,
-      heroId: _heroId,
-      arrowId: _arrowId,
-      roomIndex: 0,
-      currentHp: maxHp,
-      startedAt: now,
-    );
-    widget.runs.completeStart(snapshot);
-
-    widget.repository.mutate((PlayerSave s) => s.copyWith(
-          profile: s.profile.copyWith(
-            equippedHeroId: _heroId,
-            equippedArrowId: _arrowId,
-          ),
-        ));
 
     context.push(Routes.game);
   }
