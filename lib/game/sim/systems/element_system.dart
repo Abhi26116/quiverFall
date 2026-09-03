@@ -45,6 +45,14 @@ abstract final class ElementSystem {
         ? _kadeDeepBurnPerSecond
         : ElementTuning.burnPerSecond;
 
+    // *Crush* (Rook, T3a) drives the exact same `bleedStacks`/
+    // `bleedRemaining` storage Kestrel's own Bleed does (ADR 0015's own
+    // update), but at its own stated 5 %/s per stack rather than Bleed's
+    // borrowed 4 %/s — the same per-hero rate switch Deep Burn uses above.
+    final double bleedPerSecond = hero != null && hero.has(HeroBehaviour.rookCrush)
+        ? _rookCrushPerSecond
+        : _bleedPerSecond;
+
     for (int i = 0; i < high; i++) {
       if (store.alive[i] == 0) continue;
       if (store.kind[i] != EntityKind.enemy.index) continue;
@@ -87,9 +95,12 @@ abstract final class ElementSystem {
             dt;
       }
 
-      // *Bleed* (Kestrel T3b) — ADR 0015: no %/s is stated anywhere for it,
-      // so this reuses Burn's own rate rather than inventing a fresh number,
-      // the closest existing analog (a stacking, duration-based DoT).
+      // *Bleed* — the shared storage Kestrel's own Bleed and Rook's own
+      // Crush both drive; [bleedPerSecond] above already picked the right
+      // rate for whichever of the two is actually equipped. ADR 0015: no
+      // %/s is stated anywhere for Kestrel's own version, so that half
+      // reuses Burn's own rate rather than inventing a fresh number, the
+      // closest existing analog (a stacking, duration-based DoT).
       if (enemies != null && enemies.bleedStacks[i] > 0) {
         enemies.bleedRemaining[i] -= dt;
         if (enemies.bleedRemaining[i] <= 0) {
@@ -97,7 +108,7 @@ abstract final class ElementSystem {
           enemies.bleedRemaining[i] = 0;
         } else {
           damage +=
-              store.maxHealth[i] * _bleedPerSecond * enemies.bleedStacks[i] * dt;
+              store.maxHealth[i] * bleedPerSecond * enemies.bleedStacks[i] * dt;
         }
       }
 
@@ -173,6 +184,11 @@ abstract final class ElementSystem {
   /// (`ElementTuning.burnPerSecond`) since docs/07 states a duration (3 s)
   /// but no %/s for it at all.
   static const double _bleedPerSecond = ElementTuning.burnPerSecond;
+
+  /// docs/07 §7.1: Rook's *Crush* states its own rate outright — "grouped
+  /// enemies take stacking 5 %/s" — unlike Kestrel's own Bleed above, so
+  /// this is not an invented or borrowed number.
+  static const double _rookCrushPerSecond = 0.05;
 
   static int _bitCount(int mask) {
     int n = 0;

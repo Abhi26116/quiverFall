@@ -2,9 +2,39 @@
 
 **Phase** 10
 **Date** 2026-09-03
-**Status** Resolved.
+**Status** Resolved — including the Crush follow-up this ADR anticipated.
 **Severity** Low. One invented rate, reused from an existing anchor; one
 storage-location call with real consequences for what reuses it later.
+
+---
+
+## Update — Rook's Crush landed, reusing this storage as planned
+
+"What this does not do" named exactly the two things Crush needed and
+deferred them on purpose; both are now built. Its own trigger is
+continuous rather than on-hit: `SimWorld._tickRookCrush` re-evaluates a
+few times a second (the same throttled-`spatial.queryRadius` shape
+`_tickSableMiasma` already uses — reentrancy-safe because it runs from
+`tick()` itself, never from inside `ProjectileSystem`'s own hit-resolution
+loop) and *sets* `bleedStacks`/`bleedRemaining` for whichever enemies are
+currently grouped, capped at 4 (Pull's own grouping cap). It never reads
+or writes `ProjectileSystem`'s private `_countRookGrouped` — a second,
+small linear scan over `EntityStore` lives in `world.dart` instead, since
+sharing it would have meant `ElementSystem` or `world.dart` reaching into
+`ProjectileSystem` for one helper, an awkward cross-system dependency for
+what a ~10-line scan avoids entirely.
+
+Unlike Kestrel's own flat refresh, Crush's own card states its rate
+outright — "5 %/s" — so `ElementSystem` now picks between Bleed's borrowed
+4 %/s and Crush's stated 5 %/s by which hero is equipped, the same
+per-hero rate switch Kade's Deep Burn already established for Burn. The
+refresh window each recheck sets (twice the recheck interval) is not a
+designed grace period — it exists only so `ElementSystem.update`'s own
+`-= dt` later the same tick never immediately expires a stack this pass
+just set — so a "just left the group" enemy keeps bleeding for a
+fraction of a second past its own current true grouped state; nothing in
+docs/07 says otherwise, and this is the same "continuous math discretized
+into ticks" slack Miasma's own pulse rate already carries.
 
 ---
 

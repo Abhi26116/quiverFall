@@ -155,6 +155,66 @@ void main() {
     }
   }
 
+  /// A primary target 8 u east of the player, and [groupedCount] bystanders
+  /// further east still along the same line — close enough to the primary
+  /// to count as "grouped" (within 1.6 u, ADR 0007) but never directly hit,
+  /// since a non-piercing arrow always reaches the nearer primary first.
+  /// Mirrors bramArena's own placement trick exactly. Shared by the "Pull"
+  /// and "Crush" groups — both are Rook mechanics keyed off the identical
+  /// grouping geometry.
+  ({SimWorld world, int primary, List<int> grouped}) rookArena({
+    int groupedCount = 0,
+    double groupedSpacing = 0.3,
+    bool forceCrit = false,
+    Map<String, String> talentChoices = const <String, String>{},
+    int stars = 0,
+  }) {
+    final SimWorld world = SimWorld(seed: 111, content: content)
+      ..autoFire = true;
+    world.spawnPlayer(4.0, 4.5);
+    HeroLoadoutResolver.apply(
+      world,
+      rook,
+      HeroState(heroId: 'rook', stars: stars, talentChoices: talentChoices),
+      ashShaft,
+      const ArrowInstance(arrowId: 'ash_shaft'),
+    );
+    if (forceCrit) {
+      world.combat.critChance = 1.0;
+    }
+    final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+    world.enemies.speedScale[primary] = 0;
+    world.entities.maxHealth[primary] = 1e9;
+    world.entities.health[primary] = 1e9;
+
+    final List<int> grouped = <int>[];
+    for (int i = 0; i < groupedCount; i++) {
+      final int e = world.spawnEnemy(
+        EnemyArchetype.mote,
+        12.0 + groupedSpacing * (i + 1),
+        4.5,
+      );
+      world.enemies.speedScale[e] = 0;
+      world.entities.maxHealth[e] = 1e9;
+      world.entities.health[e] = 1e9;
+      grouped.add(e);
+    }
+    return (world: world, primary: primary, grouped: grouped);
+  }
+
+  double? firstDamageDealt(SimWorld world) {
+    final InputSnapshot idle = InputSnapshot();
+    for (int t = 0; t < 120; t++) {
+      world.tick(idle);
+      for (int e = 0; e < world.events.count; e++) {
+        if (world.events.typeAt(e) == SimEventType.damageDealt) {
+          return world.events.valueAAt(e);
+        }
+      }
+    }
+    return null;
+  }
+
   group('the runtime is actually populated', () {
     test('HeroLoadoutResolver carries Wren\'s behaviours into the world', () {
       final SimWorld world = arena().world;
@@ -2222,64 +2282,6 @@ void main() {
   });
 
   group('Pull', () {
-    /// A primary target 8 u east of the player, and [groupedCount] bystanders
-    /// further east still along the same line — close enough to the primary
-    /// to count as "grouped" (within 1.6 u, ADR 0007) but never directly hit,
-    /// since a non-piercing arrow always reaches the nearer primary first.
-    /// Mirrors bramArena's own placement trick exactly.
-    ({SimWorld world, int primary, List<int> grouped}) rookArena({
-      int groupedCount = 0,
-      double groupedSpacing = 0.3,
-      bool forceCrit = false,
-      Map<String, String> talentChoices = const <String, String>{},
-      int stars = 0,
-    }) {
-      final SimWorld world = SimWorld(seed: 111, content: content)
-        ..autoFire = true;
-      world.spawnPlayer(4.0, 4.5);
-      HeroLoadoutResolver.apply(
-        world,
-        rook,
-        HeroState(heroId: 'rook', stars: stars, talentChoices: talentChoices),
-        ashShaft,
-        const ArrowInstance(arrowId: 'ash_shaft'),
-      );
-      if (forceCrit) {
-        world.combat.critChance = 1.0;
-      }
-      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
-      world.enemies.speedScale[primary] = 0;
-      world.entities.maxHealth[primary] = 1e9;
-      world.entities.health[primary] = 1e9;
-
-      final List<int> grouped = <int>[];
-      for (int i = 0; i < groupedCount; i++) {
-        final int e = world.spawnEnemy(
-          EnemyArchetype.mote,
-          12.0 + groupedSpacing * (i + 1),
-          4.5,
-        );
-        world.enemies.speedScale[e] = 0;
-        world.entities.maxHealth[e] = 1e9;
-        world.entities.health[e] = 1e9;
-        grouped.add(e);
-      }
-      return (world: world, primary: primary, grouped: grouped);
-    }
-
-    double? firstDamageDealt(SimWorld world) {
-      final InputSnapshot idle = InputSnapshot();
-      for (int t = 0; t < 120; t++) {
-        world.tick(idle);
-        for (int e = 0; e < world.events.count; e++) {
-          if (world.events.typeAt(e) == SimEventType.damageDealt) {
-            return world.events.valueAAt(e);
-          }
-        }
-      }
-      return null;
-    }
-
     test('grouped enemies within 1.6 u each add +12 % damage to the hit', () {
       final double? alone = firstDamageDealt(rookArena().world);
       final double? withTwo =
@@ -2390,6 +2392,92 @@ void main() {
       }
       expect(a.world.entities.posX[a.primary], closeTo(x0, 1e-9));
       expect(a.world.entities.posY[a.primary], closeTo(y0, 1e-9));
+    });
+  });
+
+  group('Crush', () {
+    test('does not bleed an enemy with nothing else grouped around it', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'a'},
+      );
+      a.world.autoFire = false;
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.bleedStacks[a.primary], 0);
+    });
+
+    test('grouped enemies pick up stacking bleed within one recheck interval',
+        () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'a'},
+        groupedCount: 2,
+      );
+      a.world.autoFire = false;
+      final InputSnapshot idle = InputSnapshot();
+      // Crush rechecks 4x/second (every 15 ticks at 60 Hz) — 20 ticks
+      // comfortably covers the first recheck.
+      for (int t = 0; t < 20; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.bleedStacks[a.primary], 2);
+      expect(a.world.enemies.bleedStacks[a.grouped[0]], greaterThan(0));
+    });
+
+    test('the drain scales with grouped count, capped at 4', () {
+      // All three at ★3 — matched, so Curves.heroStat's own +12 %/star
+      // scaling (which touches nothing about Crush, but does touch every
+      // enemy's shared maxHealth = 1e9 baseline the same way regardless)
+      // never leaks into this comparison.
+      final ({SimWorld world, int primary, List<int> grouped}) a2 = rookArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'a'},
+        groupedCount: 2,
+      );
+      final ({SimWorld world, int primary, List<int> grouped}) a4 = rookArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'a'},
+        groupedCount: 4,
+      );
+      final ({SimWorld world, int primary, List<int> grouped}) a5 = rookArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'a'},
+        groupedCount: 5,
+        groupedSpacing: 0.2,
+      );
+      for (final SimWorld w in <SimWorld>[a2.world, a4.world, a5.world]) {
+        w.autoFire = false;
+      }
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60; t++) {
+        a2.world.tick(idle);
+        a4.world.tick(idle);
+        a5.world.tick(idle);
+      }
+
+      final double lost2 = 1e9 - a2.world.entities.health[a2.primary];
+      final double lost4 = 1e9 - a4.world.entities.health[a4.primary];
+      final double lost5 = 1e9 - a5.world.entities.health[a5.primary];
+
+      expect(lost2, greaterThan(0));
+      expect(lost4 / lost2, closeTo(2.0, 0.05));
+      expect(lost5 / lost4, closeTo(1.0, 0.05),
+          reason: 'a 5th grouped enemy must add nothing past the cap of 4');
+    });
+
+    test('without the talent, no enemy ever bleeds from grouping', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a =
+          rookArena(groupedCount: 4);
+      a.world.autoFire = false;
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.bleedStacks[a.primary], 0);
     });
   });
 
@@ -3852,10 +3940,10 @@ void main() {
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
       // Body/Phoenix Trail/Supernova, Vane's Marked, Corvin's whole kit
       // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
-      // Carom/Perfect Carom), and Kestrel's Bleed.
+      // Carom/Perfect Carom), Kestrel's Bleed, and Rook's Crush.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(46),
+        lessThanOrEqualTo(45),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4028,15 +4116,16 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.zeaGreatHawk,
 
   // rookPull, rookStrongerPull and rookDenserGrouping are implemented — see
-  // the "Pull" group. The Ultimate (Singularity) and its own two ★5 variants
-  // stay pending: a multi-tick "pull everything toward a point, then
-  // detonate" well needs a sustained field effect nothing before now has
-  // asked of Ultimates (every other one so far resolves in a single tick).
-  // Crush needs a stacking per-enemy DoT (the same missing "5th kind of
-  // status" gap as kestrelBleed) and Anchor needs a per-enemy root/stun
-  // timer, neither of which exists yet.
+  // the "Pull" group. rookCrush is implemented too — see the "Crush" group;
+  // ADR 0015's own update covers how it reuses Kestrel's Bleed storage at
+  // its own stated 5 %/s, re-evaluated a few times a second from each
+  // enemy's live neighbours rather than a fire-and-forget timed DoT. The
+  // Ultimate (Singularity) and its own two ★5 variants stay pending: a
+  // multi-tick "pull everything toward a point, then detonate" well needs a
+  // sustained field effect nothing before now has asked of Ultimates (every
+  // other one so far resolves in a single tick). Anchor needs a per-enemy
+  // root/stun timer, which does not exist yet.
   HeroBehaviour.rookSingularity,
-  HeroBehaviour.rookCrush,
   HeroBehaviour.rookAnchor,
   HeroBehaviour.rookTwinSingularity,
   HeroBehaviour.rookCollapsingSingularity,

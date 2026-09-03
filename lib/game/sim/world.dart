@@ -508,6 +508,7 @@ class SimWorld {
     // like `_fireSelaGlacierNail`'s own target selection does.
     _tickSableMiasma(dt);
     _tickKadePyreLine(dt);
+    _tickRookCrush(dt);
 
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
@@ -1130,6 +1131,67 @@ class SimWorld {
       status.apply(e, SimElement.toxin, toxinMaxStacksOverride: maxStacks);
     }
   }
+
+  /// Rook's *Crush* (T3a) — "grouped enemies take stacking 5 %/s": a
+  /// continuous drain re-evaluated a few times a second from each enemy's
+  /// *current* neighbours (the same throttled-spatial-query shape
+  /// [_tickSableMiasma] already uses, for the identical reason — a
+  /// `queryRadius` call is only reentrancy-safe outside `ProjectileSystem`'s
+  /// own hit-resolution loop, and `tick()` itself is outside it), not a
+  /// fire-and-forget timed DoT the way Kestrel's own Bleed is.
+  ///
+  /// Reuses Bleed's own storage (`EnemyStore.bleedStacks`/`bleedRemaining`,
+  /// ADR 0015) rather than a parallel one — this only *sets* the stack
+  /// count and a short refresh window; `ElementSystem`'s existing Bleed
+  /// tick block does the actual damage and death handling, at Crush's own
+  /// stated 5 %/s per stack rather than Bleed's borrowed 4 %/s (that rate
+  /// switches on which hero is equipped, the same way it already does for
+  /// Kade's Deep Burn). The refresh window is twice the recheck interval —
+  /// not a designed grace period, only enough slack that
+  /// `ElementSystem.update`'s own `-= dt` later this same tick never
+  /// immediately expires a stack this pass just set.
+  void _tickRookCrush(double dt) {
+    if (!hero.has(HeroBehaviour.rookCrush)) return;
+
+    hero.crushTickTimer -= dt;
+    if (hero.crushTickTimer > 0) return;
+    hero.crushTickTimer += 1.0 / _rookCrushTicksPerSecond;
+
+    const double refreshWindow = 2.0 / _rookCrushTicksPerSecond;
+    const double radiusSq = _rookGroupingRadius * _rookGroupingRadius;
+    final int high = entities.highWater;
+    for (int i = 0; i < high; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+
+      final int found = spatial.queryRadius(
+          entities.posX[i], entities.posY[i], _rookGroupingRadius);
+      int grouped = 0;
+      for (int c = 0; c < found; c++) {
+        final int e = spatial.resultAt(c);
+        if (e == i) continue;
+        if (entities.alive[e] == 0) continue;
+        if (entities.kind[e] != EntityKind.enemy.index) continue;
+        final double dx = entities.posX[e] - entities.posX[i];
+        final double dy = entities.posY[e] - entities.posY[i];
+        if (dx * dx + dy * dy > radiusSq) continue;
+        grouped++;
+      }
+      if (grouped <= 0) continue;
+
+      enemies.bleedStacks[i] =
+          grouped > _rookCrushStackCap ? _rookCrushStackCap : grouped;
+      enemies.bleedRemaining[i] = refreshWindow;
+    }
+  }
+
+  static const double _rookCrushTicksPerSecond = 4.0;
+  static const int _rookCrushStackCap = 4;
+
+  /// ADR 0007's own grouping radius (1.6 u) — matched here, not re-derived;
+  /// `ProjectileSystem` carries the identical constant for Pull's own
+  /// per-hit damage bonus.
+  static const double _rookGroupingRadius = 1.6;
 
   /// *Pyre Line* — a straight burning wall along the aim vector, the same
   /// direction [FiringSystem.aimAngle] computes for every other targeted

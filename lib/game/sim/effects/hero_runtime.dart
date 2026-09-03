@@ -187,6 +187,12 @@ class HeroRuntime {
   /// continuous rate, since Toxin stacks are whole numbers.
   double miasmaTickTimer = 0;
 
+  /// Counts down to Rook's *Crush* (T3a) next re-check of who is currently
+  /// grouped — the same "discrete pulses, not a continuous rate" shape
+  /// [miasmaTickTimer] already uses, for the same reason (ADR 0015's own
+  /// update on Crush).
+  double crushTickTimer = 0;
+
   /// Seconds left on Kade's *Pyre Line* wall. Zero means inactive. Endpoints
   /// pinned at cast time, the same shape as Miasma's own fixed zone.
   double pyreLineRemaining = 0;
@@ -275,6 +281,7 @@ class HeroRuntime {
     miasmaX = 0;
     miasmaY = 0;
     miasmaTickTimer = 0;
+    crushTickTimer = 0;
     pyreLineRemaining = 0;
     pyreLineX0 = 0;
     pyreLineY0 = 0;
