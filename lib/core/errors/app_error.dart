@@ -153,12 +153,13 @@ final class NavigationError extends AppError {
         );
 }
 
-/// Rejects a crafting, refinement, or affix-reroll spend before it touches
-/// [Wallet] or [InventoryState] — see `ArrowWorkshop`
-/// (`lib/game/arrows/arrow_workshop.dart`). Every constructor here names the
-/// exact precondition that failed, so a UI can tell "not enough gold" from
-/// "not enough materials" from "that slot is locked" without parsing
-/// [message].
+/// Rejects a crafting, refinement, affix-reroll, hero-unlock, level-up, or
+/// star-up spend before it touches [Wallet], [InventoryState], or
+/// [HeroState] — see `ArrowWorkshop` (`lib/game/arrows/arrow_workshop.dart`)
+/// and `HeroWorkshop` (`lib/game/heroes/hero_workshop.dart`). Every
+/// constructor here names the exact precondition that failed, so a UI can
+/// tell "not enough gold" from "not enough materials" from "that slot is
+/// locked" without parsing [message].
 @immutable
 final class EconomyError extends AppError {
   const EconomyError({required super.code, required super.message, super.cause});
@@ -218,5 +219,57 @@ final class EconomyError extends AppError {
       : this(
           code: 'economy_lock_limit_reached',
           message: 'At most 2 affix slots may be locked at once.',
+        );
+
+  const EconomyError.unknownHero(String heroId)
+      : this(
+          code: 'economy_unknown_hero',
+          message: 'No hero definition for "$heroId".',
+        );
+
+  const EconomyError.heroAlreadyUnlocked(String heroId)
+      : this(
+          code: 'economy_hero_already_unlocked',
+          message: 'Hero "$heroId" is already unlocked.',
+        );
+
+  const EconomyError.heroNotUnlocked(String heroId)
+      : this(
+          code: 'economy_hero_not_unlocked',
+          message: 'Hero "$heroId" is not unlocked yet.',
+        );
+
+  const EconomyError.chapterNotReached({required String heroId, required int chapter})
+      : this(
+          code: 'economy_chapter_not_reached',
+          message: 'Hero "$heroId" unlocks at chapter $chapter.',
+        );
+
+  const EconomyError.chapterNotCleared({required String heroId, required int chapter})
+      : this(
+          code: 'economy_chapter_not_cleared',
+          message: 'Hero "$heroId" unlocks on clearing chapter $chapter.',
+        );
+
+  const EconomyError.insufficientShards({
+    required String heroId,
+    required int need,
+    required int have,
+  }) : this(
+          code: 'economy_insufficient_shards',
+          message: 'Needs $need "$heroId" shards, have $have.',
+        );
+
+  const EconomyError.heroMaxStars(String heroId)
+      : this(
+          code: 'economy_hero_max_stars',
+          message: 'Hero "$heroId" is already at ★6.',
+        );
+
+  const EconomyError.heroLevelCapped({required String heroId, required int cap})
+      : this(
+          code: 'economy_hero_level_capped',
+          message: 'Hero "$heroId" is at its level cap ($cap) for the '
+              'current campaign progress.',
         );
 }
