@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:quiverfall/game/arrows/affix_catalogue.dart';
+import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
+import 'package:quiverfall/game/heroes/hero_catalogue.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 
@@ -37,6 +40,9 @@ class ContentLibrary {
     required this.enemyIndexById,
     required List<int> enemyIndexByArchetype,
     this.arenas = const <ArenaDefinition>[],
+    required this.heroes,
+    required this.arrows,
+    required this.affixes,
   }) : _byArchetype = enemyIndexByArchetype;
 
   /// Ordered enemy table. Entities reference definitions by *index* into this
@@ -50,6 +56,23 @@ class ContentLibrary {
   /// test work without geometry, and only the level generator needs them.
   final List<ArenaDefinition> arenas;
 
+  /// The 20 heroes, 12 arrows, and 17 affixes — docs/07 and docs/08. Each is
+  /// independently parseable and independently tested (own
+  /// `xxx_catalogue_test.dart`); [ContentLibrary] only aggregates the ones
+  /// the running app's Hero/Gear/Loadout screens need in one place to load,
+  /// the way the folder structure in docs/12-architecture.md §12.2 always
+  /// named this directory for ("loaders for enemies/bosses/boons/heroes
+  /// JSON"). The Boon pool is deliberately not here — `StageRunner` already
+  /// takes its own `BoonCatalogue` (plus the separate `SynergyCatalogue`
+  /// boons.json alone does not cover), so folding a second, narrower Boon
+  /// load in here would just be a second source of truth for the same
+  /// content. A feature that only needs one catalogue (a test, the balance
+  /// harness) can keep constructing it directly instead — nothing requires
+  /// going through [ContentLibrary].
+  final HeroCatalogue heroes;
+  final ArrowCatalogue arrows;
+  final AffixCatalogue affixes;
+
   /// Archetype ordinal to table index. The AI resolves a definition on every
   /// enemy on every tick, so this has to be an array read.
   final List<int> _byArchetype;
@@ -59,6 +82,9 @@ class ContentLibrary {
         enemyIndexById: const <String, int>{},
         enemyIndexByArchetype:
             List<int>.filled(EnemyArchetype.values.length, -1),
+        heroes: HeroCatalogue.empty(),
+        arrows: ArrowCatalogue.empty(),
+        affixes: AffixCatalogue.empty(),
       );
 
   /// Parses and validates content.
@@ -68,6 +94,9 @@ class ContentLibrary {
   static (ContentLibrary?, List<ContentError>) parse({
     required String enemiesJson,
     String? arenasJson,
+    String? heroesJson,
+    String? arrowsJson,
+    String? affixesJson,
   }) {
     final List<ContentError> errors = <ContentError>[];
 
@@ -77,6 +106,21 @@ class ContentLibrary {
     final List<ArenaDefinition> arenas = arenasJson == null
         ? <ArenaDefinition>[]
         : _parseArenas(arenasJson, errors);
+    if (errors.isNotEmpty) return (null, errors);
+
+    final HeroCatalogue heroes = heroesJson == null
+        ? HeroCatalogue.empty()
+        : _unwrap(HeroCatalogue.parse(heroesJson), errors, HeroCatalogue.empty());
+    if (errors.isNotEmpty) return (null, errors);
+
+    final ArrowCatalogue arrows = arrowsJson == null
+        ? ArrowCatalogue.empty()
+        : _unwrap(ArrowCatalogue.parse(arrowsJson), errors, ArrowCatalogue.empty());
+    if (errors.isNotEmpty) return (null, errors);
+
+    final AffixCatalogue affixes = affixesJson == null
+        ? AffixCatalogue.empty()
+        : _unwrap(AffixCatalogue.parse(affixesJson), errors, AffixCatalogue.empty());
     if (errors.isNotEmpty) return (null, errors);
 
     final Map<String, int> byId = <String, int>{};
@@ -105,9 +149,25 @@ class ContentLibrary {
         enemyIndexById: byId,
         enemyIndexByArchetype: byArchetype,
         arenas: arenas,
+        heroes: heroes,
+        arrows: arrows,
+        affixes: affixes,
       ),
       const <ContentError>[],
     );
+  }
+
+  /// Folds one sub-catalogue's own parse errors into the caller's [errors]
+  /// list and hands back a usable value regardless — the caller checks
+  /// `errors.isNotEmpty` right after and bails before this fallback would
+  /// ever reach a returned [ContentLibrary].
+  static T _unwrap<T>(
+    (T?, List<ContentError>) result,
+    List<ContentError> errors,
+    T fallback,
+  ) {
+    errors.addAll(result.$2);
+    return result.$1 ?? fallback;
   }
 
   static List<EnemyDefinition> _parseEnemies(
