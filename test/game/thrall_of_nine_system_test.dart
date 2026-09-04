@@ -146,8 +146,62 @@ void main() {
     });
   });
 
-  group('past P1', () {
-    test('freezes the orbit, stops the rotation, and clears any live '
+  group('P2: two abilities simultaneously', () {
+    test('the orbit accelerates', () {
+      final (:world, :primary) = spawnThrall();
+      world.enemies.bossPhase[primary] = 1;
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+      final double angleInP2 = world.enemies.bossSweepAngle[primary];
+
+      final (world: world2, primary: primary2) = spawnThrall();
+      for (int i = 0; i < 30; i++) {
+        world2.tick(InputSnapshot());
+      }
+      final double angleInP1 = world2.enemies.bossSweepAngle[primary2];
+
+      expect(angleInP2, greaterThan(angleInP1));
+    });
+
+    test('casts a second ability, on a second sigil, alongside the first',
+        () {
+      final (:world, :primary) = spawnThrall();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+
+      final int first = world.enemies.bossActiveChildIndex[primary];
+      final int second = world.enemies.comboStep[primary];
+      expect(second, isNot(first),
+          reason: 'P2 must select a second ability, not just the first');
+
+      expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
+
+      final int secondSlot = sigilsOf(world, primary)
+          .firstWhere((int s) => world.enemies.bossChildIndex[s] == second);
+      expect(world.enemies.telegraphSlot[secondSlot], greaterThanOrEqualTo(0));
+    });
+
+    test('both abilities can hit the same player independently', () {
+      // 3u east — within the first ability's own cone (5u range, facing
+      // dead-on) and the second's own line (9u reach, same facing).
+      final (:world, :primary) = spawnThrall(playerX: centerX + 3.0);
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+      expect(world.entities.health[player], 100.0);
+
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // Two independent 9% hits (a fraction of *max* health each, not
+      // compounding) — 100 - 9 - 9.
+      expect(world.entities.health[player], closeTo(82.0, 1e-6));
+    });
+  });
+
+  group('past P2', () {
+    test('freezes the orbit, stops the rotation, and clears every live '
         'telegraph', () {
       final (:world, :primary) = spawnThrall();
       for (int i = 0; i < 10; i++) {
@@ -155,7 +209,7 @@ void main() {
       }
       expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
 
-      world.enemies.bossPhase[primary] = 1;
+      world.enemies.bossPhase[primary] = 2;
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], -1);
 

@@ -37,14 +37,32 @@ import 'package:quiverfall/game/sim/telegraph.dart';
 /// set on one, so the existing damage pipeline needs no redirect at all —
 /// simpler than every prior multi-body boss, not more complex.
 ///
-/// **Not built here: P2 ("remaining sigils accelerate and the Thrall uses
-/// two abilities simultaneously") and P3 ("absorbs all remaining sigils
-/// for +25% damage each... a player who destroyed five sigils fights a
-/// fundamentally different, easier phase 3").** Both need real new work —
-/// P2 a second concurrent turn, P3 a damage multiplier keyed to however
-/// many sigils survived. Once `bossPhase` reaches 1, the rotation and orbit
-/// both freeze and any live telegraph is cleared — the same posture every
-/// other boss's own undone phases already take.
+/// **P2: "Remaining sigils accelerate and the Thrall uses two abilities
+/// simultaneously."** The orbit's own angular velocity doubles (authored —
+/// docs/06 states no exact multiplier). "Two abilities simultaneously" is
+/// read as *synchronised*, not independently timed: both share the same
+/// wind-up/resolve/cooldown clock (`state`/`stateTimer`/`attackCooldown`
+/// stay solely on the primary, unchanged from P1), so no second concurrent
+/// state machine was needed — only a second *telegraph owner*. Since "an
+/// enemy owns at most one telegraph at a time" (the same constraint every
+/// multi-line boss in this roster already works around), the first
+/// ability keeps using the primary's own `telegraphSlot` exactly as P1
+/// already does, and the second uses *that turn's own second sigil's* own
+/// slot instead — both still fire from the Thrall's own position, per the
+/// class's own P1 rule, only the telegraph *bookkeeping* differs.
+/// `comboStep` (free on this boss — nothing else here touches it) holds
+/// the second sigil's own ordinal for the duration of one turn, sentinelled
+/// by equalling the first when there is no second (P1, or only one living
+/// sigil remains). See ADR 0041.
+///
+/// **Not built here: P3 ("absorbs all remaining sigils for +25% damage
+/// each... a player who destroyed five sigils fights a fundamentally
+/// different, easier phase 3").** Needs a damage multiplier keyed to
+/// however many sigils survived to that point — real, scoped work not
+/// attempted here. Once `bossPhase` reaches 2, the rotation and orbit both
+/// freeze and every live telegraph (the primary's own, and any live second
+/// ability's own) is cleared — the same posture every other boss's own
+/// undone phase already takes.
 abstract final class ThrallOfNineSystem {
   static const int sigilCount = 9;
 
@@ -55,6 +73,9 @@ abstract final class ThrallOfNineSystem {
   /// One full revolution every 20s. Authored — docs/06 gives no orbital
   /// rate at all.
   static const double _orbitAngularVelocity = 2 * math.pi / 20.0;
+
+  /// "Accelerate" — authored, docs/06 states no exact multiplier.
+  static const double _orbitAngularVelocityP2 = _orbitAngularVelocity * 2;
 
   /// Reused everywhere else a mechanic switches on: the wind-up before any
   /// ability resolves.
@@ -174,16 +195,19 @@ abstract final class ThrallOfNineSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — frozen, orbit and
-      // rotation both stopped, any live telegraph cleared, rather than
-      // left mid-wind-up or mid-orbit forever.
-      if (enemies.bossPhase[i] >= 1) {
+      // P3 not built yet (see the class doc comment) — frozen, orbit and
+      // rotation both stopped, every live telegraph (the primary's own,
+      // and any live second ability's own on a sigil) cleared, rather
+      // than left mid-wind-up or mid-orbit forever.
+      if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
+        _clearSigilTelegraphs(ctx, i);
         continue;
       }
 
-      _orbit(ctx, i, dt);
-      _tickRotation(ctx, i, dt);
+      final bool inP2 = enemies.bossPhase[i] >= 1;
+      _orbit(ctx, i, dt, inP2);
+      _tickRotation(ctx, i, dt, inP2);
     }
   }
 
@@ -192,11 +216,12 @@ abstract final class ThrallOfNineSystem {
   /// several evenly-spaced points" shape `bossSweepAngle` already carries
   /// for Cinder Choir's own tether sweep (ADR 0019), reused here for
   /// literal orbital motion instead of a rotating line.
-  static void _orbit(AiContext ctx, int primary, double dt) {
+  static void _orbit(AiContext ctx, int primary, double dt, bool inP2) {
     final EntityStore store = ctx.entities;
     final EnemyStore enemies = ctx.enemies;
 
-    enemies.bossSweepAngle[primary] += _orbitAngularVelocity * dt;
+    enemies.bossSweepAngle[primary] +=
+        (inP2 ? _orbitAngularVelocityP2 : _orbitAngularVelocity) * dt;
     if (enemies.bossSweepAngle[primary] > 2 * math.pi) {
       enemies.bossSweepAngle[primary] -= 2 * math.pi;
     }
@@ -224,14 +249,25 @@ abstract final class ThrallOfNineSystem {
   /// dead sigil's own turn is simply skipped forever — the entire
   /// mechanism behind "destroying a sigil removes that ability
   /// permanently," the same "next alive child" shape Cinder Choir's own
-  /// P3 already established (ADR 0020).
-  static void _tickRotation(AiContext ctx, int primary, double dt) {
+  /// P3 already established (ADR 0020). In P2, a second living sigil
+  /// (found the same way, starting after the first) casts alongside the
+  /// first — see the class doc comment for why that needs only a second
+  /// telegraph *owner*, not a second timer.
+  static void _tickRotation(AiContext ctx, int primary, double dt, bool inP2) {
     final EnemyStore enemies = ctx.enemies;
 
     if (enemies.stateOf(primary) == AiState.windUp) {
       enemies.stateTimer[primary] -= dt;
       if (enemies.stateTimer[primary] > 0) return;
-      _resolve(ctx, primary, enemies.bossActiveChildIndex[primary]);
+
+      final int first = enemies.bossActiveChildIndex[primary];
+      _resolve(ctx, primary, primary, first);
+      final int second = enemies.comboStep[primary];
+      if (second != first) {
+        final int secondSlot = _findSigil(ctx, primary, second);
+        if (secondSlot >= 0) _resolve(ctx, primary, secondSlot, second);
+      }
+
       enemies.state[primary] = AiState.idle.index;
       enemies.attackCooldown[primary] = _turnCooldownSeconds;
       return;
@@ -242,19 +278,37 @@ abstract final class ThrallOfNineSystem {
       return;
     }
 
-    final int next =
+    final int first =
         _nextAliveSigilIndex(ctx, primary, enemies.bossActiveChildIndex[primary]);
-    if (next < 0) return; // no living sigil at all — nothing to cast
-    enemies.bossActiveChildIndex[primary] = next;
-    _beginWindUp(ctx, primary, next);
-  }
+    if (first < 0) return; // no living sigil at all — nothing to cast
+    enemies.bossActiveChildIndex[primary] = first;
 
-  static void _beginWindUp(AiContext ctx, int primary, int sigilIndex) {
-    final EntityStore store = ctx.entities;
-    final EnemyStore enemies = ctx.enemies;
+    // Sentinelled by equalling `first` — P1, or only one living sigil
+    // remains, either way "no second ability this turn".
+    int second = first;
+    if (inP2) {
+      final int candidate = _nextAliveSigilIndex(ctx, primary, first);
+      if (candidate >= 0 && candidate != first) second = candidate;
+    }
+    enemies.comboStep[primary] = second;
 
     enemies.state[primary] = AiState.windUp.index;
     enemies.stateTimer[primary] = _windUpSeconds;
+    _beginWindUp(ctx, primary, primary, first);
+    if (second != first) {
+      final int secondSlot = _findSigil(ctx, primary, second);
+      if (secondSlot >= 0) _beginWindUp(ctx, primary, secondSlot, second);
+    }
+  }
+
+  /// [owner] is whichever entity's own `telegraphSlot` this ability's
+  /// wind-up telegraph lives on — always `primary` in P1 (only one
+  /// ability at a time); in P2 the first ability still uses `primary`,
+  /// and the second uses that turn's own second sigil's slot instead, so
+  /// two simultaneous telegraphs never collide on one owner. Both still
+  /// fire from the Thrall's own position regardless of [owner].
+  static void _beginWindUp(AiContext ctx, int primary, int owner, int sigilIndex) {
+    final EntityStore store = ctx.entities;
 
     final double x = store.posX[primary];
     final double y = store.posY[primary];
@@ -266,18 +320,18 @@ abstract final class ThrallOfNineSystem {
     switch (sigilIndex % 3) {
       case 0:
         EnemyAttack.beginCone(
-            ctx, primary, x, y, facing, _coneHalfAngle, _coneRange, _windUpSeconds);
+            ctx, owner, x, y, facing, _coneHalfAngle, _coneRange, _windUpSeconds);
       case 1:
         final double toX = x + _lineLength * math.cos(facing);
         final double toY = y + _lineLength * math.sin(facing);
         EnemyAttack.beginLine(
-            ctx, primary, x, y, toX, toY, _lineWidth, _windUpSeconds);
+            ctx, owner, x, y, toX, toY, _lineWidth, _windUpSeconds);
       default:
-        EnemyAttack.beginCircle(ctx, primary, x, y, _circleRadius, _windUpSeconds);
+        EnemyAttack.beginCircle(ctx, owner, x, y, _circleRadius, _windUpSeconds);
     }
   }
 
-  static void _resolve(AiContext ctx, int primary, int sigilIndex) {
+  static void _resolve(AiContext ctx, int primary, int owner, int sigilIndex) {
     final EntityStore store = ctx.entities;
     final double x = store.posX[primary];
     final double y = store.posY[primary];
@@ -286,22 +340,33 @@ abstract final class ThrallOfNineSystem {
     bool hit;
     switch (sigilIndex % 3) {
       case 0:
-        EnemyAttack.beginCone(ctx, primary, x, y, facing, _coneHalfAngle, _coneRange,
+        EnemyAttack.beginCone(ctx, owner, x, y, facing, _coneHalfAngle, _coneRange,
             0, severity: TelegraphSeverity.lethal);
         hit = EnemyAttack.playerInCone(ctx, x, y, facing, _coneHalfAngle, _coneRange);
       case 1:
         final double toX = x + _lineLength * math.cos(facing);
         final double toY = y + _lineLength * math.sin(facing);
-        EnemyAttack.beginLine(ctx, primary, x, y, toX, toY, _lineWidth, 0,
+        EnemyAttack.beginLine(ctx, owner, x, y, toX, toY, _lineWidth, 0,
             severity: TelegraphSeverity.lethal);
         hit = EnemyAttack.playerOnLine(ctx, x, y, toX, toY, _lineWidth);
       default:
-        EnemyAttack.beginCircle(ctx, primary, x, y, _circleRadius, 0,
+        EnemyAttack.beginCircle(ctx, owner, x, y, _circleRadius, 0,
             severity: TelegraphSeverity.lethal);
         hit = EnemyAttack.playerInCircle(ctx, x, y, _circleRadius);
     }
 
     if (hit) EnemyAttack.damagePlayer(ctx, _abilityDamage, source: primary);
+  }
+
+  static void _clearSigilTelegraphs(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] != primary) continue;
+      if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
+    }
   }
 
   /// This Thrall's own living sigil at ordinal [sigilIndex], or -1.
