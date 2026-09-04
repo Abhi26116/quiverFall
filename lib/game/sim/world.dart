@@ -39,6 +39,7 @@ import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
 import 'package:quiverfall/game/sim/systems/green_mother_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/hollow_warden_system.dart';
+import 'package:quiverfall/game/sim/systems/mother_of_motes_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
 import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
@@ -641,6 +642,7 @@ class SimWorld {
     WeepingGateSystem.update(ai);
     HollowWardenSystem.update(ai);
     TheQuiverfallSystem.update(ai);
+    MotherOfMotesSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2510,6 +2512,22 @@ class SimWorld {
   /// [GreenMotherSystem.spawn] does the real work. Returns its slot.
   int spawnGreenMother(double x, double y, {required double health}) =>
       GreenMotherSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Mother of Motes — a single, stationary body that spawns Motes
+  /// continuously at an escalating rate, docs/06 §6.3's own Endless
+  /// Descent boss #19. Test/tool entry point, the same role [spawnBoss]
+  /// plays for the generic case; [MotherOfMotesSystem.spawn] does the real
+  /// work. Returns its slot.
+  int spawnMotherOfMotes(double x, double y, {required double health}) =>
+      MotherOfMotesSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,
