@@ -67,16 +67,45 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// has no visible seam: the boss is already mid-sweep when P2 begins, and
 /// simply keeps going.
 ///
-/// **Not built here: P3 ("Quiverfall" — the shard shatters into 40
-/// fragments; the boss is invulnerable except when the player's own
-/// Windline lattice connects three or more of them, channelling them into
-/// the core — "the only fight in the game that *requires* Confluence").**
-/// P3 needs a genuinely new kind of conditional invulnerability driven by
-/// the *player's* own Windline geometry, not any timer or live-count this
-/// session has built a boss's defence from before. Once `bossPhase`
-/// reaches 2, the current echo's own telegraph (the primary's, or all
-/// eight spokes', for echo 0) is cleared — the same posture every other
-/// boss's own undone phases already take.
+/// **P3, built here: "Quiverfall" — the shard shatters into 40 fragments
+/// raining continuously; the boss is invulnerable except when the
+/// player's own Windline lattice connects three or more of them,
+/// channelling them into the core — "the only fight in the game that
+/// *requires* Confluence."** Replaces P2's own echo cycling entirely —
+/// the shard shattering is a new, third state, not the greatest-hits
+/// replay continuing underneath it — the same `bossPhase`-gated
+/// replacement every other multi-phase boss's own P3 already uses.
+///
+/// **The 40 fragments are geometry, not entities.** Nothing about them
+/// is ever independently targeted, damaged, or killed — the card's own
+/// "channels them into the core" reads as a conduit for the player's own
+/// arrows, not a destructible body — so `_fragmentX`/`_fragmentY` are
+/// pure functions of an ordinal (an 8×5 grid spread across the arena's
+/// own bounds), computed on demand rather than forty extra entities
+/// competing with the room's own actual threats for the shared entity
+/// pool. Every tick, each of the forty positions is queried against
+/// `ctx.lineIndex` (the same rebuilt-every-tick spatial index Confluence
+/// and this boss's own P2 slow already use) for a live player-owned
+/// Windline passing within a small radius; the boss counts as *connected*
+/// while three or more read positive.
+///
+/// **The conditional plate is the fourth reuse of the same trick**
+/// (Weeping Gate ADR 0042, the Green Mother ADR 0047, Arclight ADR
+/// 0051): a full-circle `plateHalfArc`, a tiny positive
+/// `plateFlatFactor` rather than a literal zero, and `plateHealth`
+/// toggled every tick between `0` (open, three or more fragments
+/// connected) and `maxHealth` (shut, fewer than three). This is the
+/// piece the card's own "requires Confluence" claim rests on: the boss
+/// is only ever hittable while the player is actively holding a real
+/// three-point lattice, not merely has threaded one in the past.
+///
+/// **"Raining continuously"** is read as ongoing background pressure
+/// independent of the lattice puzzle, not another puzzle of its own: a
+/// telegraphed circle at a random fragment position, on a short repeating
+/// cooldown, dealing the Thresher's own persistent-aura anchor (9%) —
+/// dodgeable, continuous, and never the "heavy hit" this roster reserves
+/// for decisive blows, since this card's own difficulty is entirely in
+/// the targeting puzzle, not in a single strike. See ADR 0054.
 abstract final class TheQuiverfallSystem {
   /// "The arena edges", plural — authored as more than Cinder Choir's own
   /// three-spoke triangle (ADR 0018), not a GDD-stated count.
@@ -129,6 +158,43 @@ abstract final class TheQuiverfallSystem {
   /// generic Windline-hazard width every boss in the roster already
   /// shares.
   static const double _echoLineWidth = SimConfig.windlineHitWidth;
+
+  // ── P3: Quiverfall ─────────────────────────────────────────────────────
+  // See ADR 0054.
+
+  /// docs/06 §12 P3's own stated total, laid out as an 8×5 grid.
+  static const int _p3FragmentCols = 8;
+  static const int _p3FragmentRows = 5;
+  static const int _p3FragmentCount = _p3FragmentCols * _p3FragmentRows;
+
+  /// docs/06 §12 P3's own stated threshold.
+  static const int _p3FragmentsNeeded = 3;
+
+  /// Authored — how close a live player Windline must pass to "connect"
+  /// a fragment. Small enough that a lattice has to be deliberately
+  /// routed through the grid, not merely drawn somewhere in its general
+  /// vicinity.
+  static const double _p3FragmentTouchRadius = 0.6;
+
+  /// Kept clear of the arena's own walls.
+  static const double _p3FragmentMargin = 1.0;
+
+  /// `_armourFor` only takes the flat-factor branch when it reads greater
+  /// than zero — the fourth reuse of the same conditional-invulnerability
+  /// trick this roster already established (Weeping Gate ADR 0042, the
+  /// Green Mother ADR 0047, Arclight ADR 0051).
+  static const double _p3ShutPlateFactor = 0.0001;
+
+  /// Authored — docs/06 gives "continuously" no exact cadence. Frequent
+  /// enough to read as ongoing pressure rather than an occasional attack.
+  static const double _p3RainWindUpSeconds = _warningSeconds;
+  static const double _p3RainCooldownSeconds = 1.0;
+  static const double _p3RainRadius = 1.2;
+
+  /// The Thresher's own persistent-aura anchor — ongoing, dodgeable
+  /// pressure, deliberately *not* the roster's own "heavy hit": this
+  /// card's own difficulty is the targeting puzzle, not a single strike.
+  static const double _p3RainDamage = 0.09;
 
   /// Places the boss's central body plus [spokeCount] invisible,
   /// untargetable anchor children — one per spoke, existing solely to own
@@ -215,11 +281,20 @@ abstract final class TheQuiverfallSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — frozen, whatever
-      // the current echo left telegraphed cleared, rather than left
-      // mid-attack forever.
+      // P3: the shard shatters — the echo cycle stops entirely, replaced
+      // by the fragment lattice and the conditional plate (see the class
+      // doc comment). Whatever the last echo left telegraphed is cleared
+      // exactly once, on the transition itself (`bossActiveChildIndex` as
+      // a one-time latch, free — nothing else in this system touches it)
+      // — not every tick, since P3's own rain mechanic needs `state`/
+      // `stateTimer`/`attackCooldown` for its own wind-up/cooldown cycle
+      // from here on.
       if (enemies.bossPhase[i] >= 2) {
-        _clearCurrentAttack(ctx, i);
+        if (enemies.bossActiveChildIndex[i] == 0) {
+          _clearCurrentAttack(ctx, i);
+          enemies.bossActiveChildIndex[i] = 1;
+        }
+        _tickP3(ctx, i, dt);
         continue;
       }
 
@@ -763,5 +838,126 @@ abstract final class TheQuiverfallSystem {
       if (ctx.enemies.bossParent[j] != primary) continue;
       if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
     }
+  }
+
+  /// P3's own whole mechanic: the plate stays shut except while the
+  /// player's own live lattice currently connects at least
+  /// [_p3FragmentsNeeded] of the forty fragment positions, plus an
+  /// ongoing, dodgeable rain of small hits at random fragments.
+  static void _tickP3(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    enemies.plateHalfArc[primary] = math.pi;
+    enemies.plateFlatFactor[primary] = _p3ShutPlateFactor;
+    final int connected = _countConnectedFragments(ctx);
+    enemies.plateHealth[primary] =
+        connected >= _p3FragmentsNeeded ? 0 : store.maxHealth[primary];
+
+    _tickRain(ctx, primary, dt);
+  }
+
+  /// Ordinal → world position on the fragment grid. Pure geometry, not an
+  /// entity — see the class doc comment.
+  static double _fragmentX(AiContext ctx, int ordinal) {
+    final int col = ordinal % _p3FragmentCols;
+    final double usable = ctx.arena.width - _p3FragmentMargin * 2;
+    return _p3FragmentMargin + usable * (col + 0.5) / _p3FragmentCols;
+  }
+
+  static double _fragmentY(AiContext ctx, int ordinal) {
+    final int row = ordinal ~/ _p3FragmentCols;
+    final double usable = ctx.arena.height - _p3FragmentMargin * 2;
+    return _p3FragmentMargin + usable * (row + 0.5) / _p3FragmentRows;
+  }
+
+  /// How many of the forty fragment positions currently have a live
+  /// player-owned Windline passing within [_p3FragmentTouchRadius] —
+  /// queried through `ctx.lineIndex`, the same rebuilt-every-tick spatial
+  /// index Confluence and this boss's own P2 slow already use.
+  static int _countConnectedFragments(AiContext ctx) {
+    int count = 0;
+    for (int f = 0; f < _p3FragmentCount; f++) {
+      final double fx = _fragmentX(ctx, f);
+      final double fy = _fragmentY(ctx, f);
+
+      final int found = ctx.lineIndex
+          .querySegment(fx, fy, fx, fy, _p3FragmentTouchRadius, ctx.segmentScratch);
+      for (int c = 0; c < found; c++) {
+        final int seg = ctx.segmentScratch[c];
+        if (!ctx.lines.isAlive(seg)) continue;
+        // `0` is the fixed sentinel every consumer of `ownerAt` already
+        // treats as "the player's own trail" (`ProjectileSystem`'s own
+        // private `_playerOwner`).
+        if (ctx.lines.ownerAt(seg) != 0) continue;
+        if (_pointNearSegment(fx, fy, ctx.lines.x0(seg), ctx.lines.y0(seg),
+            ctx.lines.x1(seg), ctx.lines.y1(seg), _p3FragmentTouchRadius)) {
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  }
+
+  static bool _pointNearSegment(double px, double py, double ax, double ay,
+      double bx, double by, double radius) {
+    final double dx = bx - ax;
+    final double dy = by - ay;
+    final double lenSq = dx * dx + dy * dy;
+    double t = lenSq <= 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    final double cx = ax + dx * t;
+    final double cy = ay + dy * t;
+    final double ox = px - cx;
+    final double oy = py - cy;
+    return ox * ox + oy * oy <= radius * radius;
+  }
+
+  /// A telegraphed strike at a random fragment position, on a short
+  /// repeating cooldown — ongoing background pressure independent of the
+  /// lattice puzzle itself.
+  static void _tickRain(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      _resolveRain(ctx, primary);
+      enemies.state[primary] = AiState.idle.index;
+      enemies.attackCooldown[primary] = _p3RainCooldownSeconds;
+      return;
+    }
+
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      return;
+    }
+
+    final int ordinal = ctx.rng.nextInt(_p3FragmentCount);
+    final double x = _fragmentX(ctx, ordinal);
+    final double y = _fragmentY(ctx, ordinal);
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = _p3RainWindUpSeconds;
+    EnemyAttack.beginCircle(ctx, primary, x, y, _p3RainRadius, _p3RainWindUpSeconds);
+  }
+
+  static void _resolveRain(AiContext ctx, int primary) {
+    final int telegraphSlot = ctx.enemies.telegraphSlot[primary];
+    if (telegraphSlot < 0) return;
+
+    final double x = ctx.telegraphs.xAt(telegraphSlot);
+    final double y = ctx.telegraphs.yAt(telegraphSlot);
+    EnemyAttack.beginCircle(ctx, primary, x, y, _p3RainRadius, 0,
+        severity: TelegraphSeverity.lethal);
+    EnemyAttack.blast(
+      ctx,
+      source: primary,
+      x: x,
+      y: y,
+      radius: _p3RainRadius,
+      damage: _p3RainDamage,
+    );
   }
 }

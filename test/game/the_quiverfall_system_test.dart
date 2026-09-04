@@ -350,8 +350,25 @@ void main() {
     });
   });
 
-  group('past P2', () {
-    test('freezes whatever the current echo left telegraphed', () {
+  group('P3: Quiverfall', () {
+    // Mirrors the private `_fragmentX`/`_fragmentY` formula — an 8x5 grid
+    // across the default 16x9 arena, kept 1.0u clear of every wall.
+    ({double x, double y}) fragmentPos(int ordinal) {
+      const int cols = 8;
+      const int rows = 5;
+      const double margin = 1.0;
+      final int col = ordinal % cols;
+      final int row = ordinal ~/ cols;
+      const double usableW = 16.0 - margin * 2;
+      const double usableH = 9.0 - margin * 2;
+      return (
+        x: margin + usableW * (col + 0.5) / cols,
+        y: margin + usableH * (row + 0.5) / rows,
+      );
+    }
+
+    test('clears whatever the last echo left telegraphed on the '
+        'transition', () {
       final (:world, :primary, :spokes) = spawnQuiverfall();
       world.enemies.bossPhase[primary] = 1;
       world.tick(InputSnapshot());
@@ -359,20 +376,128 @@ void main() {
 
       world.enemies.bossPhase[primary] = 2;
       world.tick(InputSnapshot());
+
       for (final int s in spokes) {
         expect(world.enemies.telegraphSlot[s], -1);
-      }
-
-      final int player = world.player.index;
-      final double healthBefore = world.entities.health[player];
-      for (int i = 0; i < 300; i++) {
-        world.tick(InputSnapshot());
-      }
-      expect(world.entities.health[player], healthBefore);
-      // Spoke anchors themselves are untouched — still alive, just idle.
-      for (final int s in spokes) {
+        // Spoke anchors themselves are untouched — still alive, just idle.
         expect(world.entities.alive[s], 1);
       }
+    });
+
+    test('the plate is shut while fewer than three fragments are '
+        'connected', () {
+      final (:world, :primary, :spokes) = spawnQuiverfall();
+      world.enemies.bossPhase[primary] = 2;
+
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.plateHealth[primary],
+          world.entities.maxHealth[primary]);
+    });
+
+    test('two connected fragments still leave the plate shut', () {
+      final (:world, :primary, :spokes) = spawnQuiverfall();
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int ordinal = 0; ordinal < 2; ordinal++) {
+        final pos = fragmentPos(ordinal);
+        world.windlines.add(
+          fromX: pos.x - 0.1,
+          fromY: pos.y,
+          toX: pos.x + 0.1,
+          toY: pos.y,
+          expiresAt: world.elapsedSeconds + 999,
+          ownerIndex: 0,
+          trailId: -2000 - ordinal,
+        );
+      }
+
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.plateHealth[primary],
+          world.entities.maxHealth[primary]);
+    });
+
+    test('three connected fragments open the plate', () {
+      final (:world, :primary, :spokes) = spawnQuiverfall();
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int ordinal = 0; ordinal < 3; ordinal++) {
+        final pos = fragmentPos(ordinal);
+        world.windlines.add(
+          fromX: pos.x - 0.1,
+          fromY: pos.y,
+          toX: pos.x + 0.1,
+          toY: pos.y,
+          expiresAt: world.elapsedSeconds + 999,
+          ownerIndex: 0,
+          trailId: -3000 - ordinal,
+        );
+      }
+
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.plateHealth[primary], 0.0);
+    });
+
+    test("an enemy-owned line near a fragment doesn't count toward the "
+        'lattice', () {
+      final (:world, :primary, :spokes) = spawnQuiverfall();
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int ordinal = 0; ordinal < 3; ordinal++) {
+        final pos = fragmentPos(ordinal);
+        world.windlines.add(
+          fromX: pos.x - 0.1,
+          fromY: pos.y,
+          toX: pos.x + 0.1,
+          toY: pos.y,
+          expiresAt: world.elapsedSeconds + 999,
+          ownerIndex: primary, // not the player
+          trailId: -4000 - ordinal,
+        );
+      }
+
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.plateHealth[primary],
+          world.entities.maxHealth[primary]);
+    });
+
+    test('the rain deals its own ongoing damage, on the fragment its own '
+        'telegraph committed to', () {
+      final (:world, :primary, :spokes) = spawnQuiverfall();
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      // Catch it genuinely mid-wind-up, then read back the exact point it
+      // committed to — the same trick used everywhere else in this
+      // roster a wind-up's own destination needs to survive to resolve.
+      bool caughtWindUp = false;
+      for (int i = 0; i < 200; i++) {
+        world.tick(InputSnapshot());
+        if (world.enemies.stateOf(primary) == AiState.windUp) {
+          caughtWindUp = true;
+          break;
+        }
+      }
+      expect(caughtWindUp, isTrue);
+
+      final int telegraphSlot = world.enemies.telegraphSlot[primary];
+      final double x = world.telegraphs.xAt(telegraphSlot);
+      final double y = world.telegraphs.yAt(telegraphSlot);
+      world.entities.posX[player] = x;
+      world.entities.posY[player] = y;
+      expect(world.entities.health[player], 100.0);
+
+      // Past the 0.6s wind-up.
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // The Thresher's own 9% anchor — ongoing pressure, not the
+      // roster's own heavy hit.
+      expect(world.entities.health[player], closeTo(91.0, 1.0));
     });
   });
 }
