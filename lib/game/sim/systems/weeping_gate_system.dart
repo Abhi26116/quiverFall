@@ -59,13 +59,31 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// *condition* itself: every prior plate in this roster gates on a Draw
 /// tier or a fixed angle, never a live population count. See ADR 0042.
 ///
-/// **Not built here: P3 (all portals open at once, permanently; a 40s
-/// survival check while burning the core).** Once `bossPhase` reaches 2,
-/// spawning stops, the plate is forced back open, and any live telegraph
-/// is cleared — the same posture every other boss's own undone phase
-/// already takes. Any spawned enemy is not despawned — the same "an add
-/// outlives its summoner" posture Arclight's/Green Mother's own adds
-/// already established.
+/// **P3, built here: "All portals open at once, permanently."** Read as
+/// a genuine escalation of the SAME spawn concept, not a third mechanic —
+/// the primary's own single-portal cycle (`_tickSpawns`) stops entirely,
+/// replaced by [_p3PortalCount] independent portal *children*
+/// ([_spawnP3Portals], spawned once, the instant P3 begins — the same
+/// untargetable-accounting-child shape every multi-body boss in this
+/// roster already uses for a placed object, Silversong's own pillars
+/// closest in spirit), each running its own wind-up/spawn/cooldown cycle
+/// on its own slot, simultaneously, rather than the single shared cycle
+/// P1/P2 both used. The plate stays forced open (`plateHealth = 0`) —
+/// unchanged from the prior placeholder, since "burning the core" already
+/// meant the core must stay hittable throughout, and no boss's own plate
+/// has ever needed to be shut *and* the fight still be winnable.
+///
+/// **Not built here: the 40s survival-check itself.** Nothing in the sim
+/// has ever had a timer-based win condition — every boss fight ends by
+/// the primary's own health reaching zero, never by outlasting a clock.
+/// Adding one would mean a new room-clear category alongside the existing
+/// HP-based one (ADR 0021), a real, separate piece of level-design/sim
+/// integration work this pass does not attempt; the escalated spawn
+/// pressure itself is real and playable without it, just without an
+/// enforced time limit backing the card's own "40s" framing. Any spawned
+/// enemy is not despawned — the same "an add outlives its summoner"
+/// posture Arclight's/Green Mother's own adds already established. See
+/// ADR 0048.
 abstract final class WeepingGateSystem {
   /// Reused from the Rift Maw (docs/05 #22) — the same wind-up every add
   /// spawn in the roster announces itself with.
@@ -128,6 +146,22 @@ abstract final class WeepingGateSystem {
   /// tiered switch a literal zero would.
   static const double _shutPlateFactor = 0.0001;
 
+  // ── P3: all portals open at once ──────────────────────────────────────
+  // See ADR 0048.
+
+  /// "All portals" — authored, docs/06 gives no exact count. Several,
+  /// simultaneous, is the reading that actually escalates past P2's own
+  /// single portal spawning pairs.
+  static const int _p3PortalCount = 3;
+
+  /// Faster than P2's own 4.0s single-portal cadence (ADR 0042) —
+  /// authored to make [_p3PortalCount] simultaneous portals a genuine
+  /// escalation (3 portals/2.0s vs. 2 Riftborn/4.0s) rather than a wash.
+  static const double _p3SpawnIntervalSeconds = 2.0;
+
+  /// Reused from the portal's own P1/P2 wind-up.
+  static const double _p3WindUpSeconds = _spawnWindUpSeconds;
+
   /// Places the Gate's single, stationary, unplated body. Returns its
   /// slot, or -1 if the entity pool was full or [BossArchetype.weepingGate]
   /// has no catalogue entry.
@@ -185,12 +219,28 @@ abstract final class WeepingGateSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — frozen, its own
-      // spawn telegraph cleared and the plate forced back open, rather
-      // than left mid-wind-up or shut forever.
+      // The primary's own health reached zero this tick. P3's own portal
+      // anchors are untargetable and have no death condition of their
+      // own — left alone, they would sit alive forever, and the boss
+      // room's own "zero alive enemies" clear condition (ADR 0021) would
+      // never fire. The same cleanup every multi-body boss's own
+      // `_despawnChildren` already does; P1/P2 spawn ordinary, targetable
+      // ADDS instead (Riftborn, roster enemies), which correctly outlive
+      // the Gate exactly as Arclight's/Green Mother's own already do, so
+      // this only ever finds anything to despawn once P3 has run.
+      if (store.health[i] <= 0) {
+        _despawnP3Portals(ctx, i);
+        continue;
+      }
+
+      // P3: the primary's own single-portal cycle stops entirely,
+      // replaced by several simultaneous portal children — the plate
+      // stays forced open throughout (see the class doc comment).
       if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
         enemies.plateHealth[i] = 0;
+        _spawnP3Portals(ctx, i);
+        _tickP3Portals(ctx, i, dt);
         continue;
       }
 
@@ -198,6 +248,121 @@ abstract final class WeepingGateSystem {
       _tickSpawns(ctx, i, dt, inP2);
       if (inP2) _tickPlate(ctx, i);
     }
+  }
+
+  static void _despawnP3Portals(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] != primary) continue;
+      if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
+      store.despawn(store.idAt(j));
+    }
+  }
+
+  /// Places [_p3PortalCount] untargetable portal-anchor children, exactly
+  /// once — idempotent by construction (a scan for any existing child,
+  /// not a separate latch field), so calling this every P3 tick before
+  /// any exist costs one cheap scan and calling it every tick afterward
+  /// costs the same scan and does nothing further.
+  static void _spawnP3Portals(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] == primary) return; // already placed
+    }
+
+    for (int ordinal = 0; ordinal < _p3PortalCount; ordinal++) {
+      final EntityId id = store.spawn(EntityKind.enemy);
+      if (id.isNone) continue;
+      final int slot = id.index;
+
+      store.posX[slot] = store.posX[primary];
+      store.posY[slot] = store.posY[primary];
+      store.radius[slot] = 0.01;
+      store.health[slot] = store.maxHealth[primary];
+      store.maxHealth[slot] = store.maxHealth[primary];
+      store.contentIndex[slot] = -1;
+      ctx.events.emit(SimEventType.entitySpawned,
+          entityA: slot, x: store.posX[primary], y: store.posY[primary]);
+
+      enemies.reset(slot);
+      enemies.bossParent[slot] = primary;
+      enemies.bossChildIndex[slot] = ordinal;
+      enemies.untargetable[slot] = 1;
+    }
+  }
+
+  /// Cycles every P3 portal child through its own independent wind-up →
+  /// spawn → cooldown loop, on that child's own `state`/`stateTimer`/
+  /// `attackCooldown` — the primary's own copies of those fields are
+  /// P1/P2's, untouched here, so nothing needs resetting at the P2→P3
+  /// boundary.
+  static void _tickP3Portals(AiContext ctx, int primary, double dt) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] != primary) continue;
+
+      if (enemies.stateOf(j) == AiState.windUp) {
+        enemies.stateTimer[j] -= dt;
+        if (enemies.stateTimer[j] > 0) continue;
+        _summonP3Portal(ctx, j);
+        enemies.attackCooldown[j] = _p3SpawnIntervalSeconds;
+        enemies.state[j] = AiState.idle.index;
+        continue;
+      }
+
+      if (enemies.attackCooldown[j] > 0) {
+        enemies.attackCooldown[j] -= dt;
+        continue;
+      }
+      if (EnemySpawner.atEnemyCap(ctx)) continue;
+
+      EnemySpawner.findSpawnPoint(ctx, _portalPlacementRadius);
+      enemies.state[j] = AiState.windUp.index;
+      enemies.stateTimer[j] = _p3WindUpSeconds;
+      EnemyAttack.beginCircle(
+        ctx,
+        j,
+        EnemySpawner.pointX,
+        EnemySpawner.pointY,
+        _portalPlacementRadius,
+        _p3WindUpSeconds,
+      );
+    }
+  }
+
+  static void _summonP3Portal(AiContext ctx, int childSlot) {
+    final EnemyStore enemies = ctx.enemies;
+    if (!EnemyAttack.hasTelegraph(ctx, childSlot)) return;
+
+    final int telegraphSlot = enemies.telegraphSlot[childSlot];
+    final double x = ctx.telegraphs.xAt(telegraphSlot);
+    final double y = ctx.telegraphs.yAt(telegraphSlot);
+    EnemyAttack.endTelegraph(ctx, childSlot);
+
+    if (EnemySpawner.atEnemyCap(ctx)) return;
+
+    final String id = _riftbornIds[ctx.rng.nextInt(_riftbornIds.length)];
+    final int contentIndex = ctx.content.enemyIndexById[id] ?? -1;
+    if (contentIndex < 0) return;
+
+    EnemySpawner.spawn(
+      ctx,
+      contentIndex: contentIndex,
+      x: x,
+      y: y,
+      spawnerSlot: childSlot,
+    );
   }
 
   static void _tickSpawns(AiContext ctx, int slot, double dt, bool inP2) {

@@ -182,9 +182,19 @@ void main() {
     });
   });
 
-  group('past P2', () {
-    test('stops opening portals, clears its own live telegraph, and forces '
-        'the plate back open', () {
+  group('P3: all portals open at once', () {
+    List<int> p3PortalsOf(SimWorld world, int primary) {
+      final List<int> found = <int>[];
+      for (int j = 0; j < world.entities.highWater; j++) {
+        if (world.entities.alive[j] == 0) continue;
+        if (world.enemies.bossParent[j] != primary) continue;
+        found.add(j);
+      }
+      return found;
+    }
+
+    test('stops the primary\'s own single-portal cycle and forces the '
+        'plate back open', () {
       final (:world, :primary) = spawnGate();
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
@@ -194,14 +204,69 @@ void main() {
       expect(world.enemies.telegraphSlot[primary], -1);
       expect(world.enemies.plateHealth[primary], 0.0);
 
-      final int liveAddsBefore = world.enemies.liveAdds[primary];
-      for (int i = 0; i < 400; i++) {
+      // The primary's own telegraph never comes back — every portal from
+      // here on is owned by one of the new portal children instead.
+      for (int i = 0; i < 60; i++) {
         world.tick(InputSnapshot());
       }
-      // No further spawns — the count can only have gone down (organic
-      // deaths never happen here) or stayed put, never up.
-      expect(world.enemies.liveAdds[primary], lessThanOrEqualTo(liveAddsBefore));
+      expect(world.enemies.telegraphSlot[primary], -1);
       expect(world.enemies.plateHealth[primary], 0.0);
+    });
+
+    test('places several portal children at once, not one', () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+
+      final List<int> portals = p3PortalsOf(world, primary);
+      expect(portals.length, 3);
+      final Set<int> childIndices = <int>{};
+      for (final int p in portals) {
+        expect(world.enemies.untargetable[p], 1);
+        childIndices.add(world.enemies.bossChildIndex[p]);
+      }
+      expect(childIndices, <int>{0, 1, 2});
+    });
+
+    test('every portal spawns independently — several distinct spawners, '
+        'not just one working portal', () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int i = 0; i < 200; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      final Set<int> spawnerSlots = <int>{};
+      for (int j = 0; j < world.entities.highWater; j++) {
+        if (world.entities.alive[j] == 0) continue;
+        if (world.entities.kind[j] != EntityKind.enemy.index) continue;
+        final int spawner = world.enemies.spawnerSlot[j];
+        if (p3PortalsOf(world, primary).contains(spawner)) {
+          spawnerSlots.add(spawner);
+        }
+      }
+      expect(spawnerSlots.length, greaterThan(1),
+          reason: 'several portals should each have spawned something by '
+              'now, not just one');
+    });
+
+    test('the primary\'s own death despawns every portal child — the room '
+        'can still clear', () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      final List<int> portals = p3PortalsOf(world, primary);
+      expect(portals, isNotEmpty);
+
+      world.entities.health[primary] = 0;
+      world.tick(InputSnapshot());
+
+      for (final int p in portals) {
+        expect(world.entities.alive[p], 0,
+            reason: 'a P3 portal child must not outlive the primary it '
+                'belongs to');
+      }
     });
   });
 }
