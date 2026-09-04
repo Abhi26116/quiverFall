@@ -1,14 +1,17 @@
 import 'dart:math' as math;
 
+import 'package:quiverfall/game/balance/enemy_tuning.dart';
 import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
+import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
+import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 
 /// The Quiverfall — docs/06 §12, chapter 12's boss. "Tests: mastery ·
 /// Campaign finale." "The sky itself, falling. Fought on a collapsing
@@ -41,19 +44,38 @@ import 'package:quiverfall/game/sim/telegraph.dart';
 /// shape mid-room) that this pass does not attempt; flagged alongside the
 /// rest of what P2/P3 need.
 ///
-/// **Not built here: P2 ("The Choir Reforms" — all eleven previous bosses
+/// **P2, built here: "The Choir Reforms" — all eleven previous bosses
 /// appear as 12s echoes, one at a time, each using a single signature
-/// attack) and P3 ("Quiverfall" — the shard shatters into 40 fragments;
-/// the boss is invulnerable except when the player's own Windline lattice
-/// connects three or more of them, channelling them into the core — "the
-/// only fight in the game that *requires* Confluence").** Both are large,
-/// scoped pieces of their own: P2 needs a real "echo" primitive (a
-/// time-boxed body that borrows another boss's own signature move) this
-/// pass does not attempt to generalise from eleven bespoke systems; P3
-/// needs a genuinely new kind of conditional invulnerability driven by the
-/// *player's* own Windline geometry, not any timer or live-count this
-/// session has built before. Once `bossPhase` reaches 1, the sweep stops
-/// and every live telegraph is cleared — the same posture every other
+/// attack.** Rather than literally invoking each of the eleven other
+/// systems' own private, child-entity-entangled tick methods, "a single
+/// signature attack" is read as one of the small vocabulary of telegraphed
+/// shapes this game already has — a rotating multi-line sweep, a circle
+/// slam, a cone, a line/beam, a bolt, a portal spawn — with each boss's
+/// own echo picking whichever of that vocabulary its own actual mechanic
+/// is closest to, reusing that boss's own already-established numbers
+/// (damage, radius, timing) rather than inventing new ones. See ADR 0044
+/// for the full boss-by-boss mapping and the reasoning behind it.
+///
+/// The eight spoke-anchor children P1 already spawns are reused as-is —
+/// no new entities are spawned or despawned per echo — and every echo
+/// shares the primary's own `state`/`stateTimer`/`attackCooldown` fields,
+/// reset whenever the active echo changes (`comboStep`, free until now,
+/// holds the current echo index; `bossTimer`, unused by P1's own sweep,
+/// holds elapsed time in the current 12s window). The very first echo
+/// (Cinder Choir's own) reuses `_tickSweep` verbatim and both `comboStep`
+/// and `bossTimer` start at zero by construction, so the P1→P2 transition
+/// has no visible seam: the boss is already mid-sweep when P2 begins, and
+/// simply keeps going.
+///
+/// **Not built here: P3 ("Quiverfall" — the shard shatters into 40
+/// fragments; the boss is invulnerable except when the player's own
+/// Windline lattice connects three or more of them, channelling them into
+/// the core — "the only fight in the game that *requires* Confluence").**
+/// P3 needs a genuinely new kind of conditional invulnerability driven by
+/// the *player's* own Windline geometry, not any timer or live-count this
+/// session has built a boss's defence from before. Once `bossPhase`
+/// reaches 2, the current echo's own telegraph (the primary's, or all
+/// eight spokes', for echo 0) is cleared — the same posture every other
 /// boss's own undone phases already take.
 abstract final class TheQuiverfallSystem {
   /// "The arena edges", plural — authored as more than Cinder Choir's own
@@ -86,6 +108,27 @@ abstract final class TheQuiverfallSystem {
   /// spoke actually starts hitting, docs/06 rule 2's own most-repeated
   /// rule, the identical choice Cinder Choir's own sweep already made.
   static const double _warningSeconds = _cooldown;
+
+  // ── P2: "The Choir Reforms" ───────────────────────────────────────────
+  // See ADR 0044.
+
+  /// docs/06's own stated echo length.
+  static const double _echoWindowSeconds = 12.0;
+
+  /// One entry per prior campaign boss, chapter order (1-11) — the order
+  /// they were fought in, so the "greatest hits" replay is chronological.
+  static const int _echoCount = 11;
+
+  /// A cone shape reused for every cone echo below — Silversong's,
+  /// Rimefather's, and Thrall's own P1 cones all happen to share this
+  /// exact half-angle and range (docs/05's own common early-cone shape).
+  static const double _echoConeHalfAngle = 30 * math.pi / 180;
+  static const double _echoConeRange = 5.0;
+
+  /// A line width reused for every line/bolt echo below — the same
+  /// generic Windline-hazard width every boss in the roster already
+  /// shares.
+  static const double _echoLineWidth = SimConfig.windlineHitWidth;
 
   /// Places the boss's central body plus [spokeCount] invisible,
   /// untargetable anchor children — one per spoke, existing solely to own
@@ -172,15 +215,468 @@ abstract final class TheQuiverfallSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — frozen, every
-      // live spoke telegraph cleared, rather than left mid-sweep forever.
+      // P3 not built yet (see the class doc comment) — frozen, whatever
+      // the current echo left telegraphed cleared, rather than left
+      // mid-attack forever.
+      if (enemies.bossPhase[i] >= 2) {
+        _clearCurrentAttack(ctx, i);
+        continue;
+      }
+
       if (enemies.bossPhase[i] >= 1) {
-        _clearSpokes(ctx, i);
+        _tickEcho(ctx, i, dt);
         continue;
       }
 
       _tickSweep(ctx, i, dt);
     }
+  }
+
+  /// Advances the current echo's own clock and, once it runs out, rotates
+  /// [comboStep] to the next boss in chapter order and resets every field
+  /// an echo's own attack could have left behind — then dispatches to
+  /// that echo's own tick method. See the class doc comment and ADR 0044
+  /// for the full boss-by-boss mapping.
+  static void _tickEcho(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+
+    enemies.bossTimer[primary] += dt;
+    if (enemies.bossTimer[primary] >= _echoWindowSeconds) {
+      // Carries any overshoot forward rather than snapping to zero, the
+      // same "never systematically drifts late" rule `_tickSweep`'s own
+      // rotation timer already follows.
+      enemies.bossTimer[primary] -= _echoWindowSeconds;
+      enemies.comboStep[primary] = (enemies.comboStep[primary] + 1) % _echoCount;
+      _clearCurrentAttack(ctx, primary);
+    }
+
+    switch (enemies.comboStep[primary]) {
+      case 0: // The Cinder Choir — the tether sweep, reused verbatim.
+        _tickSweep(ctx, primary, dt);
+
+      case 1: // Gaunt, the Iron Tide — the P2 shockwave slam (ADR 0035).
+        _tickCircleSlamEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 1.8,
+          radius: 5.0,
+          damage: 0.09 * 2.10,
+          cooldownSeconds: 2.0,
+        );
+
+      case 2: // Silversong — the Draw-locking cone, not a damage hit.
+        _tickConeEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 0.6,
+          cooldownSeconds: 2.5,
+          onHit: (AiContext c) => c.playerDraw?.applyDrawLock(2.5),
+        );
+
+      case 3: // The Hollow Warden — the heavy bolt (ADR 0031).
+        _tickHollowWardenEcho(ctx, primary, dt);
+
+      case 4: // Vermillion, the Long Burn — the P2 charge (ADR 0037).
+        _tickLineEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 0.6,
+          length: 6.0,
+          cooldownSeconds: 3.0,
+          onHit: (AiContext c) =>
+              EnemyAttack.damagePlayer(c, 0.09 * 2.10, source: primary),
+        );
+
+      case 5: // Rimefather — the frost cone (P1's own).
+        _tickConeEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 0.6,
+          cooldownSeconds: 1.5,
+          onHit: (AiContext c) =>
+              EnemyAttack.damagePlayer(c, 0.09, source: primary),
+        );
+
+      case 6: // Arclight — the chain bolt (P1's own).
+        _tickLineEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 0.6,
+          length: 6.0,
+          cooldownSeconds: 0.6,
+          onHit: (AiContext c) =>
+              EnemyAttack.damagePlayer(c, 0.09, source: primary),
+        );
+
+      case 7: // The Green Mother — a root eruption, real Toxin (ADR 0040).
+        _tickLineEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 0.6,
+          length: 5.0,
+          cooldownSeconds: 3.0,
+          onHit: (AiContext c) {
+            if (c.hasPlayer) c.status.apply(c.player, SimElement.toxin);
+          },
+        );
+        // `ElementSystem` never ticks the player's own Toxin — Green
+        // Mother's own P2 already established that this boss applies the
+        // DoT itself, every tick, at the shared rate. See ADR 0040.
+        if (ctx.hasPlayer && ctx.status.toxinStacks[ctx.player] > 0) {
+          EnemyAttack.damagePlayer(
+            ctx,
+            ElementTuning.toxinPerStackPerSecond *
+                ctx.status.toxinStacks[ctx.player] *
+                dt,
+            source: primary,
+          );
+        }
+
+      case 8: // Thrall of the Nine — its first ability, a cone (ADR 0029).
+        _tickConeEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 0.6,
+          cooldownSeconds: 1.0,
+          onHit: (AiContext c) =>
+              EnemyAttack.damagePlayer(c, 0.09, source: primary),
+        );
+
+      case 9: // The Weeping Gate — a portal (ADR 0030).
+        _tickWeepingGateEcho(ctx, primary, dt);
+
+      case 10: // Skarn the Unmade — the ground slam (ADR 0034).
+        _tickCircleSlamEcho(
+          ctx,
+          primary,
+          dt,
+          windUpSeconds: 1.8,
+          radius: 3.0,
+          damage: 0.09 * 2.10,
+          cooldownSeconds: 2.0,
+        );
+    }
+  }
+
+  /// Ends whatever telegraph the current echo left live — the primary's
+  /// own, or (echo 0 only) every spoke's — and resets every shared field
+  /// an echo's own attack could have left mid-cycle. Called both when the
+  /// active echo changes and, every tick, once P3's own freeze begins.
+  static void _clearCurrentAttack(AiContext ctx, int primary) {
+    final EnemyStore enemies = ctx.enemies;
+    if (EnemyAttack.hasTelegraph(ctx, primary)) {
+      EnemyAttack.endTelegraph(ctx, primary);
+    }
+    _clearSpokes(ctx, primary);
+    enemies.state[primary] = AiState.idle.index;
+    enemies.stateTimer[primary] = 0;
+    enemies.attackCooldown[primary] = 0;
+    enemies.bossSweepAngle[primary] = 0;
+  }
+
+  /// A generic windUp → AoE circle around the caster's own position →
+  /// cooldown cycle — Gaunt's own P2 shockwave and Skarn's own P1 slam are
+  /// both this exact shape, just with different numbers.
+  static void _tickCircleSlamEcho(
+    AiContext ctx,
+    int primary,
+    double dt, {
+    required double windUpSeconds,
+    required double radius,
+    required double damage,
+    required double cooldownSeconds,
+  }) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      if (EnemyAttack.playerInCircle(
+          ctx, store.posX[primary], store.posY[primary], radius)) {
+        EnemyAttack.damagePlayer(ctx, damage, source: primary);
+      }
+      if (EnemyAttack.hasTelegraph(ctx, primary)) {
+        EnemyAttack.endTelegraph(ctx, primary);
+      }
+      enemies.attackCooldown[primary] = cooldownSeconds;
+      enemies.state[primary] = AiState.idle.index;
+      return;
+    }
+
+    enemies.state[primary] = AiState.idle.index;
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      return;
+    }
+
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = windUpSeconds;
+    EnemyAttack.beginCircle(
+      ctx,
+      primary,
+      store.posX[primary],
+      store.posY[primary],
+      radius,
+      windUpSeconds,
+    );
+  }
+
+  /// A generic windUp → cone facing the player at wind-up start → cooldown
+  /// cycle. [onHit] is what the cone actually does on a landed hit —
+  /// Silversong's own cone Draw-locks rather than damaging; every other
+  /// cone echo damages.
+  static void _tickConeEcho(
+    AiContext ctx,
+    int primary,
+    double dt, {
+    required double windUpSeconds,
+    required double cooldownSeconds,
+    required void Function(AiContext ctx) onHit,
+  }) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      if (EnemyAttack.playerInCone(
+        ctx,
+        store.posX[primary],
+        store.posY[primary],
+        store.facing[primary],
+        _echoConeHalfAngle,
+        _echoConeRange,
+      )) {
+        onHit(ctx);
+      }
+      if (EnemyAttack.hasTelegraph(ctx, primary)) {
+        EnemyAttack.endTelegraph(ctx, primary);
+      }
+      enemies.attackCooldown[primary] = cooldownSeconds;
+      enemies.state[primary] = AiState.idle.index;
+      return;
+    }
+
+    enemies.state[primary] = AiState.idle.index;
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      return;
+    }
+    if (!ctx.hasPlayer) return;
+
+    final double angle = math.atan2(
+      ctx.playerY - store.posY[primary],
+      ctx.playerX - store.posX[primary],
+    );
+    store.facing[primary] = angle;
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = windUpSeconds;
+    EnemyAttack.beginCone(
+      ctx,
+      primary,
+      store.posX[primary],
+      store.posY[primary],
+      angle,
+      _echoConeHalfAngle,
+      _echoConeRange,
+      windUpSeconds,
+    );
+  }
+
+  /// A generic windUp → straight line toward the player's own position at
+  /// wind-up start → cooldown cycle, reading the committed endpoint back
+  /// from the telegraph itself (the same trick ADR 0030/0037/0040 already
+  /// established) rather than tracking a second field. [onHit] is what a
+  /// landed hit actually does — raw damage for most, a Toxin application
+  /// for the Green Mother's own echo.
+  static void _tickLineEcho(
+    AiContext ctx,
+    int primary,
+    double dt, {
+    required double windUpSeconds,
+    required double length,
+    required double cooldownSeconds,
+    required void Function(AiContext ctx) onHit,
+  }) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      final int telegraphSlot = enemies.telegraphSlot[primary];
+      if (EnemyAttack.hasTelegraph(ctx, primary) &&
+          EnemyAttack.playerOnLine(
+            ctx,
+            ctx.telegraphs.xAt(telegraphSlot),
+            ctx.telegraphs.yAt(telegraphSlot),
+            ctx.telegraphs.toXAt(telegraphSlot),
+            ctx.telegraphs.toYAt(telegraphSlot),
+            _echoLineWidth,
+          )) {
+        onHit(ctx);
+      }
+      if (EnemyAttack.hasTelegraph(ctx, primary)) {
+        EnemyAttack.endTelegraph(ctx, primary);
+      }
+      enemies.attackCooldown[primary] = cooldownSeconds;
+      enemies.state[primary] = AiState.idle.index;
+      return;
+    }
+
+    enemies.state[primary] = AiState.idle.index;
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      return;
+    }
+    if (!ctx.hasPlayer) return;
+
+    final double x0 = store.posX[primary];
+    final double y0 = store.posY[primary];
+    final double angle = math.atan2(ctx.playerY - y0, ctx.playerX - x0);
+    final double x1 = x0 + length * math.cos(angle);
+    final double y1 = y0 + length * math.sin(angle);
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = windUpSeconds;
+    EnemyAttack.beginLine(
+        ctx, primary, x0, y0, x1, y1, _echoLineWidth, windUpSeconds);
+  }
+
+  /// The Hollow Warden's own echo: a wind-up (this boss's own Draw ramp is
+  /// not replicated — see ADR 0044) followed by the same `EnemyAttack.
+  /// fireBolt` primitive ADR 0031's own heavy shot already fires with,
+  /// reusing its exact numbers.
+  static void _tickHollowWardenEcho(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    const double windUpSeconds = 0.6;
+    const double boltSpeed = 8.0;
+    const double boltRange = 14.0;
+    const double boltDamage = 0.06 * 2.10;
+    const double cooldownSeconds = 2.0;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      if (ctx.hasPlayer) {
+        final double angle = math.atan2(
+          ctx.playerY - store.posY[primary],
+          ctx.playerX - store.posX[primary],
+        );
+        EnemyAttack.fireBolt(
+          ctx,
+          primary,
+          angle: angle,
+          speed: boltSpeed,
+          damage: boltDamage,
+          radius: EnemyTuning.boltRadius,
+          lifetime: boltRange / boltSpeed,
+        );
+      }
+      if (EnemyAttack.hasTelegraph(ctx, primary)) {
+        EnemyAttack.endTelegraph(ctx, primary);
+      }
+      enemies.attackCooldown[primary] = cooldownSeconds;
+      enemies.state[primary] = AiState.idle.index;
+      return;
+    }
+
+    enemies.state[primary] = AiState.idle.index;
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      return;
+    }
+    if (!ctx.hasPlayer) return;
+
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = windUpSeconds;
+    EnemyAttack.beginLine(
+      ctx,
+      primary,
+      store.posX[primary],
+      store.posY[primary],
+      ctx.playerX,
+      ctx.playerY,
+      _echoLineWidth,
+      windUpSeconds,
+    );
+  }
+
+  /// The Weeping Gate's own echo: the identical wind-up-a-circle-then-
+  /// spawn-there shape ADR 0030 already built, drawing from the same four
+  /// Riftborn archetypes ADR 0042's own P2 introduced (the ids duplicated
+  /// here rather than exposed from `WeepingGateSystem`, which keeps them
+  /// private — the same "reuse the shape, not the private field" rule
+  /// this session already applies to borrowed movement).
+  static void _tickWeepingGateEcho(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+
+    const double windUpSeconds = 0.5;
+    const double intervalSeconds = 4.0;
+    const double placementRadius = 0.5;
+    const List<String> riftbornIds = <String>[
+      'riftMaw',
+      'echo',
+      'gravebound',
+      'nullborn',
+    ];
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+
+      if (EnemyAttack.hasTelegraph(ctx, primary)) {
+        final int telegraphSlot = enemies.telegraphSlot[primary];
+        final double x = ctx.telegraphs.xAt(telegraphSlot);
+        final double y = ctx.telegraphs.yAt(telegraphSlot);
+        EnemyAttack.endTelegraph(ctx, primary);
+
+        if (!EnemySpawner.atEnemyCap(ctx)) {
+          final String id = riftbornIds[ctx.rng.nextInt(riftbornIds.length)];
+          final int contentIndex = ctx.content.enemyIndexById[id] ?? -1;
+          if (contentIndex >= 0) {
+            EnemySpawner.spawn(
+              ctx,
+              contentIndex: contentIndex,
+              x: x,
+              y: y,
+              spawnerSlot: primary,
+            );
+          }
+        }
+      }
+
+      enemies.attackCooldown[primary] = intervalSeconds;
+      enemies.state[primary] = AiState.idle.index;
+      return;
+    }
+
+    enemies.state[primary] = AiState.idle.index;
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      return;
+    }
+
+    EnemySpawner.findSpawnPoint(ctx, placementRadius);
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = windUpSeconds;
+    EnemyAttack.beginCircle(
+      ctx,
+      primary,
+      EnemySpawner.pointX,
+      EnemySpawner.pointY,
+      placementRadius,
+      windUpSeconds,
+    );
   }
 
   static void _despawnChildren(AiContext ctx, int primary) {
