@@ -43,6 +43,7 @@ import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
 import 'package:quiverfall/game/sim/systems/silversong_system.dart';
 import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
+import 'package:quiverfall/game/sim/systems/thrall_of_nine_system.dart';
 import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/windline_store.dart';
@@ -624,6 +625,7 @@ class SimWorld {
     RimefatherSystem.update(ai);
     ArclightSystem.update(ai);
     GreenMotherSystem.update(ai);
+    ThrallOfNineSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2469,6 +2471,22 @@ class SimWorld {
   /// [GreenMotherSystem.spawn] does the real work. Returns its slot.
   int spawnGreenMother(double x, double y, {required double health}) =>
       GreenMotherSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Thrall of the Nine — a single, stationary body orbited by nine
+  /// destructible sigils, each granting one of three reused attack shapes.
+  /// Test/tool entry point, the same role [spawnBoss] plays for the
+  /// generic case; [ThrallOfNineSystem.spawn] does the real work. Returns
+  /// the Thrall's own slot.
+  int spawnThrallOfNine(double x, double y, {required double health}) =>
+      ThrallOfNineSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

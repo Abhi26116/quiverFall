@@ -129,3 +129,13 @@ at all. It did, however, surface a real pre-existing crash in shared code
 entity), unreachable until this was the first fight to put a Choir-family
 unit in the same room as a boss body — fixed, with a regression test that
 reproduces it independent of this boss.
+
+**Update, same day:** and a ninth — Thrall of the Nine (ADR 0029), chapter
+9. A real GDD gap this time (docs/06 never names what its own "nine
+abilities" are, unlike every prior card), resolved by assigning the nine
+orbiting sigils three of the roster's own already-reused attack shapes
+round-robin. Its own children are a genuinely new shape too: independent
+side-resource bodies (their own real health, never redirected to the
+Thrall's own bar) rather than a shared pool — simpler than Cinder Choir's
+or Skarn's own multi-body wiring, not more complex, since no redirect logic
+anywhere needed to change.
