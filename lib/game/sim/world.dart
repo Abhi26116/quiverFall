@@ -598,19 +598,19 @@ class SimWorld {
       events: events,
     );
 
-    // Each boss's own bespoke mechanic shares this same slot rather than
-    // claiming a new `SystemOrder` entry per archetype — see
-    // `CinderChoirSystem`'s own doc comment. After `BossPhaseSystem`, so a
-    // phase change this tick is already visible to it.
-    CinderChoirSystem.update(
-      store: entities,
-      enemies: enemies,
-      content: content,
-      dt: dt,
-    );
-
     // ── ai ─────────────────────────────────────────────────────────────────
     _refreshAiContext(dt);
+
+    // Each boss's own bespoke mechanic shares `SystemOrder.bossPhase`'s slot
+    // rather than claiming a new entry per archetype — see
+    // `CinderChoirSystem`'s own doc comment. After `_refreshAiContext`,
+    // because the tether sweep (P2) needs `AiContext`'s player-facing
+    // helpers (`EnemyAttack.playerOnLine`, `damagePlayer`), the same object
+    // every other enemy's own attack logic already runs on; before
+    // `AiSystem.update`, so an ordinary enemy's own tree never reads a boss
+    // reaction that hasn't happened yet this tick.
+    CinderChoirSystem.update(ai);
+
     AiSystem.update(ai);
 
     // *Rekindle* — the revive itself happens inside AiSystem's own call to

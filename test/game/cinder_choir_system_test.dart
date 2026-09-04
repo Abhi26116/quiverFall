@@ -3,15 +3,18 @@ import 'dart:math' as math;
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// The Cinder Choir's own fight — P1's rotating-vulnerability puzzle. The
-/// generic phase machine has its own tests (`boss_phase_system_test.dart`);
-/// this file is the bespoke part: three effigies, a shared pool, and the
-/// existing plate/armour system reused unmodified.
+/// The Cinder Choir's own fight — P1's rotating-vulnerability puzzle and
+/// P2's tether sweep. The generic phase machine has its own tests
+/// (`boss_phase_system_test.dart`); this file is the bespoke part: three
+/// effigies, a shared pool, the existing plate/armour system reused
+/// unmodified, and three sweeping lethal lines built on `EnemyAttack`'s own
+/// existing `playerOnLine`/`beginLine` primitives.
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e7;
@@ -200,6 +203,97 @@ void main() {
       expect(world.entities.isAlive(world.entities.idAt(primary)), isFalse);
       for (final int c in children) {
         expect(world.entities.alive[c], 0);
+      }
+    });
+  });
+
+  group('P2 tether sweep', () {
+    // Right next to the primary's own position — the start of every spoke —
+    // so the player is "on" all three lines regardless of the live sweep
+    // angle, without needing to compute it.
+    ({SimWorld world, int primary, List<int> children}) spawnAtCenter() =>
+        spawnChoir(playerX: centerX + 0.05, playerY: centerY);
+
+    test('starts as a warning — no damage while it holds', () {
+      final (:world, :primary, :children) = spawnAtCenter();
+      world.enemies.bossPhase[primary] = 1;
+
+      for (int i = 0; i < 20; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[world.player.index], 100.0);
+      final int telegraphSlot = world.enemies.telegraphSlot[children[0]];
+      expect(telegraphSlot, greaterThanOrEqualTo(0));
+      expect(world.telegraphs.severityAt(telegraphSlot), TelegraphSeverity.warning);
+    });
+
+    test('turns lethal and damages the player once the warning passes', () {
+      final (:world, :primary, :children) = spawnAtCenter();
+      world.enemies.bossPhase[primary] = 1;
+
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      final int player = world.player.index;
+      // Reused from the Thresher (ADR 0019): 9% of max HP.
+      expect(world.entities.health[player], closeTo(91.0, 1e-6));
+      final int telegraphSlot = world.enemies.telegraphSlot[children[0]];
+      expect(world.telegraphs.severityAt(telegraphSlot), TelegraphSeverity.lethal);
+    });
+
+    test('damage respects its own cooldown, then lands again', () {
+      final (:world, :primary, :children) = spawnAtCenter();
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+      // Headroom for two hits without dying.
+      world.entities.health[player] = 1000;
+      world.entities.maxHealth[player] = 1000;
+
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+      final double afterFirst = world.entities.health[player];
+      expect(afterFirst, lessThan(1000));
+
+      // Well inside the 0.6 s cooldown — no second hit yet.
+      for (int i = 0; i < 10; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.entities.health[player], afterFirst);
+
+      // Past it — a second hit lands.
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.entities.health[player], lessThan(afterFirst));
+    });
+
+    test('the sweep angle actually advances', () {
+      final (:world, :primary, :children) = spawnChoir();
+      world.enemies.bossPhase[primary] = 1;
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.bossSweepAngle[primary], greaterThan(0));
+    });
+
+    test('entering P3 clears every tether telegraph', () {
+      final (:world, :primary, :children) = spawnAtCenter();
+      world.enemies.bossPhase[primary] = 1;
+      for (int i = 0; i < 20; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.enemies.telegraphSlot[children[0]], greaterThanOrEqualTo(0));
+
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+
+      for (final int c in children) {
+        expect(world.enemies.telegraphSlot[c], -1);
       }
     });
   });

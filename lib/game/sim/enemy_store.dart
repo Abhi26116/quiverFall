@@ -96,7 +96,8 @@ class EnemyStore {
         linkedHealthSlot = Int32List(capacity),
         bossChildIndex = Uint8List(capacity),
         bossTimer = Float64List(capacity),
-        bossActiveChildIndex = Uint8List(capacity);
+        bossActiveChildIndex = Uint8List(capacity),
+        bossSweepAngle = Float64List(capacity);
 
   final int _capacity;
 
@@ -290,18 +291,25 @@ class EnemyStore {
   final Uint8List bossChildIndex;
 
   /// A generic countdown a boss's own system owns and interprets — Cinder
-  /// Choir's rotation timer today, some other boss's own cadence later.
-  /// Meaningless (0) on anything that is not a boss primary. One field
-  /// rather than a per-boss name because exactly one scripted timer is ever
-  /// live on a given boss at a time; a boss that genuinely needs two
-  /// concurrent cadences will need its own second field when that boss is
-  /// actually built, not a speculative one added ahead of it.
+  /// Choir's rotation timer (P1/P2). Meaningless (0) on anything that is not
+  /// a boss primary. `EnemyStore.attackCooldown` (the field every ordinary
+  /// enemy already has, unused by a bare boss entity) doubles as a *second*
+  /// concurrent timer where a boss needs one — Cinder Choir's P2 tether-hit
+  /// cadence reads that one, this one keeps rotating, exactly the "two
+  /// concurrent cadences" case this comment used to flag as unbuilt.
   final Float64List bossTimer;
 
   /// Which [bossChildIndex] is currently the "active" one — Cinder Choir's
   /// lit, vulnerable effigy. Meaningless (0) on anything that is not a boss
   /// primary; read and written only by that boss's own system.
   final Uint8List bossActiveChildIndex;
+
+  /// A generic running angle (radians) a boss's own system owns — Cinder
+  /// Choir's P2 tether sweep, at 45°/s (docs/06 §1). Zero and inert outside
+  /// whatever phase a boss's own system gates it to; doubles as that phase's
+  /// own elapsed-time clock (`angle / rate = seconds`), so no separate timer
+  /// is needed to know how long the sweep has been running.
+  final Float64List bossSweepAngle;
 
   final Uint8List variant;
 
@@ -413,6 +421,7 @@ class EnemyStore {
     bossChildIndex[slot] = 0;
     bossTimer[slot] = 0;
     bossActiveChildIndex[slot] = 0;
+    bossSweepAngle[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

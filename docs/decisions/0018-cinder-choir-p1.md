@@ -121,3 +121,7 @@ letting them become ordinary, independently-healthed enemies from that point
 on. Skarn, Coilspine and Thrall should each re-read this ADR before assuming
 `linkedHealthSlot` covers their own shape unmodified — it is proven generic
 for "several bodies, one pool", not yet for "a pool that later un-shares."
+
+**Update, same day:** the tether sweep happened next — see ADR 0019. It
+needed no new primitive at all; `EnemyAttack.playerOnLine`/`beginLine`
+already covered it. P3's individual-death model is still open.
