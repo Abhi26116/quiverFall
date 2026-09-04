@@ -40,6 +40,7 @@ import 'package:quiverfall/game/sim/systems/projectile_system.dart';
 import 'package:quiverfall/game/sim/systems/silversong_system.dart';
 import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
+import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/windline_store.dart';
 import 'package:quiverfall/game/spawn/enemy_spawner.dart';
@@ -616,6 +617,7 @@ class SimWorld {
     SkarnSystem.update(ai);
     GauntSystem.update(ai);
     SilversongSystem.update(ai);
+    VermillionSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2397,6 +2399,21 @@ class SimWorld {
   /// [SilversongSystem.spawn] does the real work. Returns its slot.
   int spawnSilversong(double x, double y, {required double health}) =>
       SilversongSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Vermillion, the Long Burn — a single body that lays a burning
+  /// trail as it walks. Test/tool entry point, the same role [spawnBoss]
+  /// plays for the generic case; [VermillionSystem.spawn] does the real
+  /// work. Returns its slot.
+  int spawnVermillion(double x, double y, {required double health}) =>
+      VermillionSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

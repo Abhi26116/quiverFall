@@ -325,6 +325,21 @@ void main() {
       expect(spawned, isTrue, reason: 'no Silversong primary found in the room');
     });
 
+    test('chapter 5\'s stage 20 spawns the real Vermillion', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 5, stage: 20, seed: 507);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.vermillion);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Vermillion primary found in the room');
+    });
+
     test('the boss room does not clear until the boss actually dies', () {
       final ({StageRunner runner, SimWorld world}) s =
           stage(chapter: 1, stage: 20, seed: 502);

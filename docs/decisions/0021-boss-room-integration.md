@@ -95,3 +95,9 @@ at all) behind them. Three bosses now spawn for real in an actual run.
 **Update, same day:** and a fourth — Silversong (ADR 0024), chapter 3, the
 first boss built almost entirely from an existing enemy's own primitive
 (the Screecher's own Draw-lock scream) rather than a new one.
+
+**Update, same day:** and a fifth — Vermillion (ADR 0025), chapter 5,
+another win for reuse (`EnemyAttack.dropPuddle`, already built for lingering
+shell impacts). Also caught a real, vacuously-passing test bug in Gaunt's
+own "halts past P1" test while writing Vermillion's equivalent — see ADR
+0025's own account.

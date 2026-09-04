@@ -124,9 +124,12 @@ void main() {
     });
 
     test('movement and turning stop once past P1', () {
+      // Diagonal, so posX genuinely moves too — a due-south player would
+      // leave posX unchanged for the entire test regardless of whether the
+      // halt fix below does anything at all.
       final (:world, :primary) = spawnGaunt(
-        playerX: centerX,
-        playerY: centerY - 4.0,
+        playerX: centerX - 3.0,
+        playerY: centerY - 3.0,
       );
       // Let it move for real first — a stale velocity from mid-stride is
       // exactly what a P1→P2 transition must not leave it sliding on.
@@ -134,10 +137,16 @@ void main() {
         world.tick(InputSnapshot());
       }
       world.enemies.bossPhase[primary] = 1;
+      // `MovementSystem` still integrates the velocity `moveToward` set on
+      // the tick just before the phase changed — one tick's worth of
+      // residual drift, then `Steering.halt` (called later that same tick)
+      // has actually taken effect. `posBefore`/`facingBefore` are captured
+      // after that transitional tick, not before it.
+      world.tick(InputSnapshot());
       final double posBefore = world.entities.posX[primary];
       final double facingBefore = world.entities.facing[primary];
 
-      for (int i = 0; i < 120; i++) {
+      for (int i = 0; i < 119; i++) {
         world.tick(InputSnapshot());
       }
 

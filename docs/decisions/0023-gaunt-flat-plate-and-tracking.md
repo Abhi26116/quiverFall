@@ -105,3 +105,11 @@ itself), and Gaunt (no pool-sharing at all, a pure single-body positioning
 puzzle). The next boss's own design should be read against whichever of
 these three it actually resembles, not assumed to need a new primitive by
 default — increasingly, it looks like it won't.
+
+**Update, same day:** this ADR's own "movement and turning stop once past
+P1" test turned out to be vacuous — a due-south player position meant its
+`posX` assertion held regardless of whether `Steering.halt` did anything at
+all. Found and fixed while writing Vermillion's own equivalent test; see
+ADR 0025's own account. The underlying fix (calling `Steering.halt` on the
+phase transition) was correct all along — only the test that was supposed
+to prove it wasn't.
