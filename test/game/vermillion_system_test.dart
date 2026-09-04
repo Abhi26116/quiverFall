@@ -1,15 +1,17 @@
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/hazard_store.dart';
 import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// Vermillion, the Long Burn — P1 only (docs/06 §5): a single body that
+/// Vermillion, the Long Burn — P1/P2 (docs/06 §5): a single body that
 /// walks toward the player, laying a lethal ground puddle behind it on a
 /// fixed cadence — the arena floor "progressively becoming lethal" is
-/// simply many of `EnemyAttack.dropPuddle`'s own hazards accumulating.
+/// simply many of `EnemyAttack.dropPuddle`'s own hazards accumulating. P2
+/// adds a continuous ignite aura and a periodic charge (ADR 0037).
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e7;
@@ -114,12 +116,12 @@ void main() {
       expect(trailOf(world, primary), isNotEmpty);
     });
 
-    test('halts and stops laying trail once past P1', () {
+    test('halts and stops laying trail once past P2', () {
       final (:world, :primary) = spawnVermillion();
       for (int i = 0; i < 30; i++) {
         world.tick(InputSnapshot());
       }
-      world.enemies.bossPhase[primary] = 1;
+      world.enemies.bossPhase[primary] = 2;
       // `MovementSystem` still integrates the velocity `moveToward` set on
       // the tick just before the phase changed — one tick's worth of
       // residual drift, then `Steering.halt` (called later that same tick)
@@ -135,6 +137,81 @@ void main() {
 
       expect(world.entities.posX[primary], posBefore);
       expect(trailOf(world, primary), hasLength(trailBefore));
+    });
+  });
+
+  group('P2', () {
+    test('the ignite aura damages a nearby player on its very first tick',
+        () {
+      // Close enough to also sit on the charge's own eventual path — kept
+      // well clear of that by stopping long before the charge's own
+      // 37-tick resolve (see the dedicated charge test below).
+      final (:world, :primary) = spawnVermillion(playerX: centerX + 0.5);
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+      expect(world.entities.health[player], 100.0);
+
+      // The aura's own cooldown starts at zero, so its first tick fires
+      // immediately, on the very first call.
+      for (int i = 0; i < 5; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 4%/s * 0.6s — the trail's own burn rate, discretised.
+      expect(world.entities.health[player], closeTo(100.0 * (1 - 0.024), 1e-6));
+    });
+
+    test('a player outside the aura takes nothing before the charge lands',
+        () {
+      final (:world, :primary) = spawnVermillion(playerX: centerX + 7.0);
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+
+      // Well short of both the first aura re-tick and the charge's own
+      // resolve (both ~36 ticks away) — Vermillion is halted here for the
+      // wind-up, still at its own spawn point, 7u from the player.
+      for (int i = 0; i < 20; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], 100.0);
+    });
+
+    test('winds up a visible line before charging', () {
+      final (:world, :primary) = spawnVermillion(playerX: centerX + 5.0);
+      world.enemies.bossPhase[primary] = 1;
+
+      world.tick(InputSnapshot());
+
+      final int telegraphSlot = world.enemies.telegraphSlot[primary];
+      expect(telegraphSlot, greaterThanOrEqualTo(0));
+      expect(world.telegraphs.severityAt(telegraphSlot), TelegraphSeverity.warning);
+    });
+
+    test('the charge deals the derived heavy hit and moves Vermillion to '
+        "the line's own far end", () {
+      // Outside the 3u aura the whole time up to the resolve (halted
+      // during the wind-up, still at its own spawn point), but on the
+      // charge's own path — 5u east, short of the charge's own 6u reach.
+      final (:world, :primary) = spawnVermillion(playerX: centerX + 5.0);
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+      final double startX = world.entities.posX[primary];
+
+      // The wind-up resolves on tick 37 (stateTimer starts at 0.6s = 36
+      // decrements, so it first reads <= 0 on the 37th call). Stopping
+      // there, not later, matters: the charge lands Vermillion within the
+      // aura's own 3u reach of this same player, so one tick further
+      // would add a second, aura-sourced hit this test does not want to
+      // account for.
+      for (int i = 0; i < 37; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 9% * 2.10 — the same derived "heavy hit" Hollow Warden's shot,
+      // Skarn's slam and Gaunt's shockwave already use.
+      expect(world.entities.health[player], closeTo(100.0 * (1 - 0.189), 1e-6));
+      expect(world.entities.posX[primary], greaterThan(startX + 3.0));
     });
   });
 }
