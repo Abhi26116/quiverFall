@@ -4,16 +4,31 @@ import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
+import 'package:quiverfall/game/sim/ai/steering.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 
 /// Skarn the Unmade — docs/06 §11, chapter 11's boss. "Tests: split
 /// attention."
 ///
-/// **P1:** a single body — nothing bespoke here yet; its own "enormous
-/// telegraphs" are not built (see the class-level gap note below), so it is
-/// a plain, undamaging shared-pool source until the split begins.
+/// **P1: "Single heavy body, slow, enormous telegraphs."** A slow advance
+/// (`Steering.moveToward`/`faceToward`, the same primitives Gaunt's own
+/// "slow advance" already uses) into a heavy circular slam once the player
+/// is in range — an ordinary wind-up/resolve/cooldown cycle, the same
+/// shape every other boss's own single attack already takes, just with a
+/// wind-up several times longer than usual (1.8s against the roster's own
+/// 0.6s baseline) and a correspondingly large radius, matching "enormous
+/// telegraphs" literally: the bigger the tell, the more room there is to
+/// misjudge the dodge. Damage is derived, not invented — the Thresher's
+/// own 9% anchor scaled by Tier III's own 2.10x multiplier, the identical
+/// "how heavy is heavy" derivation Hollow Warden's own shot already uses
+/// (ADR 0031) — reused again here for the second "heavy hit" in the
+/// roster rather than a third independently-guessed number. This attack
+/// runs only in P1 (`bossPhase == 0`); once splitting begins, the fight is
+/// entirely the pressure mechanic below, unchanged from what already
+/// shipped. See ADR 0034.
 ///
 /// **P2/P3:** "Splits into two halves [then four] at 66%[/33%], sharing one
 /// HP pool. Damaging only one causes the other to heal it at 3%/s." Reuses
@@ -22,12 +37,6 @@ import 'package:quiverfall/game/sim/events.dart';
 /// mechanic: each body tracks its own `bossLastHitAgo`, and any body that
 /// has gone too long unhit heals the shared pool on its own, independent of
 /// the others. See ADR 0022.
-///
-/// **Not built here: P1's own attack.** "Slow, enormous telegraphs" needs a
-/// real wind-up-then-slam, and nothing about the split/pressure mechanic —
-/// this boss's own doc-emphasised centrepiece ("Tests: split attention")
-/// — depends on it existing first. A known, flagged gap, the same posture
-/// Cinder Choir's own P3 attacks got before they were built.
 abstract final class SkarnSystem {
   /// The full 4-body ring every split slots into, even while only 1 or 2 of
   /// its positions are occupied — see [_spawnBody]'s own doc comment for why
@@ -47,6 +56,31 @@ abstract final class SkarnSystem {
   /// authored deliberately tight rather than borrowed from an unrelated
   /// anchor. See ADR 0022.
   static const double _neglectThresholdSeconds = 1.0;
+
+  // ── P1: the heavy slam ──────────────────────────────────────────────────
+  // See ADR 0034 for the full reasoning behind every number below.
+
+  /// Slower than Gaunt's own 1.0 u/s "slow advance" (ADR 0023) — "single
+  /// heavy body, slow" reads as slower than a merely deliberate one.
+  static const double _p1MoveSpeed = 0.8;
+
+  /// "Enormous telegraphs" read literally: several times the roster's own
+  /// 0.6s baseline wind-up.
+  static const double _p1WindUpSeconds = 1.8;
+
+  /// Authored — large enough to threaten a default 16x9 arena's own
+  /// working space (no boss arena exists yet, ADR 0017/0021), and to read
+  /// as "enormous" next to Thrall's own 2.0u circle ability.
+  static const double _p1SlamRadius = 3.0;
+
+  /// Authored — "slow" applies to the cooldown too, not just the
+  /// footwork.
+  static const double _p1CooldownSeconds = 2.0;
+
+  /// Derived, not guessed: the Thresher's own 9% anchor scaled by Tier
+  /// III's own 2.10x damage multiplier — the same "how heavy is heavy"
+  /// derivation Hollow Warden's own shot already uses (ADR 0031).
+  static const double _p1SlamDamage = 0.09 * 2.10;
 
   /// Places Skarn's single, directly-hittable P1 body — unlike Cinder
   /// Choir's own invisible anchor, this entity *is* the fight for the whole
@@ -123,9 +157,81 @@ abstract final class SkarnSystem {
       };
       _ensureBodyCount(ctx, i, targetCount);
 
-      // P1 is a lone, undamaging body — "damaging only one causes the
-      // other to heal it" has no meaning with nothing else to neglect.
-      if (phase >= 1) _tickPressure(ctx, i, dt);
+      // The heavy slam runs only in P1; once splitting begins the fight
+      // is entirely the pressure mechanic below, unchanged from what
+      // already shipped (ADR 0022).
+      if (phase == 0) {
+        _tickP1Slam(ctx, i, dt);
+      } else {
+        _tickPressure(ctx, i, dt);
+      }
+    }
+  }
+
+  /// The wind-up/resolve/cooldown cycle behind "slow, enormous
+  /// telegraphs": close the distance, plant its feet once the player is in
+  /// range, and slam. See ADR 0034.
+  static void _tickP1Slam(AiContext ctx, int primary, double dt) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      Steering.halt(ctx, primary);
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      _resolveSlam(ctx, primary);
+      enemies.state[primary] = AiState.idle.index;
+      enemies.attackCooldown[primary] = _p1CooldownSeconds;
+      return;
+    }
+
+    if (!ctx.hasPlayer) {
+      Steering.halt(ctx, primary);
+      return;
+    }
+
+    Steering.faceToward(ctx, primary, ctx.playerX, ctx.playerY, 0);
+
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      Steering.moveToward(ctx, primary, ctx.playerX, ctx.playerY, _p1MoveSpeed);
+      return;
+    }
+
+    if (ctx.distanceSquaredToPlayer(primary) <= _p1SlamRadius * _p1SlamRadius) {
+      Steering.halt(ctx, primary);
+      enemies.state[primary] = AiState.windUp.index;
+      enemies.stateTimer[primary] = _p1WindUpSeconds;
+      EnemyAttack.beginCircle(
+        ctx,
+        primary,
+        store.posX[primary],
+        store.posY[primary],
+        _p1SlamRadius,
+        _p1WindUpSeconds,
+      );
+      return;
+    }
+
+    Steering.moveToward(ctx, primary, ctx.playerX, ctx.playerY, _p1MoveSpeed);
+  }
+
+  static void _resolveSlam(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final double x = store.posX[primary];
+    final double y = store.posY[primary];
+
+    EnemyAttack.beginCircle(
+      ctx,
+      primary,
+      x,
+      y,
+      _p1SlamRadius,
+      0,
+      severity: TelegraphSeverity.lethal,
+    );
+    if (EnemyAttack.playerInCircle(ctx, x, y, _p1SlamRadius)) {
+      EnemyAttack.damagePlayer(ctx, _p1SlamDamage, source: primary);
     }
   }
 

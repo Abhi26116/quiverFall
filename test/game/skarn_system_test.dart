@@ -1,5 +1,7 @@
 import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
@@ -16,10 +18,13 @@ void main() {
   const double centerX = 8.0;
   const double centerY = 4.5;
 
-  ({SimWorld world, int primary}) spawnSkarn() {
+  ({SimWorld world, int primary}) spawnSkarn({
+    double playerX = centerX,
+    double playerY = centerY - 3.0,
+  }) {
     final SimWorld world = SimWorld(seed: 909, content: content)
       ..autoFire = false;
-    world.spawnPlayer(centerX, centerY - 3.0);
+    world.spawnPlayer(playerX, playerY);
     final int primary = world.spawnSkarn(centerX, centerY, health: health);
     return (world: world, primary: primary);
   }
@@ -43,6 +48,105 @@ void main() {
       expect(world.entities.health[primary], health);
       expect(world.entities.maxHealth[primary], health);
       expect(childrenOf(world, primary), isEmpty);
+    });
+  });
+
+  group('the P1 slam', () {
+    test('advances toward a distant player', () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 6.0);
+      final double startY = world.entities.posY[primary];
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.posY[primary], lessThan(startY));
+    });
+
+    test('plants its feet and winds up once the player is in range', () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 2.0);
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.state[primary], AiState.windUp.index);
+      expect(world.entities.velX[primary], 0.0);
+      expect(world.entities.velY[primary], 0.0);
+    });
+
+    test('telegraphs for a long time before it actually lands', () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 2.0);
+      world.tick(InputSnapshot());
+
+      final int telegraphSlot = world.enemies.telegraphSlot[primary];
+      expect(telegraphSlot, greaterThanOrEqualTo(0));
+      expect(world.telegraphs.severityAt(telegraphSlot), TelegraphSeverity.warning);
+
+      // Nowhere near resolved a third of the way through the wind-up.
+      for (int i = 0; i < 36; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.entities.health[world.player.index], 100.0);
+    });
+
+    test('resolves into the derived heavy hit once the wind-up completes',
+        () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 2.0);
+      expect(primary, greaterThanOrEqualTo(0));
+      final int player = world.player.index;
+
+      // Wind-up is 1.8s (108 ticks); comfortable margin past it.
+      for (int i = 0; i < 115; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 9% * 2.10 (Tier III's own multiplier) — the same derivation
+      // Hollow Warden's own heavy shot uses.
+      expect(world.entities.health[player], closeTo(100.0 * (1 - 0.189), 1e-6));
+    });
+
+    test('a player who backs out of range before it resolves is not hit',
+        () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 2.0);
+      // The slam's own circle is fixed at the wind-up's own start —
+      // one tick in.
+      world.tick(InputSnapshot());
+      final int player = world.player.index;
+      world.entities.posX[player] = centerX + 8.9;
+      world.entities.posY[player] = centerY;
+
+      for (int i = 0; i < 115; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], 100.0);
+    });
+
+    test('cools down before it can slam again', () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 2.0);
+      final int player = world.player.index;
+
+      for (int i = 0; i < 115; i++) {
+        world.tick(InputSnapshot());
+      }
+      final double afterFirst = world.entities.health[player];
+      expect(afterFirst, lessThan(100.0));
+
+      // Well inside the 2.0s cooldown — no second wind-up yet.
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.enemies.state[primary], isNot(AiState.windUp.index));
+    });
+
+    test('stops slamming the instant P2 begins', () {
+      final (:world, :primary) = spawnSkarn(playerY: centerY - 2.0);
+      world.enemies.bossPhase[primary] = 1;
+
+      final int player = world.player.index;
+      for (int i = 0; i < 200; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], 100.0);
     });
   });
 
