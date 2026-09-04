@@ -179,7 +179,66 @@ void main() {
     });
   });
 
-  group('past P1', () {
+  group('P2: the charged grid', () {
+    test('damages a player standing on a currently-live cell', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+
+      final bool liveIsEven = world.enemies.comboStep[primary] == 0;
+      final int player = world.player.index;
+      // Cell (0,0) is even parity; cell (1,0) is odd — pick whichever is
+      // currently live. Read *after* repositioning: the tick just above
+      // may already have caught the player's own default spawn point on
+      // a live cell, so 100.0 is not a safe assumed baseline.
+      world.entities.posX[player] = liveIsEven ? 1.0 : 3.0;
+      world.entities.posY[player] = 1.0;
+      final double before = world.entities.health[player];
+
+      // Well inside the 1.5s cycle (90 ticks) — the parity read above
+      // must still hold. No Swarmling has had time to spawn yet (0.5s
+      // wind-up) to confound this with contact damage.
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], lessThan(before));
+    });
+
+    test('a player on the opposite parity takes nothing further', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+
+      final bool liveIsEven = world.enemies.comboStep[primary] == 0;
+      final int player = world.player.index;
+      world.entities.posX[player] = liveIsEven ? 3.0 : 1.0;
+      world.entities.posY[player] = 1.0;
+      final double before = world.entities.health[player];
+
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], before);
+    });
+
+    test('flips parity on its own 1.5s cycle', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+      final int firstParity = world.enemies.comboStep[primary];
+
+      // Comfortably past 1.5s (90 ticks).
+      for (int i = 0; i < 95; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.comboStep[primary], isNot(firstParity));
+    });
+  });
+
+  group('past P2', () {
     test('stops spawning and clears every live chain', () {
       final (:world, :primary) = spawnArclight();
       for (int i = 0; i < 35; i++) {
@@ -190,7 +249,7 @@ void main() {
       final int add = swarmlings.first;
       expect(world.enemies.telegraphSlot[add], greaterThanOrEqualTo(0));
 
-      world.enemies.bossPhase[primary] = 1;
+      world.enemies.bossPhase[primary] = 2;
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[add], -1);
 
@@ -203,6 +262,26 @@ void main() {
       expect(world.enemies.liveAdds[primary], lessThanOrEqualTo(liveAddsBefore));
       expect(swarmlingsOf(world, primary).length,
           lessThanOrEqualTo(swarmlings.length));
+    });
+
+    test('stops the grid — its own parity and cooldown both stay put', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 1;
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+      final int parityBefore = world.enemies.comboStep[primary];
+      final double cooldownBefore = world.enemies.bossSweepAngle[primary];
+
+      world.enemies.bossPhase[primary] = 2;
+      // Comfortably past several more 1.5s cycles' worth, were the grid
+      // still ticking.
+      for (int i = 0; i < 400; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.comboStep[primary], parityBefore);
+      expect(world.enemies.bossSweepAngle[primary], cooldownBefore);
     });
   });
 }

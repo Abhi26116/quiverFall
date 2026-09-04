@@ -36,16 +36,30 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// `AiSystem._reap` already ends whatever telegraph a dying entity owns,
 /// for every entity in the game.
 ///
-/// **Not built here: P2 (the arena floor charging in a grid) and P3
-/// (untargetable orbit; four grounded conduits; Confluence chains between
-/// them).** Once `bossPhase` reaches 1, spawning and all chains stop — the
-/// same posture every other boss's own undone phases already take. Any
-/// Swarmling still alive at that point (or spawned before Arclight itself
-/// dies) is *not* despawned — the same "an add outlives its summoner"
-/// behaviour the ordinary Rift Maw already has — so a boss room's own
-/// zero-enemies clear condition (ADR 0021) extends to mopping up any
-/// stragglers, which reads as "and spacing" continuing to matter even after
-/// Arclight itself falls, rather than as a bug. See ADR 0027.
+/// **P2: "Charges the arena floor in a grid; alternating grid cells go
+/// live on a 1.5s cycle. Pure pattern-reading."** No new telegraph shape
+/// needed — `TelegraphShape` has no notion of a grid, but "pure
+/// pattern-reading" reads as the alternating state itself being the whole
+/// tell (rendering an always-visible checkerboard is a presentation
+/// concern, left to a later pass, the same split every other boss's own
+/// visuals already take), so this is checked directly rather than routed
+/// through the telegraph system: the arena is a plain grid of authored
+/// cells, and every cell whose own `(col + row)` parity matches the
+/// current half of the 1.5s cycle (docs/06's own stated rate) is live,
+/// damaging the player on the roster's own established 0.6s tick while
+/// they remain on one. Chains from P1 keep running unmodified alongside
+/// it. See ADR 0039.
+///
+/// **Not built here: P3 (untargetable orbit; four grounded conduits;
+/// Confluence chains between them).** Once `bossPhase` reaches 2, spawning,
+/// chains, and the grid all stop — the same posture every other boss's own
+/// undone phase already takes. Any Swarmling still alive at that point (or
+/// spawned before Arclight itself dies) is *not* despawned — the same "an
+/// add outlives its summoner" behaviour the ordinary Rift Maw already has
+/// — so a boss room's own zero-enemies clear condition (ADR 0021) extends
+/// to mopping up any stragglers, which reads as "and spacing" continuing
+/// to matter even after Arclight itself falls, rather than as a bug. See
+/// ADR 0027.
 abstract final class ArclightSystem {
   // ── Spawning — Rift Maw's own numbers (docs/05 #22), reused directly ────
   static const double _spawnWindUpSeconds = 0.5;
@@ -64,6 +78,24 @@ abstract final class ArclightSystem {
   /// The Thresher-derived "persistent aura" anchor, reused a fourth time.
   static const double _chainDamage = 0.09;
   static const double _chainCooldown = 0.6;
+
+  // ── P2: the charged grid ─────────────────────────────────────────────────
+  // See ADR 0039.
+
+  /// docs/06 §7 P2's own stated cycle.
+  static const double _gridCycleSeconds = 1.5;
+
+  /// Authored — no stated cell size. Divides a default 16x9 arena into a
+  /// readable checkerboard without needing an actual arena definition
+  /// (ADR 0017/0021's still-open gap).
+  static const double _gridCellSize = 2.0;
+
+  /// The roster's own established tick magnitude, reused rather than a
+  /// fresh cadence for standing on a live cell.
+  static const double _gridDamageTickSeconds = 0.6;
+
+  /// The Thresher-derived anchor, reused a fifth time.
+  static const double _gridDamagePerTick = 0.09;
 
   /// Places Arclight's single, stationary body. Returns its slot, or -1 if
   /// the entity pool was full or [BossArchetype.arclight] has no catalogue
@@ -116,10 +148,10 @@ abstract final class ArclightSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — frozen, both its
+      // P3 not built yet (see the class doc comment) — frozen, both its
       // own spawn telegraph and every live chain cleared, rather than left
       // mid-wind-up or mid-hazard forever.
-      if (enemies.bossPhase[i] >= 1) {
+      if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
         _clearChains(ctx, i);
         continue;
@@ -127,6 +159,7 @@ abstract final class ArclightSystem {
 
       _tickSpawns(ctx, i, dt);
       _tickChains(ctx, i, dt);
+      if (enemies.bossPhase[i] >= 1) _tickGrid(ctx, i, dt);
     }
   }
 
@@ -270,5 +303,41 @@ abstract final class ArclightSystem {
       if (ctx.enemies.spawnerSlot[j] != primary) continue;
       if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
     }
+  }
+
+  /// Flips the grid's own parity every [_gridCycleSeconds]
+  /// (`bossLastHitAgo` as the countdown, `comboStep` as the 0/1 flag —
+  /// both free on this boss's own primary, spoken for on other bosses'
+  /// primaries by other meanings, never this one's) and damages the
+  /// player on the roster's own established tick while they stand on a
+  /// currently-live cell (`bossSweepAngle`, repurposed as a plain
+  /// cooldown scalar rather than an angle — this boss never sweeps
+  /// anything).
+  static void _tickGrid(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+
+    enemies.bossLastHitAgo[primary] -= dt;
+    if (enemies.bossLastHitAgo[primary] <= 0) {
+      enemies.bossLastHitAgo[primary] += _gridCycleSeconds;
+      enemies.comboStep[primary] = enemies.comboStep[primary] == 0 ? 1 : 0;
+    }
+
+    if (enemies.bossSweepAngle[primary] > 0) {
+      enemies.bossSweepAngle[primary] -= dt;
+    }
+
+    if (!ctx.hasPlayer) return;
+    if (!_onLiveCell(ctx, primary)) return;
+    if (enemies.bossSweepAngle[primary] > 0) return;
+
+    EnemyAttack.damagePlayer(ctx, _gridDamagePerTick, source: primary);
+    enemies.bossSweepAngle[primary] = _gridDamageTickSeconds;
+  }
+
+  static bool _onLiveCell(AiContext ctx, int primary) {
+    final int cellX = (ctx.playerX / _gridCellSize).floor();
+    final int cellY = (ctx.playerY / _gridCellSize).floor();
+    final bool cellParity = (cellX + cellY).isEven;
+    return cellParity == (ctx.enemies.comboStep[primary] == 0);
   }
 }
