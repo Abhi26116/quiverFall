@@ -31,6 +31,7 @@ import 'package:quiverfall/game/sim/systems/ashen_choir_system.dart';
 import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
 import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
+import 'package:quiverfall/game/sim/systems/coilspine_system.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
@@ -645,6 +646,7 @@ class SimWorld {
     TheQuiverfallSystem.update(ai);
     MotherOfMotesSystem.update(ai);
     TheLoomSystem.update(ai);
+    CoilspineSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2546,6 +2548,22 @@ class SimWorld {
   /// [TheLoomSystem.spawn] does the real work. Returns its slot.
   int spawnTheLoom(double x, double y, {required double health}) =>
       TheLoomSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Coilspine — a 24-segment, chain-following serpent, docs/06
+  /// §6.3's own Endless Descent boss #18. Test/tool entry point, the same
+  /// role [spawnBoss] plays for the generic case; [CoilspineSystem.spawn]
+  /// does the real work. Returns the invisible accounting primary's own
+  /// slot — every segment is reachable via `bossParent`.
+  int spawnCoilspine(double x, double y, {required double health}) =>
+      CoilspineSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,
