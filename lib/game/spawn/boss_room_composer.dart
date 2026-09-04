@@ -7,7 +7,8 @@ import 'package:quiverfall/game/sim/world.dart';
 /// docs/06 names all 12 campaign bosses, one per chapter's own stage 20
 /// (`StageBlueprint.forStage`'s own `isBossStage` rule) — only Cinder Choir
 /// (chapter 1, `CinderChoirSystem`, ADR 0018-0020), Gaunt the Iron Tide
-/// (chapter 2, `GauntSystem`, ADR 0023) and Skarn the Unmade (chapter 11,
+/// (chapter 2, `GauntSystem`, ADR 0023), Silversong (chapter 3,
+/// `SilversongSystem`, ADR 0024) and Skarn the Unmade (chapter 11,
 /// `SkarnSystem`, ADR 0022) have sim code behind them so far. [bossFor] is
 /// the single place that fact lives: a chapter with no entry here gets its
 /// stage-20 room composed as an ordinary room instead
@@ -20,6 +21,7 @@ abstract final class BossRoomComposer {
   static const Map<int, BossArchetype> _builtByChapter = <int, BossArchetype>{
     1: BossArchetype.cinderChoir,
     2: BossArchetype.gauntIronTide,
+    3: BossArchetype.silversong,
     11: BossArchetype.skarnUnmade,
   };
 
@@ -50,6 +52,11 @@ abstract final class BossRoomComposer {
           health: health,
         ),
       BossArchetype.gauntIronTide => world.spawnGaunt(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.silversong => world.spawnSilversong(
           SimConfig.arenaWidth / 2,
           SimConfig.arenaHeight / 2,
           health: health,

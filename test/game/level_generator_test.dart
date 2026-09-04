@@ -438,7 +438,7 @@ void main() {
 
     test('a chapter with no fight built yet still composes an ordinary room',
         () {
-      final RoomBlueprint room = bossSlot(3);
+      final RoomBlueprint room = bossSlot(4);
 
       expect(room.bossArchetype, isNull);
       expect(room.enemyCount, greaterThan(0));

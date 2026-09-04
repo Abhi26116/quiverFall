@@ -37,6 +37,7 @@ import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
+import 'package:quiverfall/game/sim/systems/silversong_system.dart';
 import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
@@ -614,6 +615,7 @@ class SimWorld {
     CinderChoirSystem.update(ai);
     SkarnSystem.update(ai);
     GauntSystem.update(ai);
+    SilversongSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2381,6 +2383,20 @@ class SimWorld {
   /// [GauntSystem.spawn] does the real work. Returns its slot.
   int spawnGaunt(double x, double y, {required double health}) =>
       GauntSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Silversong — a single, stationary body. Test/tool entry point,
+  /// the same role [spawnBoss] plays for the generic case;
+  /// [SilversongSystem.spawn] does the real work. Returns its slot.
+  int spawnSilversong(double x, double y, {required double health}) =>
+      SilversongSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

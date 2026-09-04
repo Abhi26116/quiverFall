@@ -91,3 +91,7 @@ again.
 (ADR 0023) both landed at exactly this two-line cost, with two genuinely
 different fight shapes (a shared pool that never un-shares; no pool-sharing
 at all) behind them. Three bosses now spawn for real in an actual run.
+
+**Update, same day:** and a fourth — Silversong (ADR 0024), chapter 3, the
+first boss built almost entirely from an existing enemy's own primitive
+(the Screecher's own Draw-lock scream) rather than a new one.
