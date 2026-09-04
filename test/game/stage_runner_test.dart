@@ -280,6 +280,21 @@ void main() {
       expect(spawned, isTrue, reason: 'no Cinder Choir primary found in the room');
     });
 
+    test('chapter 11\'s stage 20 spawns the real Skarn the Unmade', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 11, stage: 20, seed: 504);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.skarnUnmade);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Skarn primary found in the room');
+    });
+
     test('the boss room does not clear until the boss actually dies', () {
       final ({StageRunner runner, SimWorld world}) s =
           stage(chapter: 1, stage: 20, seed: 502);

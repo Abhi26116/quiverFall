@@ -36,6 +36,7 @@ import 'package:quiverfall/game/sim/systems/firing_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
+import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/windline_store.dart';
@@ -610,6 +611,7 @@ class SimWorld {
     // `AiSystem.update`, so an ordinary enemy's own tree never reads a boss
     // reaction that hasn't happened yet this tick.
     CinderChoirSystem.update(ai);
+    SkarnSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2354,6 +2356,22 @@ class SimWorld {
         health: health,
         triangleRadius: triangleRadius,
         effigyRadius: effigyRadius,
+      );
+
+  /// Places Skarn the Unmade — a single directly-hittable body, holding its
+  /// own real health, that later splits into two and then four via its own
+  /// system. Test/tool entry point, the same role [spawnBoss] plays for the
+  /// generic case; [SkarnSystem.spawn] does the real work. Returns the
+  /// primary's slot.
+  int spawnSkarn(double x, double y, {required double health}) =>
+      SkarnSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
       );
 
   /// Starts a room. Waves release from here on, on the spawn system's schedule.

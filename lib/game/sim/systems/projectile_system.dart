@@ -879,6 +879,12 @@ abstract final class ProjectileSystem {
       // against — the game's parry, counted here because this is where damage
       // is known.
       enemies.damageDuringWindUp[target] += toHealth;
+
+      // Skarn's own "damaging only one causes the other to heal it" (docs/06
+      // §11) reads this on the hit slot itself, not `healthSlot` — a shared
+      // pool with independently-*pressured* children is the whole mechanic,
+      // the same split `linkedHealthSlot` already draws for armour.
+      if (toHealth > 0) enemies.bossLastHitAgo[target] = 0;
     }
 
     store.health[healthSlot] -= toHealth;

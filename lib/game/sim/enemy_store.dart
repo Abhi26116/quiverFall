@@ -98,7 +98,8 @@ class EnemyStore {
         bossTimer = Float64List(capacity),
         bossActiveChildIndex = Uint8List(capacity),
         bossSweepAngle = Float64List(capacity),
-        bossParent = Int32List(capacity);
+        bossParent = Int32List(capacity),
+        bossLastHitAgo = Float64List(capacity);
 
   final int _capacity;
 
@@ -324,6 +325,19 @@ class EnemyStore {
   /// 0020.
   final Int32List bossParent;
 
+  /// Seconds since this enemy last took a nonzero hit — reset to 0 by
+  /// `ProjectileSystem._applyHit` and `ElementSystem.update` on any damage
+  /// that actually lands, incremented by a boss's own system for whichever
+  /// entities it cares about. Zero and unread on an ordinary enemy.
+  ///
+  /// Built generic against Skarn the Unmade's own "damaging only one causes
+  /// the other to heal it" (docs/06 §11) — a boss's own system decides what
+  /// "too long unhit" means and reacts (`SkarnSystem`'s own neglect-heal);
+  /// this field only answers "how long ago", the same "one clock, several
+  /// consumers decide what it means" split [bossTimer] already established.
+  /// See ADR 0022.
+  final Float64List bossLastHitAgo;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -436,6 +450,7 @@ class EnemyStore {
     bossActiveChildIndex[slot] = 0;
     bossSweepAngle[slot] = 0;
     bossParent[slot] = -1;
+    bossLastHitAgo[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

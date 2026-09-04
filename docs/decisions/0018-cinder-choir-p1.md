@@ -132,3 +132,8 @@ becoming ordinary independently-healthed enemies, plus a new permanent
 `bossParent` field for the "whose child is this, structurally" question
 `linkedHealthSlot` alone can no longer answer once it stops meaning that.
 Cinder Choir's fight is now complete end to end.
+
+**Update, same day:** Skarn the Unmade came back and checked, as this ADR
+asked — see ADR 0022. Its own split reuses `linkedHealthSlot`/`bossParent`
+unmodified (it never un-shares, unlike Cinder Choir's own P3), confirming
+the primitive really is generic across two independently-designed bosses.

@@ -130,6 +130,12 @@ abstract final class ElementSystem {
 
       if (damage <= 0) continue;
 
+      // Skarn's own "damaging only one causes the other to heal it" (docs/06
+      // §11) reads this too — a DoT tick pressures a body exactly like a
+      // direct hit does. On `i`, not `healthSlot`, the same split
+      // `ProjectileSystem._applyHit`'s own reset already draws.
+      if (enemies != null) enemies.bossLastHitAgo[i] = 0;
+
       store.health[healthSlot] -= damage;
 
       if (store.health[healthSlot] <= 0 && !deferDeath) {
