@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
@@ -127,36 +128,6 @@ void main() {
           reason: 'the player is east of it — it should have advanced east');
     });
 
-    test('movement and turning stop once past P2', () {
-      // Diagonal, so posX genuinely moves too — a due-south player would
-      // leave posX unchanged for the entire test regardless of whether the
-      // halt fix below does anything at all.
-      final (:world, :primary) = spawnGaunt(
-        playerX: centerX - 3.0,
-        playerY: centerY - 3.0,
-      );
-      // Let it move for real first — a stale velocity from mid-stride is
-      // exactly what a P2→P3 transition must not leave it sliding on.
-      for (int i = 0; i < 30; i++) {
-        world.tick(InputSnapshot());
-      }
-      world.enemies.bossPhase[primary] = 2;
-      // `MovementSystem` still integrates the velocity `moveToward` set on
-      // the tick just before the phase changed — one tick's worth of
-      // residual drift, then `Steering.halt` (called later that same tick)
-      // has actually taken effect. `posBefore`/`facingBefore` are captured
-      // after that transitional tick, not before it.
-      world.tick(InputSnapshot());
-      final double posBefore = world.entities.posX[primary];
-      final double facingBefore = world.entities.facing[primary];
-
-      for (int i = 0; i < 119; i++) {
-        world.tick(InputSnapshot());
-      }
-
-      expect(world.entities.posX[primary], posBefore);
-      expect(world.entities.facing[primary], facingBefore);
-    });
   });
 
   group('P2: the shockwave slam', () {
@@ -225,6 +196,100 @@ void main() {
       }
 
       expect(world.entities.posX[primary], greaterThan(startX));
+    });
+  });
+
+  group('P3: the Ripper-style combo', () {
+    test('the shield is dropped permanently — a frontal hit now takes full '
+        'damage', () {
+      final (:world, :primary) = spawnGaunt(); // due east, facing default
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      expect(world.enemies.plateHealth[primary], 0.0);
+
+      world.autoFire = true;
+      world.tick(InputSnapshot());
+      world.autoFire = false;
+      for (int i = 0; i < 150; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // Full damage (1000, matching Tier I's own 1.0x multiplier on the
+      // 1000 playerAttack) — P1's own frontal plate would have taken only
+      // 5% of that.
+      final double dmg = health - world.entities.health[primary];
+      expect(dmg, closeTo(1000.0, 1.0));
+    });
+
+    test('moves at +80% of P1\'s own speed while closing', () {
+      // Far enough that it stays out of the combo's own 2.6u reach for
+      // the whole test — 6u out, closing at 1.8u/s over 1.0s leaves it
+      // 4.2u out, still clear.
+      final (:world, :primary) = spawnGaunt(playerX: centerX + 6.0);
+      world.enemies.bossPhase[primary] = 2;
+      final double startX = world.entities.posX[primary];
+
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 1.0 (P1's own speed) * 1.8, over 60 ticks == 1.0s.
+      expect(world.entities.posX[primary] - startX, closeTo(1.8, 0.05));
+    });
+
+    test('a full three-hit combo lands two openers then a heavier finisher',
+        () {
+      final (:world, :primary) = spawnGaunt(playerX: centerX + 1.0);
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      // Two 0.35s opener wind-ups plus one 0.8s finisher wind-up, with a
+      // margin for the ticks each swing's own resolve/re-begin costs.
+      for (int i = 0; i < 95; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // Two openers (_p3AttackDamage * 0.36 each) plus one finisher
+      // (_p3AttackDamage, the same derived heavy hit as the P2 shockwave):
+      // 100 - 100*(0.06804 + 0.06804 + 0.189) == 67.492.
+      expect(world.entities.health[player], closeTo(67.492, 0.5));
+      // The combo reset for the next cycle rather than getting stuck on
+      // the finisher.
+      expect(world.enemies.comboStep[primary], 0);
+    });
+
+    test('enough damage during the finisher\'s own wind-up staggers it, '
+        'cancelling that hit', () {
+      final (:world, :primary) = spawnGaunt(playerX: centerX + 1.0);
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      // Advance to exactly the finisher's own wind-up (comboStep reaches
+      // 2 only once both openers have resolved).
+      bool reachedFinisherWindUp = false;
+      for (int i = 0; i < 200; i++) {
+        world.tick(InputSnapshot());
+        if (world.enemies.comboStep[primary] == 2 &&
+            world.enemies.stateOf(primary) == AiState.windUp) {
+          reachedFinisherWindUp = true;
+          break;
+        }
+      }
+      expect(reachedFinisherWindUp, isTrue);
+
+      final double healthBeforeStagger = world.entities.health[player];
+      // More than ripperStaggerFraction (8%) of Gaunt's own max health.
+      world.enemies.damageDuringWindUp[primary] = health * 0.10;
+
+      // Past the finisher's own 0.8s wind-up.
+      for (int i = 0; i < 55; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.stateOf(primary), AiState.staggered);
+      expect(world.enemies.comboStep[primary], 0);
+      // The finisher's own hit never landed — staggering cancels it.
+      expect(world.entities.health[player], healthBeforeStagger);
     });
   });
 }
