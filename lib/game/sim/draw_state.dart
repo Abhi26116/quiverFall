@@ -120,6 +120,15 @@ class DrawState {
 
   bool get isRooted => rootRemaining > 0;
 
+  /// Scales [moveSpeedBonus]/[damageReduction] without touching the per-
+  /// stack constants themselves. Built for Rimefather's own P2 ("Momentum
+  /// builds are *stronger* on ice", docs/06 §6) — set fresh every tick by
+  /// whichever system decides the player is currently standing somewhere
+  /// that should boost it, the same "recomputed live, not accumulated"
+  /// posture `EnemyStore.attackBuff` already uses, rather than reset via a
+  /// method. See ADR 0038.
+  double momentumEffectivenessMultiplier = 1.0;
+
   DrawTier get tier {
     if (drawSeconds >= tierThreeAt * drawSpeedMultiplier) return DrawTier.three;
     if (drawSeconds >= tierTwoAt * drawSpeedMultiplier) return DrawTier.two;
@@ -136,9 +145,11 @@ class DrawState {
     return drawSeconds / t2;
   }
 
-  double get moveSpeedBonus => momentumStacks * moveSpeedPerStack;
+  double get moveSpeedBonus =>
+      momentumStacks * moveSpeedPerStack * momentumEffectivenessMultiplier;
 
-  double get damageReduction => momentumStacks * damageReductionPerStack;
+  double get damageReduction =>
+      momentumStacks * damageReductionPerStack * momentumEffectivenessMultiplier;
 
   bool get isAtMaxMomentum => momentumStacks >= maxMomentum;
 
@@ -150,6 +161,7 @@ class DrawState {
     wasMovingLastTick = false;
     drawLockRemaining = 0;
     rootRemaining = 0;
+    momentumEffectivenessMultiplier = 1.0;
   }
 
   /// Restores the tunables to their unmodified values. Separate from [reset],

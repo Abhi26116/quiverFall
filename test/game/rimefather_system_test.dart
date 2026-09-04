@@ -1,14 +1,17 @@
 import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// Rimefather — "Tests: Frost, and forced movement" (docs/06 §6). P1 only:
-/// a stationary body whose cone deals a modest hit and, on a *second* hit
-/// inside a rolling 4s window, roots the player outright — every test here
-/// that isn't about the cone's own damage is about `DrawState.rootRemaining`.
+/// Rimefather — "Tests: Frost, and forced movement" (docs/06 §6). P1: a
+/// stationary body whose cone deals a modest hit and, on a *second* hit
+/// inside a rolling 4s window, roots the player outright. P2 adds a
+/// spreading ice field that boosts Momentum's own effectiveness (ADR
+/// 0038) — the friction half of that card is not implemented; see that
+/// ADR for why.
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e7;
@@ -150,23 +153,106 @@ void main() {
     });
   });
 
-  group('past P1', () {
-    test('stops attacking and clears any live telegraph', () {
+  group('P2: spreading ice', () {
+    test('grows outward from a standing start', () {
       final (:world, :primary) = spawnRimefather();
-      world.tick(InputSnapshot());
-      expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
-
       world.enemies.bossPhase[primary] = 1;
-      world.tick(InputSnapshot());
-      expect(world.enemies.telegraphSlot[primary], -1);
 
-      // No further casts even given plenty of time.
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.bossSweepAngle[primary], greaterThan(0));
+    });
+
+    test('boosts the player\'s own Momentum effectiveness while standing '
+        'in it', () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 1;
+      expect(world.playerDraw.momentumEffectivenessMultiplier, 1.0);
+
+      // The ice starts at radius 0 and grows — give it a moment to cover
+      // the default-spawned player 3u away (at 0.4u/s, about 7.5s).
+      for (int i = 0; i < 480; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.playerDraw.momentumEffectivenessMultiplier, 1.5);
+    });
+
+    test('a player outside the ice is not boosted', () {
+      final (:world, :primary) = spawnRimefather(playerX: centerX + 8.9);
+      world.enemies.bossPhase[primary] = 1;
+
+      // Comfortably past the ice reaching its own 6u cap.
+      for (int i = 0; i < 1000; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.playerDraw.momentumEffectivenessMultiplier, 1.0);
+    });
+
+    test('the multiplier only scales Momentum\'s own bonuses, applied '
+        'through DrawState directly', () {
+      final (:world, :primary) = spawnRimefather();
+      world.playerDraw.momentumStacks = 5;
+      final double baseline = world.playerDraw.moveSpeedBonus;
+
+      world.playerDraw.momentumEffectivenessMultiplier = 1.5;
+      expect(world.playerDraw.moveSpeedBonus, closeTo(baseline * 1.5, 1e-9));
+      expect(primary, greaterThanOrEqualTo(0));
+    });
+  });
+
+  group('past P2', () {
+    test('resets the Momentum multiplier and stops growing the ice', () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 1;
+      for (int i = 0; i < 480; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.playerDraw.momentumEffectivenessMultiplier, 1.5);
+      final double iceRadiusBefore = world.enemies.bossSweepAngle[primary];
+
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      expect(world.playerDraw.momentumEffectivenessMultiplier, 1.0);
+
+      // No further casts, no further ice growth, even given plenty of
+      // time.
       final int player = world.player.index;
       final double healthBefore = world.entities.health[player];
       for (int i = 0; i < 300; i++) {
         world.tick(InputSnapshot());
       }
       expect(world.entities.health[player], healthBefore);
+      expect(world.enemies.bossSweepAngle[primary], iceRadiusBefore);
+    });
+
+    test('clears a live wind-up telegraph rather than leaving it stranded',
+        () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 1;
+
+      // Catch it genuinely mid-wind-up — a resolved cast's own brief
+      // lethal flash telegraph naturally expires on its own almost
+      // immediately, so checking right after an arbitrary number of
+      // ticks (rather than deliberately mid-cycle) would not actually
+      // exercise this cleanup at all.
+      bool caughtWindUp = false;
+      for (int i = 0; i < 300; i++) {
+        world.tick(InputSnapshot());
+        if (world.enemies.state[primary] == AiState.windUp.index) {
+          caughtWindUp = true;
+          break;
+        }
+      }
+      expect(caughtWindUp, isTrue, reason: 'never observed a live wind-up');
+      expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
+
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      expect(world.enemies.telegraphSlot[primary], -1);
     });
   });
 }

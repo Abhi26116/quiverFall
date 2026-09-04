@@ -4,6 +4,7 @@ import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
+import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -12,9 +13,9 @@ import 'package:quiverfall/game/sim/telegraph.dart';
 /// Rimefather — docs/06 §6, chapter 6's boss. "Tests: Frost, and forced
 /// movement."
 ///
-/// **P1 only, built here.** "Freezing cone; a player hit twice within 4s is
-/// rooted for 1.2s." A stationary single body whose cone attack is the
-/// identical windUp→resolve→cooldown cycle Silversong's own scream already
+/// **P1: "Freezing cone; a player hit twice within 4s is rooted for
+/// 1.2s."** A stationary single body whose cone attack is the identical
+/// windUp→resolve→cooldown cycle Silversong's own scream already
 /// established (ADR 0024) — this boss's own new piece is entirely the
 /// *root*: two cone hits inside a rolling 4s window force the player to
 /// stop moving outright, a stronger denial than Silversong's own Draw-lock
@@ -25,14 +26,31 @@ import 'package:quiverfall/game/sim/telegraph.dart';
 /// (new) and `SimWorld._applyInput`/`_applyDash` both checking it. See ADR
 /// 0026.
 ///
-/// **Not built here: P2 (the arena floor freezing outward, changing
-/// friction) and P3 (three ice-mirrors, only one real, revealed by a
-/// shadow with no HUD marker).** P3 especially needs an idea the sim has no
-/// analogue for at all — a *decoy* body indistinguishable from the real one
-/// by anything the simulation itself can query, since "which one casts a
-/// shadow" is a rendering-only tell. Once `bossPhase` reaches 1 this system
-/// stops screaming and clears any live telegraph — the same posture every
-/// other boss's own undone phases already take.
+/// **P2: "The arena floor freezes outward from the boss; standing on ice
+/// reduces friction and makes precise positioning hard. Momentum builds
+/// are *stronger* on ice."** Built in two honestly-separated halves. The
+/// growing ice radius and "Momentum is stronger while standing in it" are
+/// real: a new `DrawState.momentumEffectivenessMultiplier` (a plain scale
+/// on `moveSpeedBonus`/`damageReduction`, recomputed fresh every tick from
+/// current position — the same "live, not accumulated" posture
+/// `EnemyStore.attackBuff` already uses) is set to an authored 1.5x while
+/// the player stands inside the boss's own spreading circle. **"Reduces
+/// friction" is not implemented.** The sim has no friction or velocity-
+/// persistence model at all — `SimWorld._applyInput` sets the player's own
+/// velocity directly from input every tick, with nothing to decay or
+/// slide once the stick releases — so "ice" changing that would mean
+/// building a genuinely new movement-physics layer touching the one
+/// function every other interaction in the game already depends on, a
+/// materially larger and riskier change than any other piece in this P2
+/// pass. Flagged, not guessed at. See ADR 0038.
+///
+/// **Not built here: P3 (three ice-mirrors, only one real, revealed by a
+/// shadow with no HUD marker).** Needs an idea the sim has no analogue for
+/// at all — a *decoy* body indistinguishable from the real one by anything
+/// the simulation itself can query, since "which one casts a shadow" is a
+/// rendering-only tell. Once `bossPhase` reaches 2 this system stops
+/// screaming, stops growing the ice, and resets the Momentum multiplier —
+/// the same posture every other boss's own undone phases already take.
 abstract final class RimefatherSystem {
   /// Reused from the Screecher (docs/05 §5.4) — the same cone shape
   /// Silversong's own scream already reuses (ADR 0024).
@@ -52,6 +70,21 @@ abstract final class RimefatherSystem {
   static const double _streakWindowSeconds = 4.0;
   static const int _hitsToRoot = 2;
   static const double _rootSeconds = 1.2;
+
+  // ── P2: the spreading ice ────────────────────────────────────────────────
+  // See ADR 0038 for the friction half's own honest non-implementation.
+
+  /// Authored — docs/06 states no cap. Large enough to threaten roughly
+  /// half a default 16x9 arena's own working space from a central spawn,
+  /// echoing Vermillion's own "safe floor ~50%" framing (ADR 0037) even
+  /// though this card states no percentage of its own.
+  static const double _iceMaxRadius = 6.0;
+
+  /// Authored — reaches the cap in 15s.
+  static const double _iceGrowthPerSecond = _iceMaxRadius / 15.0;
+
+  /// Authored — "stronger" with no stated multiplier.
+  static const double _momentumMultiplierOnIce = 1.5;
 
   /// Places Rimefather's single, stationary body. Returns its slot, or -1
   /// if the entity pool was full or [BossArchetype.rimefather] has no
@@ -107,12 +140,16 @@ abstract final class RimefatherSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — frozen, telegraph
-      // cleared, rather than left mid-wind-up forever.
-      if (enemies.bossPhase[i] >= 1) {
+      // P3 not built yet (see the class doc comment) — frozen, telegraph
+      // cleared, Momentum multiplier reset, rather than left mid-wind-up
+      // (or stuck boosted) forever.
+      if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
+        ctx.playerDraw?.momentumEffectivenessMultiplier = 1.0;
         continue;
       }
+
+      if (enemies.bossPhase[i] >= 1) _tickIce(ctx, i, dt);
 
       if (enemies.bossTimer[i] > 0) enemies.bossTimer[i] -= dt;
 
@@ -210,5 +247,29 @@ abstract final class RimefatherSystem {
       enemies.comboStep[slot] = 0;
       enemies.bossTimer[slot] = 0;
     }
+  }
+
+  /// Grows the ice outward from the boss's own position, capped at
+  /// [_iceMaxRadius], and sets the player's own Momentum multiplier for
+  /// this tick based on whether they are currently standing in it —
+  /// `bossSweepAngle` repurposed as a plain scalar radius, free on this
+  /// boss (P1 never touches it) rather than a rotating angle.
+  static void _tickIce(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    double radius = enemies.bossSweepAngle[primary];
+    if (radius < _iceMaxRadius) {
+      radius += _iceGrowthPerSecond * dt;
+      if (radius > _iceMaxRadius) radius = _iceMaxRadius;
+      enemies.bossSweepAngle[primary] = radius;
+    }
+
+    final DrawState? draw = ctx.playerDraw;
+    if (draw == null) return;
+
+    final bool onIce = ctx.hasPlayer &&
+        EnemyAttack.playerInCircle(ctx, store.posX[primary], store.posY[primary], radius);
+    draw.momentumEffectivenessMultiplier = onIce ? _momentumMultiplierOnIce : 1.0;
   }
 }
