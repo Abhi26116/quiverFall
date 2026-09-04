@@ -27,6 +27,7 @@ import 'package:quiverfall/game/sim/spatial_hash.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/ai_system.dart';
 import 'package:quiverfall/game/sim/systems/arclight_system.dart';
+import 'package:quiverfall/game/sim/systems/ashen_choir_system.dart';
 import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
 import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
@@ -628,6 +629,7 @@ class SimWorld {
     // `AiSystem.update`, so an ordinary enemy's own tree never reads a boss
     // reaction that hasn't happened yet this tick.
     CinderChoirSystem.update(ai);
+    AshenChoirSystem.update(ai);
     SkarnSystem.update(ai);
     GauntSystem.update(ai);
     SilversongSystem.update(ai);
@@ -2387,6 +2389,23 @@ class SimWorld {
         health: health,
         triangleRadius: triangleRadius,
         effigyRadius: effigyRadius,
+      );
+
+  /// Places The Ashen Choir — the Elite remix of Cinder Choir: three
+  /// permanently-lit effigies, lethal-from-the-start tethers, and a
+  /// fourth hidden effigy revealed only by Windline contact. Test/tool
+  /// entry point, the same role [spawnBoss] plays for the generic case;
+  /// [AshenChoirSystem.spawn] does the real work. Returns the primary's
+  /// slot.
+  int spawnAshenChoir(double x, double y, {required double health}) =>
+      AshenChoirSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
       );
 
   /// Places Skarn the Unmade — a single directly-hittable body, holding its
