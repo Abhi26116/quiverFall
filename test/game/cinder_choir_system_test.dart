@@ -179,17 +179,19 @@ void main() {
       expect(world.enemies.bossActiveChildIndex[primary], 1);
     });
 
-    test('freezes once phase reaches P3', () {
+    test('P1/P2\'s own rotation timer freezes once phase reaches P3', () {
+      // `bossActiveChildIndex` itself keeps changing in P3 — it is P3's own
+      // cone-attack turn tracker now (see the P3 group below) — but
+      // `bossTimer`, P1/P2's rotation cadence, is never touched again once
+      // this boss stops rotating.
       final (:world, :primary, :children) = spawnChoir();
       world.enemies.bossPhase[primary] = 2;
-      final int activeBefore = world.enemies.bossActiveChildIndex[primary];
       final double timerBefore = world.enemies.bossTimer[primary];
 
       for (int i = 0; i < 600; i++) {
         world.tick(InputSnapshot());
       }
 
-      expect(world.enemies.bossActiveChildIndex[primary], activeBefore);
       expect(world.enemies.bossTimer[primary], timerBefore);
     });
   });
@@ -281,20 +283,117 @@ void main() {
       expect(world.enemies.bossSweepAngle[primary], greaterThan(0));
     });
 
-    test('entering P3 clears every tether telegraph', () {
+    test('entering P3 clears P2\'s tether telegraphs and starts a cone instead', () {
       final (:world, :primary, :children) = spawnAtCenter();
       world.enemies.bossPhase[primary] = 1;
       for (int i = 0; i < 20; i++) {
         world.tick(InputSnapshot());
       }
-      expect(world.enemies.telegraphSlot[children[0]], greaterThanOrEqualTo(0));
+      for (final int c in children) {
+        expect(world.telegraphs.shapeAt(world.enemies.telegraphSlot[c]),
+            TelegraphShape.line);
+      }
 
       world.enemies.bossPhase[primary] = 2;
       world.tick(InputSnapshot());
 
+      // Two of the three tether lines are simply gone; the one whose turn
+      // it now is has a fresh cone telegraph in the same slot instead.
+      int coneCount = 0;
+      int clearedCount = 0;
       for (final int c in children) {
-        expect(world.enemies.telegraphSlot[c], -1);
+        final int slot = world.enemies.telegraphSlot[c];
+        if (slot < 0) {
+          clearedCount++;
+        } else {
+          expect(world.telegraphs.shapeAt(slot), TelegraphShape.cone);
+          coneCount++;
+        }
       }
+      expect(coneCount, 1);
+      expect(clearedCount, 2);
+    });
+  });
+
+  group('P3 — individual death and alternating cones', () {
+    ({SimWorld world, int primary, List<int> children}) spawnInP3({
+      double playerX = centerX,
+      double playerY = centerY - 3.0,
+    }) {
+      final result = spawnChoir(playerX: playerX, playerY: playerY);
+      result.world.enemies.bossPhase[result.primary] = 2;
+      // Triggers the split (and begins the first cone's wind-up) — nothing
+      // resolves on this same tick, so it is safe setup for every test below.
+      result.world.tick(InputSnapshot());
+      return result;
+    }
+
+    test('splits the shared pool into three equal, independent, fully-lit pools', () {
+      final (:world, :primary, :children) = spawnInP3();
+      const double share = health / 3;
+
+      for (final int c in children) {
+        expect(world.entities.maxHealth[c], closeTo(share, 1e-6));
+        expect(world.entities.health[c], closeTo(share, 1e-6));
+        expect(world.enemies.linkedHealthSlot[c], -1);
+        expect(world.enemies.isPlated(c), isFalse);
+      }
+    });
+
+    test('killing one effigy removes only that one, permanently', () {
+      final (:world, :primary, :children) = spawnInP3();
+
+      world.entities.health[children[1]] = 0;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.alive[children[1]], 0);
+      expect(world.entities.alive[children[0]], 1);
+      expect(world.entities.alive[children[2]], 1);
+    });
+
+    test('the primary\'s own health tracks the sum of survivors', () {
+      final (:world, :primary, :children) = spawnInP3();
+      const double share = health / 3;
+
+      world.entities.health[children[0]] = 0;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[primary], closeTo(share * 2, 1e-6));
+    });
+
+    test('killing all three ends the fight', () {
+      final (:world, :primary, :children) = spawnInP3();
+      for (final int c in children) {
+        world.entities.health[c] = 0;
+      }
+      world.tick(InputSnapshot());
+
+      expect(world.entities.isAlive(world.entities.idAt(primary)), isFalse);
+    });
+
+    test('cones alternate between the still-living effigies', () {
+      final (:world, :primary, :children) = spawnInP3();
+      final Set<int> attackers = <int>{world.enemies.bossActiveChildIndex[primary]};
+
+      for (int cycle = 0; cycle < 5; cycle++) {
+        for (int i = 0; i < 40; i++) {
+          world.tick(InputSnapshot());
+        }
+        attackers.add(world.enemies.bossActiveChildIndex[primary]);
+      }
+
+      expect(attackers.length, 3);
+    });
+
+    test('a cone hits a nearby player once it resolves', () {
+      final (:world, :primary, :children) = spawnInP3();
+      final int player = world.player.index;
+
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], lessThan(100.0));
     });
   });
 }

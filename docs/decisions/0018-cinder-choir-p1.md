@@ -125,3 +125,10 @@ for "several bodies, one pool", not yet for "a pool that later un-shares."
 **Update, same day:** the tether sweep happened next — see ADR 0019. It
 needed no new primitive at all; `EnemyAttack.playerOnLine`/`beginLine`
 already covered it. P3's individual-death model is still open.
+
+**Update, same day:** P3 happened next — see ADR 0020. The question this
+paragraph asked was answered: `linkedHealthSlot = -1` on all three,
+becoming ordinary independently-healthed enemies, plus a new permanent
+`bossParent` field for the "whose child is this, structurally" question
+`linkedHealthSlot` alone can no longer answer once it stops meaning that.
+Cinder Choir's fight is now complete end to end.

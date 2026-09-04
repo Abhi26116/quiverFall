@@ -90,6 +90,25 @@ abstract final class CinderChoirSystem {
   /// than inventing a third number.
   static const double _p2WarningSeconds = _p2TetherCooldown;
 
+  // ── P3: alternating cones, killable one at a time ──────────────────────
+  // See ADR 0020.
+
+  /// docs/06 §1 P3's own stated number: "90° flame cones" is a full angle,
+  /// so half of it.
+  static const double _p3ConeHalfAngle = math.pi / 4;
+
+  /// Same magnitude as every other number this boss's own kit already uses
+  /// (`_p2TetherCooldown`/`_p2WarningSeconds`) rather than a fourth,
+  /// unrelated invented value.
+  static const double _p3ConeWindUpSeconds = _p2TetherCooldown;
+
+  /// Reused directly, not re-derived: the same 9%-of-max-HP anchor P2's own
+  /// tether uses (the Thresher's aura).
+  static const double _p3ConeDamage = _p2TetherDamage;
+
+  /// Reused directly: the same reach P2's own spokes use.
+  static const double _p3ConeRange = _p2TetherLength;
+
   /// Positions three effigies on a triangle around `(centerX, centerY)` and
   /// links their health to a new primary boss entity holding the real pool.
   /// Returns the primary's slot, or -1 if the entity pool was full or
@@ -167,6 +186,7 @@ abstract final class CinderChoirSystem {
 
       enemies.reset(slot);
       enemies.linkedHealthSlot[slot] = primary;
+      enemies.bossParent[slot] = primary;
       enemies.bossChildIndex[slot] = child;
 
       // Child 0 starts lit (fully vulnerable); the other two start plated.
@@ -212,27 +232,31 @@ abstract final class CinderChoirSystem {
         continue;
       }
 
-      // The primary's own health reached zero this tick (a hit or a DoT tick
-      // redirected here through `linkedHealthSlot`). `AiSystem`'s death pass
-      // reaps the primary itself through the ordinary bare-entity path — see
-      // that pass's own `hasDefinition` guard — but the three effigies never
-      // take damage on their *own* health, so nothing else would ever remove
-      // them. Done here, ahead of that pass, quietly (no `entityDied` for
-      // each effigy — only the primary's own death is "the boss died").
+      // P3 first, so a split that just happened (or a child that just died)
+      // is reflected in `store.health[i]` — the sum this tick, not last
+      // tick's — before the death check right below reads it.
+      if (enemies.bossPhase[i] == 2) {
+        _tickP3(ctx, i, dt);
+      }
+
+      // The primary's own health reached zero this tick — in P1/P2, a hit or
+      // a DoT tick redirected here through `linkedHealthSlot`; in P3, the
+      // last of the three independent pools just emptied (`_tickP3` mirrors
+      // their sum into this same field for exactly this check to keep
+      // working unmodified). `AiSystem`'s death pass reaps the primary
+      // itself through the ordinary bare-entity path — see that pass's own
+      // `hasDefinition` guard. `_despawnChildren` is the safety net for any
+      // child that is somehow still alive at that moment (P1/P2: always, by
+      // construction; P3: only if several died in the same tick a moment
+      // faster than this check runs) — quietly, no `entityDied` for a child,
+      // only the primary's own death is "the boss died".
       if (store.health[i] <= 0) {
-        _despawnChildren(store, enemies, i);
+        _despawnChildren(ctx, i);
         continue;
       }
 
-      // P3 ("all three light simultaneously... killing one permanently
-      // removes it") is a different mechanic, not built yet — ADR 0018.
-      // Whatever rotation and tether state P1/P2 left behind is cleared
-      // (the sweep, at least, must not keep threatening the player with a
-      // frozen line nobody is animating any more) and this boss is skipped.
-      if (enemies.bossPhase[i] >= 2) {
-        _clearTethers(ctx, i);
-        continue;
-      }
+      // P3 own attack logic already ran above; nothing below applies to it.
+      if (enemies.bossPhase[i] >= 2) continue;
 
       enemies.bossTimer[i] -= dt;
       if (enemies.bossTimer[i] <= 0) {
@@ -281,11 +305,21 @@ abstract final class CinderChoirSystem {
     enemies.bossActiveChildIndex[primary] = next;
   }
 
-  static void _despawnChildren(EntityStore store, EnemyStore enemies, int primary) {
+  static void _despawnChildren(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
     final int high = store.highWater;
     for (int j = 0; j < high; j++) {
       if (store.alive[j] == 0) continue;
-      if (enemies.linkedHealthSlot[j] != primary) continue;
+      // `bossParent`, not `linkedHealthSlot`: P3 clears the latter on split,
+      // but a child is still this primary's own for cleanup purposes either
+      // way.
+      if (enemies.bossParent[j] != primary) continue;
+      // A child reaped here could be mid cone wind-up (P3) with a live
+      // telegraph nobody will ever resolve or expire it — end it explicitly,
+      // the same first step the ordinary death path (`AiSystem._reap`)
+      // already takes for every other enemy.
+      if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
       store.despawn(store.idAt(j));
     }
   }
@@ -368,5 +402,186 @@ abstract final class CinderChoirSystem {
       if (ctx.enemies.linkedHealthSlot[j] != primary) continue;
       if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
     }
+  }
+
+  // ── P3 ───────────────────────────────────────────────────────────────────
+
+  /// The one-time split (docs/06 §1 P3: "All three light simultaneously"),
+  /// then the ongoing alternating-cone cycle. Called every tick this boss is
+  /// in P3; the split itself only runs the first time, detected by whether
+  /// any child is still health-linked to [primary] at all.
+  static void _tickP3(AiContext ctx, int primary, double dt) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+    final int high = store.highWater;
+
+    bool stillShared = false;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.linkedHealthSlot[j] == primary) {
+        stillShared = true;
+        break;
+      }
+    }
+
+    if (stillShared) {
+      // Wipe P2's leftover tether telegraphs *before* anything below might
+      // start a cone telegraph on the same slot this same tick.
+      _clearTethers(ctx, primary);
+
+      int aliveCount = 0;
+      for (int j = 0; j < high; j++) {
+        if (store.alive[j] == 0) continue;
+        if (enemies.bossParent[j] != primary) continue;
+        aliveCount++;
+      }
+      final double share =
+          aliveCount > 0 ? store.health[primary] / aliveCount : 0;
+
+      for (int j = 0; j < high; j++) {
+        if (store.alive[j] == 0) continue;
+        if (enemies.bossParent[j] != primary) continue;
+        // Un-share: from here on this child's own health is the real one.
+        enemies.linkedHealthSlot[j] = -1;
+        store.health[j] = share;
+        store.maxHealth[j] = share;
+        // "All three light simultaneously" — no more plate distinction.
+        enemies.plateHealth[j] = 0;
+      }
+    }
+
+    // `BossPhaseSystem` and the death check just below both read
+    // `store.health[primary]` as this boss's real HP; after the split above
+    // that is a derived sum, not any single field's own truth, so it is
+    // recomputed every tick from whichever children are still alive.
+    //
+    // Only overwrites it when children were actually found: a boss spawned
+    // through the generic `SimWorld.spawnBoss` (no `bossParent` children at
+    // all — `boss_phase_system_test.dart`'s own scaffold, testing the phase
+    // machine in isolation) must not have its real health zeroed out here
+    // and be mistaken for "the last child just died".
+    double sum = 0;
+    int found = 0;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] != primary) continue;
+      sum += store.health[j];
+      found++;
+    }
+    if (found > 0) store.health[primary] = sum;
+
+    _tickCones(ctx, primary, dt);
+  }
+
+  /// Advances whichever effigy currently holds the "turn": counts down its
+  /// own wind-up (`EnemyStore.state`/`stateTimer` — the same fields every
+  /// ordinary enemy's own family tree already uses for this, unused by a
+  /// bare boss child until now), resolves into a lethal cone flash and a
+  /// damage check on expiry, then hands the turn to the next living child —
+  /// "alternating", read as strict round-robin with no gap between one
+  /// resolving and the next beginning.
+  static void _tickCones(AiContext ctx, int primary, double dt) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    final int activeIndex = enemies.bossActiveChildIndex[primary];
+    final int activeSlot = _findChild(ctx, primary, activeIndex);
+
+    // Nobody is currently wound up — either this is P3's very first tick, or
+    // the last attacker just resolved (or died mid-turn). Hand off and begin
+    // the next one's wind-up in the same tick, so a turn never sits idle.
+    if (activeSlot < 0 || enemies.stateOf(activeSlot) != AiState.windUp) {
+      final int next = activeSlot < 0
+          ? _nextAliveChildIndex(ctx, primary, activeIndex)
+          : activeIndex;
+      if (next < 0) return; // none left; the primary's own death handles it
+      final int nextSlot = _findChild(ctx, primary, next);
+      if (nextSlot < 0) return;
+      enemies.bossActiveChildIndex[primary] = next;
+      _beginWindUp(ctx, primary, nextSlot);
+      return;
+    }
+
+    enemies.stateTimer[activeSlot] -= dt;
+    if (enemies.stateTimer[activeSlot] > 0) return;
+
+    // Resolve: a one-tick lethal flash exactly where the amber cone was
+    // aimed, the same "second `beginCone` call, `resolvesAt: now`" shape the
+    // Screecher's own scream already uses.
+    final double x = store.posX[primary];
+    final double y = store.posY[primary];
+    final double facing = store.facing[activeSlot];
+    EnemyAttack.beginCone(
+      ctx,
+      activeSlot,
+      x,
+      y,
+      facing,
+      _p3ConeHalfAngle,
+      _p3ConeRange,
+      0,
+      severity: TelegraphSeverity.lethal,
+    );
+    if (EnemyAttack.playerInCone(ctx, x, y, facing, _p3ConeHalfAngle, _p3ConeRange)) {
+      EnemyAttack.damagePlayer(ctx, _p3ConeDamage, source: primary);
+    }
+    enemies.state[activeSlot] = AiState.idle.index;
+
+    final int next = _nextAliveChildIndex(ctx, primary, activeIndex);
+    if (next < 0) return;
+    final int nextSlot = _findChild(ctx, primary, next);
+    if (nextSlot < 0) return;
+    enemies.bossActiveChildIndex[primary] = next;
+    _beginWindUp(ctx, primary, nextSlot);
+  }
+
+  static void _beginWindUp(AiContext ctx, int primary, int slot) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    enemies.state[slot] = AiState.windUp.index;
+    enemies.stateTimer[slot] = _p3ConeWindUpSeconds;
+
+    final double x = store.posX[primary];
+    final double y = store.posY[primary];
+    final double facing = ctx.hasPlayer
+        ? math.atan2(ctx.playerY - y, ctx.playerX - x)
+        : store.facing[slot];
+    store.facing[slot] = facing;
+
+    EnemyAttack.beginCone(
+      ctx,
+      slot,
+      x,
+      y,
+      facing,
+      _p3ConeHalfAngle,
+      _p3ConeRange,
+      _p3ConeWindUpSeconds,
+    );
+  }
+
+  /// This boss's own living child at ordinal [childIndex], or -1.
+  static int _findChild(AiContext ctx, int primary, int childIndex) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] != primary) continue;
+      if (enemies.bossChildIndex[j] == childIndex) return j;
+    }
+    return -1;
+  }
+
+  /// The next living child's ordinal after [from], wrapping — or -1 if none
+  /// remain (the primary's own death, handled by the caller, follows within
+  /// the same tick once its summed health reaches zero).
+  static int _nextAliveChildIndex(AiContext ctx, int primary, int from) {
+    for (int step = 1; step <= childCount; step++) {
+      final int candidate = (from + step) % childCount;
+      if (_findChild(ctx, primary, candidate) >= 0) return candidate;
+    }
+    return -1;
   }
 }

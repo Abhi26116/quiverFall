@@ -97,7 +97,8 @@ class EnemyStore {
         bossChildIndex = Uint8List(capacity),
         bossTimer = Float64List(capacity),
         bossActiveChildIndex = Uint8List(capacity),
-        bossSweepAngle = Float64List(capacity);
+        bossSweepAngle = Float64List(capacity),
+        bossParent = Int32List(capacity);
 
   final int _capacity;
 
@@ -311,6 +312,18 @@ class EnemyStore {
   /// is needed to know how long the sweep has been running.
   final Float64List bossSweepAngle;
 
+  /// A multi-body boss's child's *permanent* parent — the primary's own
+  /// slot, or -1. Set once at spawn and never changed, unlike
+  /// [linkedHealthSlot], which starts equal to this and can later be
+  /// cleared: Cinder Choir's P3 ("all three light simultaneously... killing
+  /// one permanently removes it") un-shares the pool by setting
+  /// `linkedHealthSlot = -1` on all three, at which point [linkedHealthSlot]
+  /// alone can no longer answer "whose child is this" — a boss's own system
+  /// still needs that answer to run its per-child attack logic, find
+  /// siblings, or clean up survivors when the primary itself dies. See ADR
+  /// 0020.
+  final Int32List bossParent;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -422,6 +435,7 @@ class EnemyStore {
     bossTimer[slot] = 0;
     bossActiveChildIndex[slot] = 0;
     bossSweepAngle[slot] = 0;
+    bossParent[slot] = -1;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

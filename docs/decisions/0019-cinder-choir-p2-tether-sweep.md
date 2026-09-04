@@ -94,3 +94,7 @@ answer to "what does a sweeping/rotating attack look like when several
 bodies are involved" — this ADR's spokes-from-a-shared-centre answer is one
 option, not a prescription; a boss whose bodies genuinely move (Coilspine's
 segments) will need geometry that follows them instead of a fixed anchor.
+
+**Update, same day:** P3 happened next — see ADR 0020, which reuses the cone
+telegraph shape and `EnemyAttack.playerInCone` the identical way this ADR
+reused `playerOnLine`. Cinder Choir's fight is now complete end to end.
