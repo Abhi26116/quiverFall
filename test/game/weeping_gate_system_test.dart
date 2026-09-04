@@ -1,4 +1,5 @@
 import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
@@ -125,15 +126,73 @@ void main() {
     });
   });
 
-  group('past P1', () {
-    test('stops opening portals and clears its own live telegraph', () {
+  group('P2: Riftborn pairs and the conditional plate', () {
+    test('a portal now spawns two Riftborn at once, not one', () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 1;
+
+      // Wind-up is 0.5s; resolve lands on/around tick 30.
+      for (int i = 0; i < 35; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      final List<int> adds = addsOf(world, primary);
+      expect(adds.length, 2,
+          reason: 'P2 portals should spawn a pair, not a single enemy');
+      for (final int add in adds) {
+        expect(world.entities.contentIndex[add], greaterThanOrEqualTo(0));
+        expect(world.entities.kind[add], EntityKind.enemy.index);
+      }
+    });
+
+    test('the plate is open while fewer than three other enemies live', () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+      expect(world.enemies.plateHealth[primary], 0.0);
+    });
+
+    test('the plate shuts once three or more other enemies are alive', () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 1;
+      world.spawnEnemy(EnemyArchetype.mote, centerX + 6.0, centerY);
+      world.spawnEnemy(EnemyArchetype.mote, centerX + 6.0, centerY + 1.0);
+      world.spawnEnemy(EnemyArchetype.mote, centerX + 6.0, centerY + 2.0);
+
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.plateHealth[primary], world.entities.maxHealth[primary]);
+    });
+
+    test('the plate re-opens once the live count drops back below three',
+        () {
+      final (:world, :primary) = spawnGate();
+      world.enemies.bossPhase[primary] = 1;
+      final int a = world.spawnEnemy(EnemyArchetype.mote, centerX + 6.0, centerY);
+      world.spawnEnemy(EnemyArchetype.mote, centerX + 6.0, centerY + 1.0);
+      world.spawnEnemy(EnemyArchetype.mote, centerX + 6.0, centerY + 2.0);
+      world.tick(InputSnapshot());
+      expect(world.enemies.plateHealth[primary], greaterThan(0.0));
+
+      world.entities.health[a] = 0;
+      world.tick(InputSnapshot());
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.plateHealth[primary], 0.0);
+    });
+  });
+
+  group('past P2', () {
+    test('stops opening portals, clears its own live telegraph, and forces '
+        'the plate back open', () {
       final (:world, :primary) = spawnGate();
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
 
-      world.enemies.bossPhase[primary] = 1;
+      world.enemies.bossPhase[primary] = 2;
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], -1);
+      expect(world.enemies.plateHealth[primary], 0.0);
 
       final int liveAddsBefore = world.enemies.liveAdds[primary];
       for (int i = 0; i < 400; i++) {
@@ -142,6 +201,7 @@ void main() {
       // No further spawns — the count can only have gone down (organic
       // deaths never happen here) or stayed put, never up.
       expect(world.enemies.liveAdds[primary], lessThanOrEqualTo(liveAddsBefore));
+      expect(world.enemies.plateHealth[primary], 0.0);
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
@@ -39,13 +41,29 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// completely unmodified, the same posture every other boss's own plain,
 /// undefended P1 already takes (Skarn, Green Mother).
 ///
-/// **Not built here: P2 (portals spawn Riftborn elites in pairs; the
-/// Gate's own plate opens only while fewer than three enemies are alive —
-/// a genuinely new conditional-plate mechanic) and P3 (all portals open at
-/// once, permanently; a 40s survival check while burning the core).** Once
-/// `bossPhase` reaches 1, spawning stops and any live telegraph is
-/// cleared — the same posture every other boss's own undone phases
-/// already take. Any spawned enemy is not despawned — the same "an add
+/// **P2: "Portals now spawn Riftborn elites in pairs. The Gate's own
+/// plating opens only while fewer than three enemies are alive — a
+/// deliberate tension between clearing adds and racing."** Replaces P1's
+/// own roster-escalation spawn with two Riftborn-family enemies per
+/// portal (docs/05's own four: Rift Maw, Echo, Gravebound, Nullborn) —
+/// read as a *replacement*, not additive on top of P1's own trickle,
+/// since the card frames it as what portals spawn "now". The conditional
+/// plate reuses Gaunt's own `plateFlatFactor` machinery unmodified (ADR
+/// 0023) — a full-circle plate (Cinder Choir's own "which body, not which
+/// angle" reasoning, ADR 0018), toggled each tick between fully open
+/// (`plateHealth = 0`) and effectively invulnerable (`plateHealth` set,
+/// `plateFlatFactor` a tiny positive epsilon rather than a literal zero —
+/// `_armourFor` only takes the flat-factor branch when it reads `> 0`)
+/// based on a live count of every `EntityKind.enemy` entity in the room
+/// other than the Gate's own primary. The genuinely new piece is that
+/// *condition* itself: every prior plate in this roster gates on a Draw
+/// tier or a fixed angle, never a live population count. See ADR 0042.
+///
+/// **Not built here: P3 (all portals open at once, permanently; a 40s
+/// survival check while burning the core).** Once `bossPhase` reaches 2,
+/// spawning stops, the plate is forced back open, and any live telegraph
+/// is cleared — the same posture every other boss's own undone phase
+/// already takes. Any spawned enemy is not despawned — the same "an add
 /// outlives its summoner" posture Arclight's/Green Mother's own adds
 /// already established.
 abstract final class WeepingGateSystem {
@@ -85,6 +103,31 @@ abstract final class WeepingGateSystem {
     'screecher',
   ];
 
+  // ── P2: Riftborn pairs and the conditional plate ─────────────────────────
+  // See ADR 0042.
+
+  /// docs/05's own four Riftborn archetypes (chapter 3, 5, 7, 8 elites).
+  static const List<String> _riftbornIds = <String>[
+    'riftMaw',
+    'echo',
+    'gravebound',
+    'nullborn',
+  ];
+
+  /// Reused from the Rift Maw's own natural cadence (docs/05 #22) — these
+  /// *are* Rift-Maw-family enemies now.
+  static const double _p2SpawnIntervalSeconds = 4.0;
+
+  /// docs/06 §10 P2's own stated threshold — the plate opens only below
+  /// this many other enemies alive.
+  static const int _plateOpenBelowEnemyCount = 3;
+
+  /// `_armourFor` only takes the flat-factor branch when it reads greater
+  /// than zero — a tiny positive epsilon reads as "effectively
+  /// invulnerable" without accidentally falling through to the ordinary
+  /// tiered switch a literal zero would.
+  static const double _shutPlateFactor = 0.0001;
+
   /// Places the Gate's single, stationary, unplated body. Returns its
   /// slot, or -1 if the entity pool was full or [BossArchetype.weepingGate]
   /// has no catalogue entry.
@@ -116,6 +159,11 @@ abstract final class WeepingGateSystem {
 
     enemies.reset(slot);
     enemies.bossIndex[slot] = bossIndex;
+    // Plate stays shut for the whole fight once set — only `plateHealth`
+    // itself (toggled every tick in P2, forced back to 0 for P1 and past
+    // P2) decides whether the plate is currently active at all.
+    enemies.plateHalfArc[slot] = math.pi;
+    enemies.plateFlatFactor[slot] = _shutPlateFactor;
 
     return slot;
   }
@@ -137,29 +185,40 @@ abstract final class WeepingGateSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — frozen, its own
-      // spawn telegraph cleared, rather than left mid-wind-up forever.
-      if (enemies.bossPhase[i] >= 1) {
+      // P3 not built yet (see the class doc comment) — frozen, its own
+      // spawn telegraph cleared and the plate forced back open, rather
+      // than left mid-wind-up or shut forever.
+      if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
+        enemies.plateHealth[i] = 0;
         continue;
       }
 
-      _tickSpawns(ctx, i, dt);
+      final bool inP2 = enemies.bossPhase[i] >= 1;
+      _tickSpawns(ctx, i, dt, inP2);
+      if (inP2) _tickPlate(ctx, i);
     }
   }
 
-  static void _tickSpawns(AiContext ctx, int slot, double dt) {
+  static void _tickSpawns(AiContext ctx, int slot, double dt, bool inP2) {
     final EnemyStore enemies = ctx.enemies;
 
     // `bossTimer` doubles as P1's own elapsed-time clock — the same reuse
-    // Cinder Choir's P2 sweep already established for that field.
+    // Cinder Choir's P2 sweep already established for that field. Not
+    // read in P2 (the roster escalation it drives is a P1-only concept),
+    // but left ticking rather than special-cased to stop.
     enemies.bossTimer[slot] += dt;
 
     if (enemies.stateOf(slot) == AiState.windUp) {
       enemies.stateTimer[slot] -= dt;
       if (enemies.stateTimer[slot] > 0) return;
-      _summon(ctx, slot);
-      enemies.attackCooldown[slot] = _spawnIntervalSeconds;
+      if (inP2) {
+        _summonRiftbornPair(ctx, slot);
+      } else {
+        _summon(ctx, slot);
+      }
+      enemies.attackCooldown[slot] =
+          inP2 ? _p2SpawnIntervalSeconds : _spawnIntervalSeconds;
       enemies.state[slot] = AiState.idle.index;
       return;
     }
@@ -184,6 +243,59 @@ abstract final class WeepingGateSystem {
       _portalPlacementRadius,
       _spawnWindUpSeconds,
     );
+  }
+
+  /// Opens the plate only while fewer than [_plateOpenBelowEnemyCount]
+  /// other enemies (every spawned Riftborn, from either portal system —
+  /// this does not distinguish) are currently alive in the room.
+  static void _tickPlate(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    int otherEnemies = 0;
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (store.kind[j] != EntityKind.enemy.index) continue;
+      if (j == primary) continue;
+      otherEnemies++;
+    }
+
+    enemies.plateHealth[primary] =
+        otherEnemies < _plateOpenBelowEnemyCount ? 0 : store.maxHealth[primary];
+  }
+
+  /// P2's own replacement for [_summon]: the same "spawn at the portal's
+  /// own committed telegraph position" trick, but two Riftborn — drawn
+  /// independently (with replacement) from [_riftbornIds] rather than one
+  /// roster enemy — offset a little either side of the portal so they
+  /// don't spawn fully stacked on each other.
+  static void _summonRiftbornPair(AiContext ctx, int slot) {
+    final EnemyStore enemies = ctx.enemies;
+    if (!EnemyAttack.hasTelegraph(ctx, slot)) return;
+
+    final int telegraphSlot = enemies.telegraphSlot[slot];
+    final double x = ctx.telegraphs.xAt(telegraphSlot);
+    final double y = ctx.telegraphs.yAt(telegraphSlot);
+    EnemyAttack.endTelegraph(ctx, slot);
+
+    const double pairOffset = 0.4;
+    for (final double sign in <double>[-1.0, 1.0]) {
+      if (enemies.liveAdds[slot] >= _spawnCap) break;
+      if (EnemySpawner.atEnemyCap(ctx)) break;
+
+      final String id = _riftbornIds[ctx.rng.nextInt(_riftbornIds.length)];
+      final int contentIndex = ctx.content.enemyIndexById[id] ?? -1;
+      if (contentIndex < 0) continue;
+
+      EnemySpawner.spawn(
+        ctx,
+        contentIndex: contentIndex,
+        x: x + sign * pairOffset,
+        y: y,
+        spawnerSlot: slot,
+      );
+    }
   }
 
   /// Spawns at the portal's own committed position — read back from its
