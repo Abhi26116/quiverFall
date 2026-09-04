@@ -1,4 +1,5 @@
 import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
@@ -8,7 +9,7 @@ import 'boss_test_support.dart';
 /// Silversong — "a resonant bell-figure that hunts the player's mechanic
 /// rather than their HP" (docs/06 §3). No damage anywhere in this fight;
 /// every test here is about `DrawState.drawLockRemaining`/`drawSeconds`,
-/// never `entities.health`.
+/// never `entities.health`. P2 adds resonance pillars (ADR 0036).
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e7;
@@ -24,6 +25,16 @@ void main() {
     world.spawnPlayer(playerX, playerY);
     final int primary = world.spawnSilversong(centerX, centerY, health: health);
     return (world: world, primary: primary);
+  }
+
+  List<int> pillarsOf(SimWorld world, int primary) {
+    final List<int> out = <int>[];
+    for (int j = 0; j < world.entities.highWater; j++) {
+      if (world.entities.alive[j] == 0) continue;
+      if (world.enemies.bossParent[j] != primary) continue;
+      out.add(j);
+    }
+    return out;
   }
 
   group('spawn', () {
@@ -109,22 +120,118 @@ void main() {
     });
   });
 
-  group('past P1', () {
-    test('stops screaming and clears any live telegraph', () {
+  group('P2: resonance pillars', () {
+    test('a pillar forms with a brief telegraph, then solidifies', () {
+      final (:world, :primary) = spawnSilversong();
+      world.enemies.bossPhase[primary] = 1;
+
+      world.tick(InputSnapshot());
+      final List<int> pillars = pillarsOf(world, primary);
+      expect(pillars.length, 1);
+      final int pillar = pillars.first;
+      expect(world.enemies.state[pillar], AiState.windUp.index);
+      expect(world.enemies.telegraphSlot[pillar], greaterThanOrEqualTo(0));
+      expect(world.enemies.untargetable[pillar], 1);
+
+      // Forming wind-up is 0.6s (36 ticks) — comfortable margin past it.
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.enemies.state[pillar], isNot(AiState.windUp.index));
+      expect(world.enemies.telegraphSlot[pillar], -1);
+    });
+
+    test('a solidified pillar Draw-locks a player who stands in it', () {
+      final (:world, :primary) = spawnSilversong();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+      final int pillar = pillarsOf(world, primary).first;
+
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      final int player = world.player.index;
+      world.entities.posX[player] = world.entities.posX[pillar];
+      world.entities.posY[player] = world.entities.posY[pillar];
+      world.playerDraw.drawLockRemaining = 0;
+      world.tick(InputSnapshot());
+
+      expect(world.playerDraw.drawLockRemaining, greaterThan(2.0));
+    });
+
+    test('a pillar still forming does not lock anyone standing on it', () {
+      final (:world, :primary) = spawnSilversong();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+      final int pillar = pillarsOf(world, primary).first;
+
+      final int player = world.player.index;
+      world.entities.posX[player] = world.entities.posX[pillar];
+      world.entities.posY[player] = world.entities.posY[pillar];
+      world.playerDraw.drawLockRemaining = 0;
+      world.tick(InputSnapshot());
+
+      expect(world.playerDraw.drawLockRemaining, 0.0);
+    });
+
+    test('pillars accumulate over time, up to the cap', () {
+      final (:world, :primary) = spawnSilversong();
+      world.enemies.bossPhase[primary] = 1;
+
+      // Comfortably past enough 4.0s intervals (240 ticks each) to reach
+      // the 5-pillar cap.
+      for (int i = 0; i < 1300; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(pillarsOf(world, primary).length, 5);
+    });
+
+    test("the primary's own death despawns every pillar", () {
+      final (:world, :primary) = spawnSilversong();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+      expect(pillarsOf(world, primary), isNotEmpty);
+
+      world.entities.health[primary] = 0;
+      world.tick(InputSnapshot());
+
+      expect(pillarsOf(world, primary), isEmpty);
+    });
+  });
+
+  group('past P2', () {
+    test('stops screaming, stops growing pillars, and any existing pillar '
+        'stops locking', () {
       final (:world, :primary) = spawnSilversong();
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
 
       world.enemies.bossPhase[primary] = 1;
       world.tick(InputSnapshot());
+      final int pillar = pillarsOf(world, primary).first;
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.enemies.state[pillar], isNot(AiState.windUp.index));
+
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], -1);
 
-      // No further screams even given plenty of time.
+      // No further screams, no further pillars, and standing directly on
+      // the existing one does nothing, even given plenty of time.
       world.playerDraw.drawLockRemaining = 0;
-      for (int i = 0; i < 300; i++) {
+      final int player = world.player.index;
+      world.entities.posX[player] = world.entities.posX[pillar];
+      world.entities.posY[player] = world.entities.posY[pillar];
+      final int pillarCountBefore = pillarsOf(world, primary).length;
+      for (int i = 0; i < 1300; i++) {
         world.tick(InputSnapshot());
       }
       expect(world.playerDraw.drawLockRemaining, 0.0);
+      expect(pillarsOf(world, primary).length, pillarCountBefore);
     });
   });
 }
