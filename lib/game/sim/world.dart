@@ -37,6 +37,7 @@ import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
+import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
 import 'package:quiverfall/game/sim/systems/silversong_system.dart';
 import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
@@ -618,6 +619,7 @@ class SimWorld {
     GauntSystem.update(ai);
     SilversongSystem.update(ai);
     VermillionSystem.update(ai);
+    RimefatherSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2121,10 +2123,13 @@ class SimWorld {
     if (player.isNone || !entities.isAlive(player)) return;
     final int i = player.index;
 
-    // *Quiverfall* stuns the player with the recoil of their own shot. Rooting
-    // rather than dropping the input, so the stick still reads and the player
-    // can see that the game heard them.
-    if (_stunRemaining > 0) {
+    // *Quiverfall* stuns the player with the recoil of their own shot, and
+    // Rimefather's own "hit twice within 4s" root (docs/06 §6,
+    // `playerDraw.rootRemaining`) does the identical thing from an enemy
+    // hit instead of the player's own arrow — rooting rather than dropping
+    // the input either way, so the stick still reads and the player can see
+    // that the game heard them.
+    if (_stunRemaining > 0 || playerDraw.isRooted) {
       entities.velX[i] = 0;
       entities.velY[i] = 0;
       return;
@@ -2178,7 +2183,7 @@ class SimWorld {
   void _applyDash(InputSnapshot input, double dt) {
     if (player.isNone || !entities.isAlive(player)) return;
     if (!boons.has(BoonBehaviour.dash)) return;
-    if (_stunRemaining > 0) return;
+    if (_stunRemaining > 0 || playerDraw.isRooted) return;
 
     final bool blink = boons.has(BoonBehaviour.blink);
     if (blink) {
@@ -2414,6 +2419,21 @@ class SimWorld {
   /// work. Returns its slot.
   int spawnVermillion(double x, double y, {required double health}) =>
       VermillionSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Rimefather — a single, stationary body whose freezing cone
+  /// roots the player after two hits within 4s. Test/tool entry point, the
+  /// same role [spawnBoss] plays for the generic case; [RimefatherSystem.spawn]
+  /// does the real work. Returns its slot.
+  int spawnRimefather(double x, double y, {required double health}) =>
+      RimefatherSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

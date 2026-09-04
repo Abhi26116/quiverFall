@@ -27,6 +27,11 @@ abstract final class DrawSystem {
       if (state.drawLockRemaining < 0) state.drawLockRemaining = 0;
     }
 
+    if (state.rootRemaining > 0) {
+      state.rootRemaining -= dt;
+      if (state.rootRemaining < 0) state.rootRemaining = 0;
+    }
+
     if (isMoving) {
       _updateMoving(state, dt, perpetual);
     } else {

@@ -9,7 +9,8 @@ import 'package:quiverfall/game/sim/world.dart';
 /// (chapter 1, `CinderChoirSystem`, ADR 0018-0020), Gaunt the Iron Tide
 /// (chapter 2, `GauntSystem`, ADR 0023), Silversong (chapter 3,
 /// `SilversongSystem`, ADR 0024), Vermillion (chapter 5,
-/// `VermillionSystem`, ADR 0025) and Skarn the Unmade (chapter 11,
+/// `VermillionSystem`, ADR 0025), Rimefather (chapter 6,
+/// `RimefatherSystem`, ADR 0026) and Skarn the Unmade (chapter 11,
 /// `SkarnSystem`, ADR 0022) have sim code behind them so far. [bossFor] is
 /// the single place that fact lives: a chapter with no entry here gets its
 /// stage-20 room composed as an ordinary room instead
@@ -24,6 +25,7 @@ abstract final class BossRoomComposer {
     2: BossArchetype.gauntIronTide,
     3: BossArchetype.silversong,
     5: BossArchetype.vermillion,
+    6: BossArchetype.rimefather,
     11: BossArchetype.skarnUnmade,
   };
 
@@ -64,6 +66,11 @@ abstract final class BossRoomComposer {
           health: health,
         ),
       BossArchetype.vermillion => world.spawnVermillion(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.rimefather => world.spawnRimefather(
           SimConfig.arenaWidth / 2,
           SimConfig.arenaHeight / 2,
           health: health,

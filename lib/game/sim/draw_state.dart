@@ -107,6 +107,19 @@ class DrawState {
 
   bool get isDrawLocked => drawLockRemaining > 0;
 
+  /// Seconds the player cannot move at all — a genuinely different effect
+  /// from [drawLockRemaining], which only denies *tier progress*. Built
+  /// generic against Rimefather's own "a player hit twice within 4s is
+  /// rooted for 1.2s" (docs/06 §6), the first enemy-inflicted root in the
+  /// game; `SimWorld`'s own pre-existing `_stunRemaining` (the *Quiverfall*
+  /// arrow's self-inflicted recoil) is a separate, narrower field on
+  /// [SimWorld] itself rather than here, so this does not change that
+  /// mechanic's own behaviour — `SimWorld._applyInput`/`_applyDash` check
+  /// both. See ADR 0026.
+  double rootRemaining = 0;
+
+  bool get isRooted => rootRemaining > 0;
+
   DrawTier get tier {
     if (drawSeconds >= tierThreeAt * drawSpeedMultiplier) return DrawTier.three;
     if (drawSeconds >= tierTwoAt * drawSpeedMultiplier) return DrawTier.two;
@@ -136,6 +149,7 @@ class DrawState {
     sinceStoppedSeconds = 0;
     wasMovingLastTick = false;
     drawLockRemaining = 0;
+    rootRemaining = 0;
   }
 
   /// Restores the tunables to their unmodified values. Separate from [reset],
@@ -151,5 +165,11 @@ class DrawState {
   void applyDrawLock(double seconds) {
     if (seconds > drawLockRemaining) drawLockRemaining = seconds;
     drawSeconds = 0;
+  }
+
+  /// Refreshes to the longer of the current remaining root and [seconds] —
+  /// the same "never shortens an active effect" rule [applyDrawLock] uses.
+  void applyRoot(double seconds) {
+    if (seconds > rootRemaining) rootRemaining = seconds;
   }
 }

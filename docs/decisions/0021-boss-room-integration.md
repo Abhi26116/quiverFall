@@ -101,3 +101,11 @@ another win for reuse (`EnemyAttack.dropPuddle`, already built for lingering
 shell impacts). Also caught a real, vacuously-passing test bug in Gaunt's
 own "halts past P1" test while writing Vermillion's equivalent — see ADR
 0025's own account.
+
+**Update, same day:** and a sixth — Rimefather (ADR 0026), chapter 6. The
+cone attack itself is Silversong's own shape reused again, but the fight's
+own new mechanic (a root that stops the player moving at all, not just Draw
+progress) needed a genuinely new primitive — `DrawState.rootRemaining` —
+the first campaign boss since Cinder Choir's own linked-health slot to
+require new sim surface area rather than composing entirely from what
+already existed.
