@@ -346,13 +346,17 @@ class StageRunner {
       ..globalStage = plan.blueprint.globalStage
       ..beginRoom(next.plan);
 
-    // `next.plan` is deliberately empty for a boss slot (`LevelGenerator
-    // ._assemble`) — nothing for `SpawnSystem` to release, so the room stays
-    // open exactly as long as the boss's own entities do. `encounterCount`
+    // `next.plan` is deliberately empty for a boss slot *or* an Elite slot
+    // carrying a built Elite-tier boss (`LevelGenerator._assemble`) —
+    // nothing for `SpawnSystem` to release, so the room stays open exactly
+    // as long as the boss's own entities do. Reading `bossArchetype` here
+    // rather than checking `next.kind` is what makes both tiers work
+    // through the same call with no branch of their own — every
+    // Elite-tier archetype is still a plain `BossArchetype`. `encounterCount`
     // is always 0: this run has no access to how many times the player's
     // own save has beaten this boss before (`PlayerSave`, not something
     // `StageRunner` reads) — a real, deliberate gap, not an oversight; see
-    // ADR 0021.
+    // ADR 0021/0055.
     final BossArchetype? boss = next.bossArchetype;
     if (boss != null) {
       final BossDefinition? def = content.bosses.byArchetype(boss);

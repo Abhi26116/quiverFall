@@ -25,6 +25,14 @@ import 'package:quiverfall/game/sim/world.dart';
 /// the map as each new boss's own fight lands — nothing else needs to
 /// change to pick it up (`StageRunner` reads [bossFor] indirectly through
 /// `RoomBlueprint.bossArchetype`, never an archetype directly). See ADR 0021.
+///
+/// **[spawn] also places the Elite tier (docs/06 §6.2, #13-16).** Every
+/// Elite-tier boss is still a plain [BossArchetype], so `StageRunner`'s
+/// own `BossRoomComposer.spawn(world, boss, ...)` call needed no changes
+/// at all to place one — only `EliteRoomComposer.eliteFor`, the Elite
+/// tier's own equivalent of [bossFor], and one more `switch` arm here.
+/// Only The Ashen Choir (`AshenChoirSystem`, ADR 0033) has a fight built
+/// so far. See ADR 0055.
 abstract final class BossRoomComposer {
   static const Map<int, BossArchetype> _builtByChapter = <int, BossArchetype>{
     1: BossArchetype.cinderChoir,
@@ -113,6 +121,12 @@ abstract final class BossRoomComposer {
           health: health,
         ),
       BossArchetype.quiverfall => world.spawnTheQuiverfall(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      // ── Elite tier (docs/06 §6.2) ────────────────────────────────────────
+      BossArchetype.ashenChoir => world.spawnAshenChoir(
           SimConfig.arenaWidth / 2,
           SimConfig.arenaHeight / 2,
           health: health,

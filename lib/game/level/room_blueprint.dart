@@ -27,11 +27,13 @@ class RoomBlueprint {
   final RoomSlot slot;
 
   /// Which boss to spawn, for a [RoomKind.boss] slot whose chapter actually
-  /// has one built — null for every other slot, and for a boss slot whose
-  /// own chapter's boss is not built yet (`BossRoomComposer.bossFor`), in
-  /// which case [plan] is an ordinary composed room like any other, the same
-  /// "playable rather than a hole in the stage" fallback a Shrine slot gets
-  /// before Phase 13. See ADR 0021.
+  /// has one built, or a [RoomKind.elite] slot whose exact stage actually
+  /// has an Elite-tier boss built (`EliteRoomComposer.eliteFor`) — null for
+  /// every other slot, and for a boss/Elite slot with no fight built for
+  /// that chapter/stage (`BossRoomComposer.bossFor`), in which case [plan]
+  /// is an ordinary composed room like any other, the same "playable rather
+  /// than a hole in the stage" fallback a Shrine slot gets before Phase 13.
+  /// See ADR 0021/0055.
   final BossArchetype? bossArchetype;
 
   /// From [ClearTimeModel]. Phase 12's balance harness replaces the model; this

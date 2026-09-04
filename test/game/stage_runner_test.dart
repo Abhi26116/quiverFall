@@ -490,6 +490,55 @@ void main() {
       expect(s.runner.room.enemyCount, greaterThan(0));
     });
   });
+
+  group('Elite rooms', () {
+    /// The Elite-tier equivalent of `advanceToBossRoom` above — stops at
+    /// the first `RoomKind.elite` slot rather than the stage's own last
+    /// room, since an Elite room is never the final one.
+    void advanceToEliteRoom(StageRunner runner, SimWorld world) {
+      while (runner.room.kind != RoomKind.elite &&
+          runner.status == StageStatus.fighting) {
+        final int before = runner.roomIndex;
+        while (runner.roomIndex == before &&
+            runner.status == StageStatus.fighting) {
+          _killAll(world);
+          world.tick(InputSnapshot());
+          world.events.clear();
+          runner.update();
+        }
+      }
+    }
+
+    test("chapter 3's stage 10 spawns the real Ashen Choir", () {
+      // globalStage 50 — `EliteRoomComposer`'s own single, authored
+      // occurrence (ADR 0055).
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(stage: 10, seed: 520);
+      advanceToEliteRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.elite);
+      expect(s.runner.room.bossArchetype, BossArchetype.ashenChoir);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Ashen Choir primary found in the room');
+    });
+
+    test('every other stage still composes an ordinary Elite room', () {
+      // Adjacent to chapter 3's own stage 10, so this exercises the exact
+      // boundary: one stage over, same chapter, same room index, still an
+      // ordinary "one Riftborn plus scraps" room.
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(stage: 9, seed: 521);
+      advanceToEliteRoom(s.runner, s.world);
+
+      expect(s.runner.room.kind, RoomKind.elite);
+      expect(s.runner.room.bossArchetype, isNull);
+      expect(s.runner.room.enemyCount, greaterThan(0));
+    });
+  });
 }
 
 void _killAll(SimWorld world) {

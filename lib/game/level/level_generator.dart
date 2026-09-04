@@ -9,6 +9,7 @@ import 'package:quiverfall/game/level/room_blueprint.dart';
 import 'package:quiverfall/game/level/stage_blueprint.dart';
 import 'package:quiverfall/game/spawn/boss_room_composer.dart';
 import 'package:quiverfall/game/spawn/composition_validator.dart';
+import 'package:quiverfall/game/spawn/elite_room_composer.dart';
 import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:quiverfall/game/spawn/wave_plan.dart';
 
@@ -112,16 +113,21 @@ class LevelGenerator {
     required int attempts,
     bool usedFallback = false,
   }) {
-    // A boss slot whose chapter actually has a fight built gets no ordinary
-    // composition at all — an empty plan, so `SpawnSystem` never releases a
-    // wave (`RoomComposer`/`CompositionValidator`/`BlueprintValidator` all
-    // already treat an empty plan as trivially valid; `StageRunner` is the
-    // one that spawns the real boss once the room loads, through
-    // `BossRoomComposer`). Every other chapter's boss slot — none built yet
-    // — falls straight through to the ordinary path below, exactly like any
-    // other room. See ADR 0021.
-    final BossArchetype? boss =
-        slot.kind == RoomKind.boss ? BossRoomComposer.bossFor(chapter) : null;
+    // A boss slot whose chapter actually has a fight built, *or* an Elite
+    // slot whose exact stage actually has an Elite-tier fight built, gets
+    // no ordinary composition at all — an empty plan, so `SpawnSystem`
+    // never releases a wave (`RoomComposer`/`CompositionValidator`/
+    // `BlueprintValidator` all already treat an empty plan as trivially
+    // valid; `StageRunner` is the one that spawns the real boss once the
+    // room loads, through `BossRoomComposer`, for either tier). Every
+    // other boss/Elite slot — no fight built for that chapter or that
+    // exact stage — falls straight through to the ordinary path below,
+    // exactly like any other room. See ADR 0021/0055.
+    final BossArchetype? boss = switch (slot.kind) {
+      RoomKind.boss => BossRoomComposer.bossFor(chapter),
+      RoomKind.elite => EliteRoomComposer.eliteFor(globalStage),
+      _ => null,
+    };
 
     if (boss != null) {
       final RoomPlan empty = RoomPlan(
