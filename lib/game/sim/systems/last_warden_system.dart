@@ -121,6 +121,27 @@ import 'package:quiverfall/game/sim/systems/weeping_gate_system.dart';
 /// of boss "beaten most often" plausibly names. An archetype outside that
 /// set, or an empty slot (a fresh save with fewer than three distinct
 /// kills), is skipped rather than guessed at. See ADR 0061.
+///
+/// P4, built here: "Arena floor is removed; combat on floating Windline-
+/// drawn platforms the player creates by firing. The mechanic becomes the
+/// terrain." A genuine fall-through/void-collision terrain model would
+/// mean building real physics onto `SimWorld._applyInput`, the one
+/// function every other interaction in the game already depends on — the
+/// identical class of change ADR 0038 already declined for Rimefather's
+/// own "reduces friction" half of its own P2. Instead this reuses the
+/// player-standing-on-a-Windline check the Hollow Warden's own P2 already
+/// built (`_pointNearSegment`, reimplemented here against the player's
+/// own lines rather than shared, matching this roster's own established
+/// "small independent copies" posture — ADR 0057) as a real, working
+/// stand-in for "on/off a platform": while not standing on any live
+/// player-owned Windline segment, the player takes the roster's own bare
+/// persistent-aura anchor on the same shared cooldown The Loom's own
+/// threads already use. "The mechanic becomes the terrain" is genuinely
+/// true under this reading — the only way to stop taking damage is to
+/// keep firing, which is what lays a Windline in the first place — even
+/// though no entity can ever fall through the arena floor, because the
+/// sim has no such floor to fall through in the first place. See ADR
+/// 0062.
 abstract final class LastWardenSystem {
   /// Reused from the Hollow Warden's own mirror-approach speed — a
   /// deliberate, readable closing pace, not a lunge.
@@ -160,6 +181,21 @@ abstract final class LastWardenSystem {
   /// own mirrors already use.
   static const double _echoPlacementRadius = 3.0;
   static const int _echoSlots = 3;
+
+  // ── P4: the floor is removed ──────────────────────────────────────────
+  // See ADR 0062.
+
+  /// The roster's own bare persistent-aura anchor — an ongoing damage
+  /// source, not a single decisive hit.
+  static const double _voidDamage = 0.09;
+
+  /// The Loom's own established cadence for a shared ambient-damage
+  /// cooldown.
+  static const double _voidDamageCooldownSeconds = 0.6;
+
+  /// The sentinel every consumer of `WindlineStore.ownerAt` already
+  /// treats as "the player's own trail."
+  static const int _playerLineOwner = 0;
 
   /// Places the Warden's single, stationary-until-it-moves body. Returns
   /// its slot, or -1 if the entity pool was full or [BossArchetype.
@@ -255,6 +291,11 @@ abstract final class LastWardenSystem {
         _spawnEchoes(ctx, i);
         enemies.state[i] = 1;
       }
+
+      // P4: "The floor is removed." See the class doc comment for the
+      // scoped reading — standing off a live player-owned Windline is
+      // punished directly rather than modelled as a real fall.
+      if (enemies.bossPhase[i] >= 3) _tickVoidFloor(ctx, i, dt);
     }
   }
 
@@ -537,5 +578,63 @@ abstract final class LastWardenSystem {
       case BossArchetype.lastWarden:
         return -1;
     }
+  }
+
+  /// While the player is not standing on any live player-owned Windline
+  /// segment, deals [_voidDamage] on a shared cooldown — "the floor is
+  /// removed," read as ongoing chip damage rather than a fall this sim has
+  /// no physics to model. `attackCooldown` is free here — the heavy shot's
+  /// own cadence lives on `bossTimer`/[DrawState], never this field.
+  static void _tickVoidFloor(AiContext ctx, int slot, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+
+    if (enemies.attackCooldown[slot] > 0) {
+      enemies.attackCooldown[slot] -= dt;
+    }
+    if (!ctx.hasPlayer) return;
+
+    final double px = ctx.playerX;
+    final double py = ctx.playerY;
+    final double r = ctx.playerRadius;
+
+    final int found =
+        ctx.lineIndex.querySegment(px, py, px, py, r, ctx.segmentScratch);
+    bool onPlatform = false;
+    for (int c = 0; c < found; c++) {
+      final int seg = ctx.segmentScratch[c];
+      if (!ctx.lines.isAlive(seg)) continue;
+      if (ctx.lines.ownerAt(seg) != _playerLineOwner) continue;
+      if (_pointNearSegment(px, py, ctx.lines.x0(seg), ctx.lines.y0(seg),
+          ctx.lines.x1(seg), ctx.lines.y1(seg), r)) {
+        onPlatform = true;
+        break;
+      }
+    }
+
+    if (!onPlatform && enemies.attackCooldown[slot] <= 0) {
+      EnemyAttack.damagePlayer(ctx, _voidDamage, source: slot);
+      enemies.attackCooldown[slot] = _voidDamageCooldownSeconds;
+    }
+  }
+
+  /// The roster's own small, independently-reimplemented "is this point
+  /// within `radius` of this segment" test — the same shape the Hollow
+  /// Warden's own `_tickPlayerSlow` already uses, deliberately not shared
+  /// (ADR 0057's own reasoning: a handful of independent nine-line copies
+  /// is cheaper and safer than restructuring already-shipped systems to
+  /// share one).
+  static bool _pointNearSegment(double px, double py, double ax, double ay,
+      double bx, double by, double radius) {
+    final double dx = bx - ax;
+    final double dy = by - ay;
+    final double lenSq = dx * dx + dy * dy;
+    double t = lenSq <= 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    final double cx = ax + dx * t;
+    final double cy = ay + dy * t;
+    final double ox = px - cx;
+    final double oy = py - cy;
+    return ox * ox + oy * oy <= radius * radius;
   }
 }

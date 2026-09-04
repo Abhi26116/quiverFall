@@ -7,14 +7,16 @@ import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// The Last Warden — docs/06 §6.3, Endless Descent boss #20. P1-P3 only —
+/// The Last Warden — docs/06 §6.3, Endless Descent boss #20. P1-P4 only —
 /// see `LastWardenSystem`'s own doc comment for what each phase means and
-/// what P4-P5 still need. P1 (ADR 0059): the Draw ramp, the Momentum-driven
+/// what P5 still needs. P1 (ADR 0059): the Draw ramp, the Momentum-driven
 /// speed and damage-reduction trade, and the approach/hold/disengage
 /// rhythm. P2 (ADR 0060): mirroring the player's own current flat damage
 /// bonus and crit into the heavy shot. P3 (ADR 0061): summoning echoes of
 /// up to three other bosses, each its own real, independently-driven
-/// fight.
+/// fight. P4 (ADR 0062): standing off any live player-owned Windline
+/// deals ongoing damage — "the floor is removed," read as a real, working
+/// stand-in rather than new fall-through physics.
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e5;
@@ -330,6 +332,80 @@ void main() {
 
       expect(() => world.tick(InputSnapshot()), returnsNormally);
       expect(enemiesOfArchetype(world, BossArchetype.umbralTwin), isEmpty);
+    });
+  });
+
+  group('P4: the floor is removed', () {
+    test('before P4, standing off any Windline deals no void damage', () {
+      final (:world, :primary) = spawnLastWarden();
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      for (int i = 0; i < 120; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], 100.0);
+    });
+
+    test('once P4 begins, standing off any Windline deals void damage on '
+        'a cooldown', () {
+      final (:world, :primary) = spawnLastWarden();
+      world.enemies.bossPhase[primary] = 3;
+      final int player = world.player.index;
+
+      world.tick(InputSnapshot());
+      expect(world.entities.health[player], closeTo(91.0, 1e-6));
+
+      // Immediately again — still on cooldown, no further damage yet.
+      world.tick(InputSnapshot());
+      expect(world.entities.health[player], closeTo(91.0, 1e-6));
+    });
+
+    test('standing on a live player-owned Windline avoids the damage '
+        'entirely', () {
+      final (:world, :primary) = spawnLastWarden();
+      world.enemies.bossPhase[primary] = 3;
+      final int player = world.player.index;
+
+      world.windlines.add(
+        fromX: world.entities.posX[player] - 1.0,
+        fromY: world.entities.posY[player],
+        toX: world.entities.posX[player] + 1.0,
+        toY: world.entities.posY[player],
+        expiresAt: world.elapsedSeconds + 10.0,
+        ownerIndex: 0,
+        trailId: 1,
+      );
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], 100.0);
+    });
+
+    test('an expired Windline no longer counts as a platform', () {
+      final (:world, :primary) = spawnLastWarden();
+      world.enemies.bossPhase[primary] = 3;
+      final int player = world.player.index;
+
+      world.windlines.add(
+        fromX: world.entities.posX[player] - 1.0,
+        fromY: world.entities.posY[player],
+        toX: world.entities.posX[player] + 1.0,
+        toY: world.entities.posY[player],
+        expiresAt: world.elapsedSeconds + 0.001,
+        ownerIndex: 0,
+        trailId: 1,
+      );
+
+      // Let the segment expire before the void-floor check ever runs.
+      for (int i = 0; i < 5; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], closeTo(91.0, 1e-6));
     });
   });
 }
