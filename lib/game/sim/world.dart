@@ -44,6 +44,7 @@ import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
 import 'package:quiverfall/game/sim/systems/silversong_system.dart';
 import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
+import 'package:quiverfall/game/sim/systems/the_quiverfall_system.dart';
 import 'package:quiverfall/game/sim/systems/thrall_of_nine_system.dart';
 import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
 import 'package:quiverfall/game/sim/systems/weeping_gate_system.dart';
@@ -637,6 +638,7 @@ class SimWorld {
     ThrallOfNineSystem.update(ai);
     WeepingGateSystem.update(ai);
     HollowWardenSystem.update(ai);
+    TheQuiverfallSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2531,6 +2533,22 @@ class SimWorld {
   /// work. Returns its slot.
   int spawnHollowWarden(double x, double y, {required double health}) =>
       HollowWardenSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places The Quiverfall — the campaign finale's own central body plus
+  /// eight orbiting spoke anchors, sweeping a converging-lines pattern
+  /// around itself. Test/tool entry point, the same role [spawnBoss] plays
+  /// for the generic case; [TheQuiverfallSystem.spawn] does the real work.
+  /// Returns the primary's slot.
+  int spawnTheQuiverfall(double x, double y, {required double health}) =>
+      TheQuiverfallSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

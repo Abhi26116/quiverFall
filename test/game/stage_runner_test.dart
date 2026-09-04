@@ -295,6 +295,21 @@ void main() {
       expect(spawned, isTrue, reason: 'no Skarn primary found in the room');
     });
 
+    test('chapter 12\'s stage 20 spawns the real Quiverfall', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 12, stage: 20, seed: 514);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.quiverfall);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Quiverfall primary found in the room');
+    });
+
     test('chapter 2\'s stage 20 spawns the real Gaunt, the Iron Tide', () {
       final ({StageRunner runner, SimWorld world}) s =
           stage(chapter: 2, stage: 20, seed: 505);
@@ -458,12 +473,16 @@ void main() {
 
     test('a chapter whose boss is not built yet still composes an ordinary room',
         () {
-      // Chapters 1-11 all have fights built now — see
-      // `BossRoomComposer.bossFor`. Chapter 12's own stage 20 (The
-      // Quiverfall, the campaign finale) must still be playable, exactly
-      // like a Shrine slot is ahead of Phase 13.
+      // All twelve campaign chapters have fights built now — see
+      // `BossRoomComposer.bossFor`. Chapter 13 names no real GDD campaign
+      // chapter (docs/06's own #13+ are Elite/Event bosses, a different
+      // spawn path entirely) — it stands in here purely to exercise
+      // `bossFor`'s own fallback for any chapter with no map entry, the
+      // same "playable rather than a hole in the stage" posture a Shrine
+      // slot already gets ahead of Phase 13 (the project phase, not this
+      // chapter number).
       final ({StageRunner runner, SimWorld world}) s =
-          stage(chapter: 12, stage: 20, seed: 503);
+          stage(chapter: 13, stage: 20, seed: 503);
       advanceToBossRoom(s.runner, s.world);
 
       expect(s.runner.room.kind, RoomKind.boss);

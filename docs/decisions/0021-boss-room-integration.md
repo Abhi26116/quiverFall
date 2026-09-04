@@ -163,7 +163,21 @@ private function" reuse Gaunt/Vermillion already established); the Draw
 ramps under the player's own exact rule set, fed by whether the mirror is
 still closing. Two large, honestly-flagged scope cuts on an inherently
 large card: neither "the player's own arrow type" nor "80% of the
-player's own stats" is implemented. Both "unbuilt chapter" fallback tests
-this session has kept current now point at chapter 12 — The Quiverfall,
-the only campaign boss left, and the last one this session could build,
-since its own P2 echoes all eleven others by name.
+player's own stats" is implemented.
+
+**Update, same day:** and a twelfth and final one — The Quiverfall (ADR
+0032), chapter 12, the campaign finale, built last on purpose since its
+own P2 needs every other boss to already exist. Mechanically Cinder
+Choir's own P2 tether sweep (ADR 0019) at a grander scale — eight
+converging spokes instead of three, every other number reused unmodified
+— a deliberate callback fitting the finale's own "greatest hits" framing,
+not just convenience. A real bug caught before shipping, not after: the
+first draft never despawned its own eight spoke anchors on the primary's
+own death, which — since they are untargetable, with no death condition
+of their own — would have left the boss room permanently unable to clear;
+fixed the same way `CinderChoirSystem._despawnChildren` already handles
+its own children. **All twelve campaign bosses now have a real P1 built**,
+which finally retires both "unbuilt chapter" fallback tests this session
+has kept bumping forward — they now target chapter 13, which names no
+real GDD chapter at all, purely to keep exercising `bossFor`'s own
+fallback for a chapter with no map entry.

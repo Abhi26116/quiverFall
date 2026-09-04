@@ -438,10 +438,12 @@ void main() {
 
     test('a chapter with no fight built yet still composes an ordinary room',
         () {
-      // Chapters 1-11 all have fights built now — see
-      // `BossRoomComposer.bossFor`. Chapter 12 (The Quiverfall, the
-      // campaign finale) does not yet.
-      final RoomBlueprint room = bossSlot(12);
+      // All twelve campaign chapters have fights built now — see
+      // `BossRoomComposer.bossFor`. Chapter 13 names no real GDD campaign
+      // chapter (docs/06's own #13+ are Elite/Event bosses, a different
+      // spawn path entirely); it stands in purely to exercise `bossFor`'s
+      // own fallback for any chapter with no map entry.
+      final RoomBlueprint room = bossSlot(13);
 
       expect(room.bossArchetype, isNull);
       expect(room.enemyCount, greaterThan(0));
