@@ -118,6 +118,12 @@ class AiContext {
   /// (every ordinary enemy, every other boss) never touch it.
   DrawState? hollowWardenDraw;
 
+  /// The Last Warden's own Draw state (docs/06 §6.3, Endless boss #20) — a
+  /// third combatant that Draws, "at parity" with the player (see
+  /// `LastWardenSystem`'s own doc comment). Nullable for the same reason
+  /// [playerDraw] and [hollowWardenDraw] are.
+  DrawState? lastWardenDraw;
+
   /// Which Boon behaviours are live, and their state.
   ///
   /// Null in a world with no Boons at all, which is every test that predates

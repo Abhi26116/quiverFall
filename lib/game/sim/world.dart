@@ -40,6 +40,7 @@ import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
 import 'package:quiverfall/game/sim/systems/green_mother_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/hollow_warden_system.dart';
+import 'package:quiverfall/game/sim/systems/last_warden_system.dart';
 import 'package:quiverfall/game/sim/systems/mother_of_motes_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
@@ -204,6 +205,12 @@ class SimWorld {
   /// comment). One instance, reused across rooms exactly like [playerDraw]
   /// — reset alongside it in [clearRoom], not reallocated per fight.
   final DrawState hollowWardenDraw = DrawState();
+
+  /// The Last Warden's own Draw state (docs/06 §6.3, Endless boss #20) —
+  /// "Draw/Momentum duel at parity" (see `LastWardenSystem`'s own doc
+  /// comment). A third live instance, reset alongside the other two in
+  /// [clearRoom].
+  final DrawState lastWardenDraw = DrawState();
 
   final ProjectileStore projectiles = ProjectileStore();
 
@@ -647,6 +654,7 @@ class SimWorld {
     MotherOfMotesSystem.update(ai);
     TheLoomSystem.update(ai);
     CoilspineSystem.update(ai);
+    LastWardenSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -729,6 +737,7 @@ class SimWorld {
       ..enemyCap = enemyCap
       ..playerDraw = playerDraw
       ..hollowWardenDraw = hollowWardenDraw
+      ..lastWardenDraw = lastWardenDraw
       ..playerFired = _playerFiredThisTick;
 
     if (player.isNone || !entities.isAlive(player)) {
@@ -2573,6 +2582,21 @@ class SimWorld {
         health: health,
       );
 
+  /// Places The Last Warden — the true final boss, docs/06 §6.3's own
+  /// Endless Descent boss #20. Test/tool entry point, the same role
+  /// [spawnBoss] plays for the generic case; [LastWardenSystem.spawn] does
+  /// the real work. Returns its slot.
+  int spawnLastWarden(double x, double y, {required double health}) =>
+      LastWardenSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
   /// Places Thrall of the Nine — a single, stationary body orbited by nine
   /// destructible sigils, each granting one of three reused attack shapes.
   /// Test/tool entry point, the same role [spawnBoss] plays for the
@@ -2685,6 +2709,7 @@ class SimWorld {
     events.clear();
     playerDraw.reset();
     hollowWardenDraw.reset();
+    lastWardenDraw.reset();
     // *Lingering* (#62) — trails survive the door. Everything else about the
     // room is torn down; this is the one thing the player carries through.
     if (!boons.has(BoonBehaviour.lingering)) {

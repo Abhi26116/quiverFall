@@ -1,0 +1,160 @@
+import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/world.dart';
+import 'package:test/test.dart';
+
+import 'boss_test_support.dart';
+
+/// The Last Warden — "Draw/Momentum duel at parity: it plays the game
+/// exactly as the player does" (docs/06 §6.3, Endless Descent boss #20, P1
+/// only — see `LastWardenSystem`'s own doc comment for what "at parity"
+/// means and what P2-P5 still need). Every test here is about the Draw
+/// ramp, the Momentum-driven speed and damage-reduction trade, and the
+/// approach/hold/disengage rhythm (ADR 0059).
+void main() {
+  final ContentLibrary content = loadContentWithBosses();
+  const double health = 1.0e5;
+  const double centerX = 8.0;
+  const double centerY = 4.5;
+
+  ({SimWorld world, int primary}) spawnLastWarden({
+    double playerX = centerX + 6.0,
+    double playerY = centerY,
+  }) {
+    final SimWorld world = SimWorld(seed: 202020, content: content)
+      ..autoFire = false;
+    world.spawnPlayer(playerX, playerY);
+    final int primary = world.spawnLastWarden(centerX, centerY, health: health);
+    return (world: world, primary: primary);
+  }
+
+  group('spawn', () {
+    test('places a single body with the shipping HP/duration numbers', () {
+      final (:world, :primary) = spawnLastWarden();
+      expect(world.entities.health[primary], health);
+      expect(world.entities.maxHealth[primary], health);
+      expect(world.entities.alive[primary], 1);
+    });
+  });
+
+  group('movement', () {
+    test('closes the distance while the player is far away', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 10.0);
+      final double startX = world.entities.posX[primary];
+
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.posX[primary], greaterThan(startX));
+    });
+
+    test('holds still once within engage range, letting Draw ramp', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+
+      for (int i = 0; i < 5; i++) {
+        world.tick(InputSnapshot());
+      }
+      final double x1 = world.entities.posX[primary];
+      final double y1 = world.entities.posY[primary];
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // Never fires within this short a window (Draw needs real time to
+      // ramp), so it should simply be holding position, not still closing.
+      expect(world.entities.posX[primary], closeTo(x1, 0.05));
+      expect(world.entities.posY[primary], closeTo(y1, 0.05));
+    });
+  });
+
+  group('Draw and the heavy shot', () {
+    test('ramps Draw while holding and fires a bolt at Tier III, then '
+        'resets and disengages', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+      final int startingBolts = world.hazards.liveCount;
+
+      bool fired = false;
+      for (int i = 0; i < 600; i++) {
+        world.tick(InputSnapshot());
+        if (world.hazards.liveCount > startingBolts) {
+          fired = true;
+          break;
+        }
+      }
+
+      expect(fired, isTrue, reason: 'the Warden should have Drawn to Tier '
+          'Three and fired within 10s of holding range');
+      expect(world.lastWardenDraw.drawSeconds, 0);
+      // The reposition window just started — it should be moving again
+      // (away from the player) rather than immediately re-holding.
+      expect(world.enemies.bossTimer[primary], greaterThan(0));
+    });
+
+    test('never fires while the player has not been engaged (out of '
+        'range, endlessly closing)', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 200.0);
+      final int startingBolts = world.hazards.liveCount;
+
+      for (int i = 0; i < 120; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.hazards.liveCount, startingBolts);
+      expect(world.entities.alive[primary], 1);
+    });
+  });
+
+  group('Momentum at parity', () {
+    test('moving builds Momentum stacks on the Warden\'s own DrawState, '
+        'the identical rule the player\'s own Draw runs under', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 10.0);
+      expect(world.lastWardenDraw.momentumStacks, 0);
+
+      for (int i = 0; i < 90; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.lastWardenDraw.momentumStacks, greaterThan(0));
+      expect(primary, greaterThanOrEqualTo(0));
+    });
+
+    test('Momentum stacks reduce the Warden\'s own incoming damage, the '
+        'same fraction the player\'s own Momentum grants', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 10.0);
+
+      // Build to max Momentum by staying in motion (the Warden is far
+      // enough to keep closing the whole window) — 0.35s per stack, 5
+      // stacks, comfortably inside this 2.5s window.
+      for (int i = 0; i < 150; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.lastWardenDraw.momentumStacks, DrawState.baseMaxMomentum);
+
+      final double before = world.entities.health[primary];
+      world.entities.health[primary] = before - 100.0;
+      world.tick(InputSnapshot());
+
+      final double after = world.entities.health[primary];
+      final double expectedDrop =
+          100.0 * (1.0 - world.lastWardenDraw.damageReduction);
+      expect(before - after, closeTo(expectedDrop, 1e-6));
+      expect(after, greaterThan(before - 100.0));
+    });
+
+    test('with no Momentum, a health drop is not refunded at all', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+      // Sit right at spawn — holding range, no movement yet this tick.
+      world.tick(InputSnapshot());
+      expect(world.lastWardenDraw.momentumStacks, 0);
+
+      final double before = world.entities.health[primary];
+      world.entities.health[primary] = before - 50.0;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[primary], closeTo(before - 50.0, 1e-6));
+    });
+  });
+}
