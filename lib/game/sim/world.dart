@@ -33,6 +33,7 @@ import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
 import 'package:quiverfall/game/sim/systems/firing_system.dart';
+import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
@@ -612,6 +613,7 @@ class SimWorld {
     // reaction that hasn't happened yet this tick.
     CinderChoirSystem.update(ai);
     SkarnSystem.update(ai);
+    GauntSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2365,6 +2367,20 @@ class SimWorld {
   /// primary's slot.
   int spawnSkarn(double x, double y, {required double health}) =>
       SkarnSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Gaunt, the Iron Tide — a single always-plated body. Test/tool
+  /// entry point, the same role [spawnBoss] plays for the generic case;
+  /// [GauntSystem.spawn] does the real work. Returns its slot.
+  int spawnGaunt(double x, double y, {required double health}) =>
+      GauntSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

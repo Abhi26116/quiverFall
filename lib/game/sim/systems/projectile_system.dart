@@ -1374,6 +1374,11 @@ abstract final class ProjectileSystem {
   /// outright. **A hit from behind the plate's arc takes full damage at any
   /// tier**, which is what makes flanking a real alternative to the Draw rather
   /// than a consolation (docs/05 §5.2).
+  ///
+  /// `plateFlatFactor` (0 for every base-roster enemy) skips that whole
+  /// switch when set: Gaunt, the Iron Tide's own shield takes its stated 5 %
+  /// at *any* tier, because its lesson is flanking, not the Draw — see that
+  /// field's own doc comment and ADR 0023.
   static double _armourFor(
     EntityStore store,
     EnemyStore? enemies,
@@ -1391,6 +1396,9 @@ abstract final class ProjectileSystem {
     final double offset =
         _shortestAngleDelta(store.facing[target], toShooter).abs();
     if (offset > enemies.plateHalfArc[target]) return ArmourFactor.none;
+
+    final double flat = enemies.plateFlatFactor[target];
+    if (flat > 0) return flat;
 
     return switch (tier) {
       DrawTier.one => ArmourFactor.plateBlocked,

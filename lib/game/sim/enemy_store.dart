@@ -64,6 +64,7 @@ class EnemyStore {
         plateHalfArc = Float64List(capacity),
         plateRegen = Float64List(capacity),
         plateJustBroke = Uint8List(capacity),
+        plateFlatFactor = Float64List(capacity),
         adaptSeconds = Float64List(capacity),
         shield = Float64List(capacity),
         armourShred = Float64List(capacity),
@@ -141,6 +142,16 @@ class EnemyStore {
   /// enrages — and both reactions must fire exactly once from a break that
   /// happens in the projectile system, several systems earlier in the tick.
   final Uint8List plateJustBroke;
+
+  /// Overrides `_armourFor`'s own Tier I/II/III switch with one flat factor,
+  /// applied regardless of Draw tier — 0 (the default) means "use the
+  /// ordinary tiered plate". Every base-roster Carapace enemy leaves this at
+  /// 0; Gaunt, the Iron Tide is the first consumer (docs/06 §2: "Frontal
+  /// 180° arc takes 5% damage", stated with no Tier caveat at all, unlike
+  /// Cinder Choir's own "Tier III breaks plate") — a shield meant to test
+  /// *flanking*, not the Draw, must stay just as strong against a fully
+  /// charged shot as a snap one. See ADR 0023.
+  final Float64List plateFlatFactor;
 
   // ── Choir effects, recomputed every tick ──────────────────────────────────
 
@@ -423,6 +434,7 @@ class EnemyStore {
     plateHalfArc[slot] = 0;
     plateRegen[slot] = 0;
     plateJustBroke[slot] = 0;
+    plateFlatFactor[slot] = 0;
     adaptSeconds[slot] = 0;
     shield[slot] = 0;
     shieldedBy[slot] = -1;

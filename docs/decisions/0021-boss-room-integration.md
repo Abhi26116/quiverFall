@@ -86,3 +86,8 @@ compatibility) is already generic across every future boss. Repeat-kill
 scaling and a real boss arena are the two flagged follow-ups; both are
 scoped narrowly enough that either can land without touching this wiring
 again.
+
+**Update, same day:** confirmed twice more — Skarn (ADR 0022) and Gaunt
+(ADR 0023) both landed at exactly this two-line cost, with two genuinely
+different fight shapes (a shared pool that never un-shares; no pool-sharing
+at all) behind them. Three bosses now spawn for real in an actual run.

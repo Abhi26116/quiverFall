@@ -295,6 +295,21 @@ void main() {
       expect(spawned, isTrue, reason: 'no Skarn primary found in the room');
     });
 
+    test('chapter 2\'s stage 20 spawns the real Gaunt, the Iron Tide', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 2, stage: 20, seed: 505);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.gauntIronTide);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Gaunt primary found in the room');
+    });
+
     test('the boss room does not clear until the boss actually dies', () {
       final ({StageRunner runner, SimWorld world}) s =
           stage(chapter: 1, stage: 20, seed: 502);
@@ -323,11 +338,11 @@ void main() {
 
     test('a chapter whose boss is not built yet still composes an ordinary room',
         () {
-      // Only Cinder Choir (chapter 1) has a fight built — see
-      // `BossRoomComposer.bossFor`. Chapter 2's own stage 20 must still be
+      // Chapters 1, 2 and 11 have fights built — see
+      // `BossRoomComposer.bossFor`. Chapter 3's own stage 20 must still be
       // playable, exactly like a Shrine slot is ahead of Phase 13.
       final ({StageRunner runner, SimWorld world}) s =
-          stage(chapter: 2, stage: 20, seed: 503);
+          stage(stage: 20, seed: 503);
       advanceToBossRoom(s.runner, s.world);
 
       expect(s.runner.room.kind, RoomKind.boss);
