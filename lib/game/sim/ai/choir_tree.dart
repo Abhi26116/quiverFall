@@ -276,6 +276,12 @@ abstract final class ChoirTree {
     if (other == slot) return false;
     if (ctx.entities.alive[other] == 0) return false;
     if (ctx.entities.kind[other] != EntityKind.enemy.index) return false;
+    // A bare entity with no content definition — a boss's own body, or one
+    // of its inert children, `contentIndex = -1` — has no family to read at
+    // all, so `definitionOf` must not be called on it; it is trivially not
+    // Choir-family and so a valid ally. This is exactly how a boss's own
+    // spawned Knitters find and heal it (The Green Mother, docs/06 §8).
+    if (!ctx.hasDefinition(other)) return true;
     // A Choir unit supporting another Choir unit is a healing loop the player
     // cannot break in the intended order, so they simply do not see each other.
     return ctx.definitionOf(other).family != EnemyFamily.choir;

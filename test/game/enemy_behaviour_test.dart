@@ -426,6 +426,33 @@ void main() {
       expect(poisoned, lessThan(clean * 0.6));
     });
 
+    test('a Knitter can seek and heal a definition-less entity (a boss '
+        'body) without crashing on its own family check', () {
+      // `ChoirTree._isAlly` used to call `ctx.definitionOf(other)`
+      // unconditionally — fine for an ordinary enemy, but any bare entity
+      // with no content definition (every boss's own body sets
+      // `contentIndex = -1`) has no `EnemyDefinition` to read a `family`
+      // from, and `definitionOf` indexes `content.enemies` with that -1.
+      final SimWorld world = enemyWorld(content: content);
+      final int patient = world.spawnAt(
+        EntityKind.enemy,
+        12.0,
+        4.5,
+        radius: 0.8,
+        health: 1000,
+      ).index;
+      world.spawnEnemy(EnemyArchetype.knitter, 12.4, 4.5);
+
+      world.entities.health[patient] = world.entities.maxHealth[patient] * 0.2;
+      final double before = world.entities.health[patient];
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(idle);
+      }
+
+      expect(world.entities.health[patient], greaterThan(before));
+    });
+
     test('a Warden-Fell suppresses elemental application, not Confluence', () {
       final SimWorld world = enemyWorld(content: content, autoFire: true)
         ..playerAttack = 5

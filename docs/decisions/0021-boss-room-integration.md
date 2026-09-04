@@ -120,3 +120,12 @@ which means the room-clear condition this ADR established ("zero alive
 enemy entities", not "the boss died") now visibly matters: a player who
 kills Arclight while Swarmlings are still up must still clear them before
 the room does.
+
+**Update, same day:** and an eighth — The Green Mother (ADR 0028), chapter
+8, a second boss in a row needing zero new sim primitives of its own — the
+Knitter's own existing heal-aura already reaches a boss body with no code
+at all. It did, however, surface a real pre-existing crash in shared code
+(`ChoirTree._isAlly` indexing `content.enemies[-1]` for any definition-less
+entity), unreachable until this was the first fight to put a Choir-family
+unit in the same room as a boss body — fixed, with a regression test that
+reproduces it independent of this boss.

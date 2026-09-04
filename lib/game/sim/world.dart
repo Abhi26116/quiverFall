@@ -35,6 +35,7 @@ import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
 import 'package:quiverfall/game/sim/systems/firing_system.dart';
 import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
+import 'package:quiverfall/game/sim/systems/green_mother_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
@@ -622,6 +623,7 @@ class SimWorld {
     VermillionSystem.update(ai);
     RimefatherSystem.update(ai);
     ArclightSystem.update(ai);
+    GreenMotherSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2452,6 +2454,21 @@ class SimWorld {
   /// slot.
   int spawnArclight(double x, double y, {required double health}) =>
       ArclightSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places The Green Mother — a single, stationary body that spawns
+  /// Knitters continuously and heals from every one still alive. Test/tool
+  /// entry point, the same role [spawnBoss] plays for the generic case;
+  /// [GreenMotherSystem.spawn] does the real work. Returns its slot.
+  int spawnGreenMother(double x, double y, {required double health}) =>
+      GreenMotherSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,
