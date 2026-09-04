@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/input.dart';
@@ -238,7 +240,86 @@ void main() {
     });
   });
 
-  group('past P2', () {
+  group('P3: the untargetable orbit and four conduits', () {
+    List<int> conduitsOf(SimWorld world, int primary) {
+      final List<int> found = <int>[];
+      for (int j = 0; j < world.entities.highWater; j++) {
+        if (world.entities.alive[j] == 0) continue;
+        if (world.enemies.bossParent[j] != primary) continue;
+        found.add(j);
+      }
+      return found;
+    }
+
+    test('the primary becomes untargetable and genuinely unkillable', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+
+      expect(world.enemies.untargetable[primary], 1);
+      // A full-circle plate with a near-zero flat factor — the same
+      // conditional-invulnerability shape Weeping Gate's own plate and
+      // the Green Mother's own bloom already use — rather than a literal
+      // 0, which `_armourFor` would treat as "no plate at all".
+      expect(world.enemies.isPlated(primary), isTrue);
+      expect(world.enemies.plateHalfArc[primary], closeTo(math.pi, 1e-9));
+      expect(world.enemies.plateFlatFactor[primary], greaterThan(0.0));
+    });
+
+    test('places four independently-healthed, targetable conduits', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+
+      final List<int> conduits = conduitsOf(world, primary);
+      expect(conduits.length, 4);
+      final Set<int> childIndices = <int>{};
+      for (final int c in conduits) {
+        expect(world.enemies.untargetable[c], 0);
+        expect(world.entities.health[c], closeTo(health / 4, 1));
+        childIndices.add(world.enemies.bossChildIndex[c]);
+      }
+      expect(childIndices, <int>{0, 1, 2, 3});
+    });
+
+    test('killing every conduit kills the primary — the room can clear',
+        () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      final List<int> conduits = conduitsOf(world, primary);
+      expect(conduits.length, 4);
+
+      for (final int c in conduits) {
+        world.entities.health[c] = 0;
+      }
+      // A few ticks' margin: one for the ordinary death pass to reap the
+      // conduits, one more for `_tickP3` to see them all gone and zero
+      // the primary's own health, and one more for that to be reaped in
+      // turn.
+      for (int i = 0; i < 10; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.alive[primary], 0);
+    });
+
+    test('three of four conduits dead leaves the primary alive', () {
+      final (:world, :primary) = spawnArclight();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      final List<int> conduits = conduitsOf(world, primary);
+
+      for (int k = 0; k < 3; k++) {
+        world.entities.health[conduits[k]] = 0;
+      }
+      world.tick(InputSnapshot());
+
+      expect(world.entities.alive[primary], 1);
+    });
+  });
+
+  group('P3 also stops the chains and the grid', () {
     test('stops spawning and clears every live chain', () {
       final (:world, :primary) = spawnArclight();
       for (int i = 0; i < 35; i++) {

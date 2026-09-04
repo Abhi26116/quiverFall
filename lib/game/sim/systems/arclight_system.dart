@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:quiverfall/game/balance/enemy_tuning.dart';
 import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
@@ -50,16 +52,47 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// they remain on one. Chains from P1 keep running unmodified alongside
 /// it. See ADR 0039.
 ///
-/// **Not built here: P3 (untargetable orbit; four grounded conduits;
-/// Confluence chains between them).** Once `bossPhase` reaches 2, spawning,
-/// chains, and the grid all stop — the same posture every other boss's own
-/// undone phase already takes. Any Swarmling still alive at that point (or
-/// spawned before Arclight itself dies) is *not* despawned — the same "an
-/// add outlives its summoner" behaviour the ordinary Rift Maw already has
-/// — so a boss room's own zero-enemies clear condition (ADR 0021) extends
-/// to mopping up any stragglers, which reads as "and spacing" continuing
-/// to matter even after Arclight itself falls, rather than as a bug. See
-/// ADR 0027.
+/// **P3, built here: "Becomes untargetable and orbits as pure light; four
+/// grounded conduits must be destroyed."** Spawning, chains, and the grid
+/// all stop — the same posture every other boss's own undone phase
+/// already takes, since P3 replaces the offence entirely rather than
+/// adding to it. `_tickP3` places four ordinary, independently-healthed,
+/// fully targetable conduits around the primary's own position — once,
+/// gated by a genuine one-time latch (`bossActiveChildIndex`) rather than
+/// the usual "scan for an existing *alive* child" shape every other
+/// placed-once child in this roster uses, since conduits are actually
+/// meant to be fought down to zero; see `_spawnConduits`'s own doc
+/// comment for the infinite-respawn bug that shape caused here. Makes
+/// the primary itself genuinely unkillable — `untargetable` alone only
+/// ever affects auto-aim target *selection* (`AimAssist`'s own doc
+/// comment: a manually-aimed shot still lands on an untargetable body),
+/// so the primary is also given the same full-circle, tiny-positive-
+/// flat-factor plate every conditional-invulnerability boss in this
+/// roster already uses (Weeping Gate's own plate, ADR 0042; the Green
+/// Mother's own bloom, ADR 0047) — the third reuse of that exact trick.
+/// When the last conduit falls, the primary's own health is zeroed
+/// directly, letting the ordinary death/reap pass finish the job the same
+/// tick, so the boss room's own zero-enemies clear condition (ADR 0021)
+/// still fires normally once every conduit and the primary are both gone.
+/// "Orbits as pure light" is left to the render layer — a purely visual
+/// flourish on an entity the sim already keeps stationary, the same
+/// "rendering question, not a sim one" split this session's own other
+/// cosmetic card details already take (Gaunt's own shockwave "ring", ADR
+/// 0035).
+///
+/// **Not built here: "Confluence chains between conduits, making a
+/// Windline lattice roughly twice as fast."** The card's own words frame
+/// this as a bonus, not a requirement — "the first fight where the depth
+/// mechanic is dramatically better *without being required*" — so
+/// deferring it leaves the phase completely winnable exactly as built,
+/// unlike every other deferred piece this session has flagged. What
+/// "roughly twice as fast" would even mean operationally (a Confluence
+/// stack bonus for threading near two conduits? A literal lattice-
+/// formation-rate concept nothing in the sim tracks today?) is real,
+/// separate design work this pass does not attempt. Any Swarmling still
+/// alive when P3 begins is *not* despawned — the same "an add outlives
+/// its summoner" behaviour the ordinary Rift Maw already has (ADR 0027).
+/// See ADR 0051.
 abstract final class ArclightSystem {
   // ── Spawning — Rift Maw's own numbers (docs/05 #22), reused directly ────
   static const double _spawnWindUpSeconds = 0.5;
@@ -96,6 +129,26 @@ abstract final class ArclightSystem {
 
   /// The Thresher-derived anchor, reused a fifth time.
   static const double _gridDamagePerTick = 0.09;
+
+  // ── P3: the untargetable orbit and four conduits ─────────────────────
+  // See ADR 0051.
+
+  /// docs/06 §7 P3's own stated count.
+  static const int _p3ConduitCount = 4;
+
+  /// Authored — docs/06 states no layout. Spread wide enough that
+  /// destroying one is a real trip across the room, not a tap on an
+  /// adjacent target.
+  static const double _p3ConduitPlacementRadius = 4.0;
+
+  /// Split evenly across all four rather than a fresh number.
+  static const double _p3ConduitHealthFraction = 1.0 / _p3ConduitCount;
+
+  /// `_armourFor` only takes the flat-factor branch when it reads greater
+  /// than zero — reused verbatim from every other conditional-
+  /// invulnerability boss in this roster (Weeping Gate ADR 0042, the
+  /// Green Mother ADR 0047).
+  static const double _p3ShutPlateFactor = 0.0001;
 
   /// Places Arclight's single, stationary body. Returns its slot, or -1 if
   /// the entity pool was full or [BossArchetype.arclight] has no catalogue
@@ -148,12 +201,13 @@ abstract final class ArclightSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — frozen, both its
-      // own spawn telegraph and every live chain cleared, rather than left
-      // mid-wind-up or mid-hazard forever.
+      // P3: spawning, chains, and the grid all stop — replaced entirely
+      // by the untargetable orbit and the four conduits (see the class
+      // doc comment), not layered on top of them.
       if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
         _clearChains(ctx, i);
+        _tickP3(ctx, i);
         continue;
       }
 
@@ -339,5 +393,80 @@ abstract final class ArclightSystem {
     final int cellY = (ctx.playerY / _gridCellSize).floor();
     final bool cellParity = (cellX + cellY).isEven;
     return cellParity == (ctx.enemies.comboStep[primary] == 0);
+  }
+
+  /// Makes the primary genuinely unkillable, places the four conduits
+  /// (once), and — the instant the last one falls — zeroes the primary's
+  /// own health so the ordinary death/reap pass finishes the boss off the
+  /// same tick.
+  static void _tickP3(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    enemies.untargetable[primary] = 1;
+    enemies.plateHalfArc[primary] = math.pi;
+    enemies.plateFlatFactor[primary] = _p3ShutPlateFactor;
+    enemies.plateHealth[primary] = store.maxHealth[primary];
+
+    _spawnConduits(ctx, primary);
+
+    int aliveConduits = 0;
+    final int high = store.highWater;
+    for (int j = 0; j < high; j++) {
+      if (store.alive[j] == 0) continue;
+      if (enemies.bossParent[j] != primary) continue;
+      aliveConduits++;
+    }
+
+    if (aliveConduits == 0 && store.health[primary] > 0) {
+      store.health[primary] = 0;
+    }
+  }
+
+  /// Places [_p3ConduitCount] ordinary, independently-healthed, fully
+  /// targetable conduits around the primary's own position — exactly
+  /// once. `bossActiveChildIndex` (free — P1/P2 never touch it) is a
+  /// genuine one-time latch here, deliberately *not* the "scan for an
+  /// existing alive child" shape every other placed-once child in this
+  /// roster uses: that shape's "already placed" signal is really "any
+  /// are still *alive*", which — for conduits that are actually meant to
+  /// be fought down to zero, unlike every other roster's own
+  /// untargetable accounting anchor — would read "none placed yet" the
+  /// instant the last one died and silently respawn a fresh batch
+  /// forever, an infinite-respawn bug this exact test file caught before
+  /// it shipped.
+  static void _spawnConduits(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    if (enemies.bossActiveChildIndex[primary] != 0) return; // already placed
+    enemies.bossActiveChildIndex[primary] = 1;
+
+    final double conduitHealth =
+        store.maxHealth[primary] * _p3ConduitHealthFraction;
+
+    for (int ordinal = 0; ordinal < _p3ConduitCount; ordinal++) {
+      final EntityId id = store.spawn(EntityKind.enemy);
+      if (id.isNone) continue;
+      final int slot = id.index;
+
+      final double angle = 2 * math.pi * ordinal / _p3ConduitCount;
+      final double x =
+          store.posX[primary] + _p3ConduitPlacementRadius * math.cos(angle);
+      final double y =
+          store.posY[primary] + _p3ConduitPlacementRadius * math.sin(angle);
+
+      store.posX[slot] = x;
+      store.posY[slot] = y;
+      store.radius[slot] = 0.5;
+      store.health[slot] = conduitHealth;
+      store.maxHealth[slot] = conduitHealth;
+      store.contentIndex[slot] = -1;
+      ctx.events.emit(SimEventType.entitySpawned, entityA: slot, x: x, y: y);
+
+      enemies.reset(slot);
+      enemies.bossParent[slot] = primary;
+      enemies.bossChildIndex[slot] = ordinal;
+    }
   }
 }
