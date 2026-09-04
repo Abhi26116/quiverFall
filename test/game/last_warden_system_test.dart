@@ -1,3 +1,4 @@
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/input.dart';
@@ -6,12 +7,14 @@ import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// The Last Warden — "Draw/Momentum duel at parity: it plays the game
-/// exactly as the player does" (docs/06 §6.3, Endless Descent boss #20, P1
-/// only — see `LastWardenSystem`'s own doc comment for what "at parity"
-/// means and what P2-P5 still need). Every test here is about the Draw
-/// ramp, the Momentum-driven speed and damage-reduction trade, and the
-/// approach/hold/disengage rhythm (ADR 0059).
+/// The Last Warden — docs/06 §6.3, Endless Descent boss #20. P1-P3 only —
+/// see `LastWardenSystem`'s own doc comment for what each phase means and
+/// what P4-P5 still need. P1 (ADR 0059): the Draw ramp, the Momentum-driven
+/// speed and damage-reduction trade, and the approach/hold/disengage
+/// rhythm. P2 (ADR 0060): mirroring the player's own current flat damage
+/// bonus and crit into the heavy shot. P3 (ADR 0061): summoning echoes of
+/// up to three other bosses, each its own real, independently-driven
+/// fight.
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e5;
@@ -21,11 +24,17 @@ void main() {
   ({SimWorld world, int primary}) spawnLastWarden({
     double playerX = centerX + 6.0,
     double playerY = centerY,
+    List<BossArchetype> echoArchetypes = const <BossArchetype>[],
   }) {
     final SimWorld world = SimWorld(seed: 202020, content: content)
       ..autoFire = false;
     world.spawnPlayer(playerX, playerY);
-    final int primary = world.spawnLastWarden(centerX, centerY, health: health);
+    final int primary = world.spawnLastWarden(
+      centerX,
+      centerY,
+      health: health,
+      echoArchetypes: echoArchetypes,
+    );
     return (world: world, primary: primary);
   }
 
@@ -220,6 +229,107 @@ void main() {
       final int? hazardSlot = fireAndFindHazard(world, primary);
       expect(hazardSlot, isNotNull);
       expect(world.hazards.damage[hazardSlot!], closeTo(baseDamage, 1e-9));
+    });
+  });
+
+  group('P3: summons echoes of three bosses, read from telemetry', () {
+    List<int> enemiesOfArchetype(SimWorld world, BossArchetype archetype) {
+      final List<int> found = <int>[];
+      for (int i = 0; i < world.entities.highWater; i++) {
+        if (world.entities.alive[i] == 0) continue;
+        final int bossIndex = world.enemies.bossIndex[i];
+        if (bossIndex < 0) continue;
+        if (world.content.bosses.all[bossIndex].archetype == archetype) {
+          found.add(i);
+        }
+      }
+      return found;
+    }
+
+    test('before P3, no echoes exist even with archetypes given', () {
+      final (:world, :primary) = spawnLastWarden(
+        echoArchetypes: const <BossArchetype>[
+          BossArchetype.gauntIronTide,
+          BossArchetype.silversong,
+        ],
+      );
+
+      for (int i = 0; i < 10; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(enemiesOfArchetype(world, BossArchetype.gauntIronTide), isEmpty);
+      expect(enemiesOfArchetype(world, BossArchetype.silversong), isEmpty);
+      expect(primary, greaterThanOrEqualTo(0));
+    });
+
+    test('once P3 begins, each given archetype is spawned as its own real '
+        'boss, at a fraction of the Warden\'s own max health', () {
+      final (:world, :primary) = spawnLastWarden(
+        echoArchetypes: const <BossArchetype>[
+          BossArchetype.gauntIronTide,
+          BossArchetype.silversong,
+          BossArchetype.rimefather,
+        ],
+      );
+      world.enemies.bossPhase[primary] = 2;
+
+      world.tick(InputSnapshot());
+
+      for (final BossArchetype archetype in const <BossArchetype>[
+        BossArchetype.gauntIronTide,
+        BossArchetype.silversong,
+        BossArchetype.rimefather,
+      ]) {
+        final List<int> found = enemiesOfArchetype(world, archetype);
+        expect(found.length, 1, reason: '$archetype should have one echo');
+        final int echo = found.single;
+        expect(world.entities.maxHealth[echo], closeTo(health * 0.08, 1e-6));
+        expect(world.entities.alive[echo], 1);
+      }
+    });
+
+    test('echoes are spawned exactly once, not re-summoned every tick', () {
+      final (:world, :primary) = spawnLastWarden(
+        echoArchetypes: const <BossArchetype>[BossArchetype.gauntIronTide],
+      );
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int i = 0; i < 60; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(enemiesOfArchetype(world, BossArchetype.gauntIronTide).length, 1);
+    });
+
+    test('fewer than three archetypes leaves the remaining slots empty, '
+        'not guessed at', () {
+      final (:world, :primary) = spawnLastWarden(
+        echoArchetypes: const <BossArchetype>[BossArchetype.vermillion],
+      );
+      world.enemies.bossPhase[primary] = 2;
+
+      world.tick(InputSnapshot());
+
+      expect(enemiesOfArchetype(world, BossArchetype.vermillion).length, 1);
+      // Total live enemies: the Warden itself plus exactly one echo.
+      int liveEnemies = 0;
+      for (int i = 0; i < world.entities.highWater; i++) {
+        if (world.entities.alive[i] == 1) liveEnemies++;
+      }
+      // player + Warden + one echo.
+      expect(liveEnemies, 3);
+    });
+
+    test('an archetype with no spawn case (an unbuilt Elite boss) is '
+        'silently skipped, not a crash', () {
+      final (:world, :primary) = spawnLastWarden(
+        echoArchetypes: const <BossArchetype>[BossArchetype.umbralTwin],
+      );
+      world.enemies.bossPhase[primary] = 2;
+
+      expect(() => world.tick(InputSnapshot()), returnsNormally);
+      expect(enemiesOfArchetype(world, BossArchetype.umbralTwin), isEmpty);
     });
   });
 }

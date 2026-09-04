@@ -10,7 +10,20 @@ import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
+import 'package:quiverfall/game/sim/systems/arclight_system.dart';
+import 'package:quiverfall/game/sim/systems/ashen_choir_system.dart';
+import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
+import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
+import 'package:quiverfall/game/sim/systems/green_mother_system.dart';
+import 'package:quiverfall/game/sim/systems/hollow_warden_system.dart';
+import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
+import 'package:quiverfall/game/sim/systems/silversong_system.dart';
+import 'package:quiverfall/game/sim/systems/skarn_system.dart';
+import 'package:quiverfall/game/sim/systems/the_quiverfall_system.dart';
+import 'package:quiverfall/game/sim/systems/thrall_of_nine_system.dart';
+import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
+import 'package:quiverfall/game/sim/systems/weeping_gate_system.dart';
 
 /// The Last Warden — docs/06 §6.3, Endless Descent boss #20. "×140 HP, 150s.
 /// The true final boss. The Warden who held the Spire before you. Five
@@ -86,6 +99,28 @@ import 'package:quiverfall/game/sim/systems/draw_system.dart';
 /// conditional (vsWounded, perHitStreak, perMomentumStack, and the rest of
 /// CombatModifiers) is deliberately not mirrored — flagged here, not
 /// guessed at. See ADR 0060.
+///
+/// P3, built here: "Summons echoes of three bosses the player has beaten
+/// most often (read from telemetry)." `lib/game/sim` is deliberately pure
+/// — it never reads save data — so resolving "most often" from
+/// `Progression.bossKillCounts` is the caller's own job, the same
+/// "test/tool entry point, real work happens elsewhere" split every
+/// `SimWorld.spawnX` wrapper in this roster already draws; [spawn] simply
+/// accepts up to three already-chosen [BossArchetype] values. Each one
+/// spawned is not a bespoke "echo" mechanic — it is that archetype's own
+/// real `System.spawn`, so its own already-existing system picks it up
+/// automatically the exact same generic-table-scan way it already
+/// recognises any other instance of itself, with zero new AI code. Scaled
+/// to a fraction of the Warden's own max health, not a full boss, since
+/// three simultaneous full-HP fights is not what "echo" reads as; placed
+/// in the same small triangle staging shape Cinder Choir's own effigies
+/// and Rimefather's own mirrors already use. Restricted to the twelve
+/// built campaign archetypes plus Ashen Choir — the three still-unbuilt
+/// Elite/Event bosses have no `spawn` to call, and the other Endless-tier
+/// archetypes (including the Warden's own) are excluded as not the kind
+/// of boss "beaten most often" plausibly names. An archetype outside that
+/// set, or an empty slot (a fresh save with fewer than three distinct
+/// kills), is skipped rather than guessed at. See ADR 0061.
 abstract final class LastWardenSystem {
   /// Reused from the Hollow Warden's own mirror-approach speed — a
   /// deliberate, readable closing pace, not a lunge.
@@ -115,9 +150,26 @@ abstract final class LastWardenSystem {
   /// for by default. See the class doc comment.
   static const double _heavyShotDamage = 0.09 * 2.10;
 
+  /// Fraction of the Warden's own max health each P3 echo carries —
+  /// authored, small enough that three at once reads as a real but
+  /// secondary threat rather than three simultaneous full boss fights.
+  static const double _echoHealthFraction = 0.08;
+
+  /// A small triangle around the Warden's own position — the same
+  /// staging-radius reasoning Cinder Choir's own triangle and Rimefather's
+  /// own mirrors already use.
+  static const double _echoPlacementRadius = 3.0;
+  static const int _echoSlots = 3;
+
   /// Places the Warden's single, stationary-until-it-moves body. Returns
   /// its slot, or -1 if the entity pool was full or [BossArchetype.
   /// lastWarden] has no catalogue entry.
+  ///
+  /// [echoArchetypes] names up to three already-chosen bosses (docs/06
+  /// §6.3's own P3, "the three bosses the player has beaten most often
+  /// (read from telemetry)") to summon once P3 begins — see the class doc
+  /// comment for why resolving *which* three is entirely the caller's own
+  /// job. Fewer than three, or none at all, is a valid, honest input.
   static int spawn({
     required EntityStore store,
     required EnemyStore enemies,
@@ -127,6 +179,7 @@ abstract final class LastWardenSystem {
     required double centerY,
     required double health,
     double radius = 0.6,
+    List<BossArchetype> echoArchetypes = const <BossArchetype>[],
   }) {
     final int bossIndex = content.bosses.indexOfArchetype(BossArchetype.lastWarden);
     if (bossIndex < 0) return -1;
@@ -149,6 +202,18 @@ abstract final class LastWardenSystem {
     // diff — the same repurposing Rimefather's own mirrors already use
     // `bossLastHitAgo` for (ADR 0050), free here since P1 has no children.
     enemies.bossLastHitAgo[slot] = health;
+
+    // The three chosen echo archetypes, stashed as plain indices in three
+    // otherwise-free per-primary fields (`state` doubles as the "not yet
+    // spawned" latch below, so it is not one of the three) — -1 marks an
+    // empty slot.
+    final List<int> echoIndex = List<int>.filled(_echoSlots, -1);
+    for (int i = 0; i < echoArchetypes.length && i < _echoSlots; i++) {
+      echoIndex[i] = echoArchetypes[i].index;
+    }
+    enemies.comboStep[slot] = echoIndex[0];
+    enemies.bossActiveChildIndex[slot] = echoIndex[1];
+    enemies.bossChildIndex[slot] = echoIndex[2];
 
     return slot;
   }
@@ -181,6 +246,14 @@ abstract final class LastWardenSystem {
         _fireHeavyShot(ctx, i, draw);
         draw.drawSeconds = 0;
         enemies.bossTimer[i] = _repositionSeconds;
+      }
+
+      // P3: "Summons echoes of three bosses the player has beaten most
+      // often." `state` doubles as the one-time latch — nothing in P1/P2
+      // ever sets it, so 0 means "not yet spawned."
+      if (enemies.bossPhase[i] >= 2 && enemies.state[i] == 0) {
+        _spawnEchoes(ctx, i);
+        enemies.state[i] = 1;
       }
     }
   }
@@ -273,5 +346,196 @@ abstract final class LastWardenSystem {
     }
 
     enemies.bossLastHitAgo[slot] = store.health[slot];
+  }
+
+  /// Spawns whichever of the three echo archetypes stashed at spawn time
+  /// (see [spawn]'s own doc comment) are actually set, in a small triangle
+  /// around the Warden's own current position. Each one is that
+  /// archetype's own real primary, at [_echoHealthFraction] of the
+  /// Warden's own max health, so its own already-existing system drives
+  /// it from the moment it appears — no bespoke "echo AI" of any kind.
+  static void _spawnEchoes(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    final List<int> echoIndex = <int>[
+      enemies.comboStep[primary],
+      enemies.bossActiveChildIndex[primary],
+      enemies.bossChildIndex[primary],
+    ];
+
+    final double centerX = store.posX[primary];
+    final double centerY = store.posY[primary];
+    final double echoHealth = store.maxHealth[primary] * _echoHealthFraction;
+
+    for (int slot = 0; slot < _echoSlots; slot++) {
+      final int rawIndex = echoIndex[slot];
+      if (rawIndex < 0 || rawIndex >= BossArchetype.values.length) continue;
+
+      final double angle = 2 * math.pi * slot / _echoSlots;
+      final double x = centerX + _echoPlacementRadius * math.cos(angle);
+      final double y = centerY + _echoPlacementRadius * math.sin(angle);
+
+      _spawnEchoOf(ctx, BossArchetype.values[rawIndex], x, y, echoHealth);
+    }
+  }
+
+  /// Dispatches to the named archetype's own real `System.spawn` — every
+  /// built campaign boss plus Ashen Choir. Anything else (the three
+  /// unbuilt Elite/Event bosses, the other Endless-tier archetypes, or the
+  /// Warden's own) has no case here and is silently skipped; see the class
+  /// doc comment for why.
+  static int _spawnEchoOf(
+    AiContext ctx,
+    BossArchetype archetype,
+    double x,
+    double y,
+    double health,
+  ) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+    final ContentLibrary content = ctx.content;
+    final SimEventBuffer events = ctx.events;
+
+    switch (archetype) {
+      case BossArchetype.cinderChoir:
+        return CinderChoirSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.gauntIronTide:
+        return GauntSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.silversong:
+        return SilversongSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.hollowWarden:
+        return HollowWardenSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.vermillion:
+        return VermillionSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.rimefather:
+        return RimefatherSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.arclight:
+        return ArclightSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.greenMother:
+        return GreenMotherSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.thrallOfNine:
+        return ThrallOfNineSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.weepingGate:
+        return WeepingGateSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.skarnUnmade:
+        return SkarnSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.quiverfall:
+        return TheQuiverfallSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.ashenChoir:
+        return AshenChoirSystem.spawn(
+          store: store,
+          enemies: enemies,
+          content: content,
+          events: events,
+          centerX: x,
+          centerY: y,
+          health: health,
+        );
+      case BossArchetype.umbralTwin:
+      case BossArchetype.bellweather:
+      case BossArchetype.paleJudge:
+      case BossArchetype.theLoom:
+      case BossArchetype.coilspine:
+      case BossArchetype.motherOfMotes:
+      case BossArchetype.lastWarden:
+        return -1;
+    }
   }
 }

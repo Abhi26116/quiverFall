@@ -2585,8 +2585,16 @@ class SimWorld {
   /// Places The Last Warden — the true final boss, docs/06 §6.3's own
   /// Endless Descent boss #20. Test/tool entry point, the same role
   /// [spawnBoss] plays for the generic case; [LastWardenSystem.spawn] does
-  /// the real work. Returns its slot.
-  int spawnLastWarden(double x, double y, {required double health}) =>
+  /// the real work. [echoArchetypes] names up to three bosses P3 should
+  /// summon echoes of — resolving those three from `Progression.
+  /// bossKillCounts` is the caller's own job (see [LastWardenSystem]'s own
+  /// doc comment). Returns its slot.
+  int spawnLastWarden(
+    double x,
+    double y, {
+    required double health,
+    List<BossArchetype> echoArchetypes = const <BossArchetype>[],
+  }) =>
       LastWardenSystem.spawn(
         store: entities,
         enemies: enemies,
@@ -2595,6 +2603,7 @@ class SimWorld {
         centerX: x,
         centerY: y,
         health: health,
+        echoArchetypes: echoArchetypes,
       );
 
   /// Places Thrall of the Nine — a single, stationary body orbited by nine
