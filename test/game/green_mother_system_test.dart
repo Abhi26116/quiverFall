@@ -263,7 +263,7 @@ void main() {
     });
   });
 
-  group('past P2', () {
+  group('P3: the bloom cycle', () {
     test('stops spawning and stops erupting new roots', () {
       final (:world, :primary) = spawnGreenMother();
       // Mid its very first wind-up (0.5s = ~30 ticks) — caught with a live
@@ -285,6 +285,36 @@ void main() {
       // deaths never happen here) or stayed put, never up.
       expect(world.enemies.liveAdds[primary], lessThanOrEqualTo(liveAddsBefore));
       expect(rootsOf(world, primary), isEmpty);
+    });
+
+    test('the core starts exposed the instant P3 begins', () {
+      final (:world, :primary) = spawnGreenMother();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      expect(world.enemies.plateHealth[primary], 0.0);
+    });
+
+    test('the core shuts once the 3s exposed window passes', () {
+      final (:world, :primary) = spawnGreenMother();
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int i = 0; i < 181; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.plateHealth[primary],
+          world.entities.maxHealth[primary]);
+    });
+
+    test('the core re-opens once a full 8s cycle has passed', () {
+      final (:world, :primary) = spawnGreenMother();
+      world.enemies.bossPhase[primary] = 2;
+
+      for (int i = 0; i < 481; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.plateHealth[primary], 0.0);
     });
   });
 }

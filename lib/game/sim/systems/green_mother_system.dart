@@ -67,13 +67,22 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// for every ordinary DoT, just executed from outside it rather than by
 /// widening a shared system's own gate. See ADR 0040.
 ///
-/// **Not built here: P3 (a 3s exposed-core window every 8s; everything
-/// else invulnerable).** Once `bossPhase` reaches 2, spawning and root
-/// eruptions both stop — the same posture every other boss's own undone
-/// phase already takes. Any Knitter still alive is *not* despawned, the
-/// same "an add outlives its summoner" posture Arclight's own Swarmlings
-/// already established (ADR 0027) — a boss room's own zero-enemies clear
-/// condition (ADR 0021) applies here too.
+/// **P3, built here: "Retracts into a bloom with a 3s window every 8s
+/// where the core is exposed. Everything else is invulnerable."** Once
+/// `bossPhase` reaches 2, spawning and root eruptions both stop — the
+/// bloom is a retreat, not another offensive layer — and a new
+/// `_tickBloom` cycles the *existing* plate machinery (`plateHalfArc`/
+/// `plateFlatFactor`, the exact "tiny positive epsilon, never a literal
+/// zero" trick the Weeping Gate's own conditional plate already
+/// established, ADR 0042) between fully shut and fully open on the
+/// card's own 8s/3s cadence: open (`plateHealth = 0`) for the first 3s
+/// of every cycle, shut (`plateHealth = maxHealth`) for the remaining 5s.
+/// `bossSweepAngle` (free here — nothing else in this system touches it)
+/// holds the cycle's own elapsed-time clock. Any Knitter still alive is
+/// *not* despawned, the same "an add outlives its summoner" posture
+/// Arclight's own Swarmlings already established (ADR 0027) — a boss
+/// room's own zero-enemies clear condition (ADR 0021) applies here too.
+/// See ADR 0047.
 abstract final class GreenMotherSystem {
   /// Reused from the Rift Maw (docs/05 #22) — the same wind-up every add
   /// spawn in the roster announces itself with.
@@ -122,6 +131,21 @@ abstract final class GreenMotherSystem {
   /// enemy's own" choice the Weeping Gate's own portals already made
   /// (ADR 0030).
   static const double _rootPlacementRadius = 0.5;
+
+  // ── P3: the bloom cycle ───────────────────────────────────────────────
+  // See ADR 0047.
+
+  /// docs/06's own stated cycle length.
+  static const double _bloomCycleSeconds = 8.0;
+
+  /// docs/06's own stated exposed window, at the start of every cycle.
+  static const double _bloomExposedSeconds = 3.0;
+
+  /// `_armourFor` only takes the flat-factor branch when it reads greater
+  /// than zero — reused verbatim from the Weeping Gate's own conditional
+  /// plate (ADR 0042), the same tiny positive epsilon rather than a
+  /// literal zero.
+  static const double _bloomShutPlateFactor = 0.0001;
 
   /// Places the Mother's single, stationary body. Returns its slot, or -1
   /// if the entity pool was full or [BossArchetype.greenMother] has no
@@ -186,18 +210,42 @@ abstract final class GreenMotherSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — frozen, its own
-      // spawn telegraph and every forming root cleared, rather than left
-      // mid-wind-up forever.
+      // P3: spawning and root eruptions both stop — the bloom is a
+      // retreat, not another offensive layer — but the fight is not
+      // frozen: the exposed-core cycle keeps running.
       if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
         _clearRootTelegraphs(ctx, i);
+        _tickBloom(ctx, i, dt);
         continue;
       }
 
       _tickSpawns(ctx, i, dt);
       if (enemies.bossPhase[i] >= 1) _tickRoots(ctx, i, dt);
     }
+  }
+
+  /// Cycles the core between fully open and fully shut on the card's own
+  /// 8s cadence — open for the first 3s of every cycle, shut for the
+  /// remaining 5s. `bossSweepAngle` doubles as this cycle's own elapsed
+  /// clock; the plate shape itself (`plateHalfArc`/`plateFlatFactor`) is
+  /// set every tick rather than latched once, since it is cheap and
+  /// avoids needing a separate "has P3 started" flag.
+  static void _tickBloom(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+    final EntityStore store = ctx.entities;
+
+    enemies.bossSweepAngle[primary] += dt;
+    if (enemies.bossSweepAngle[primary] >= _bloomCycleSeconds) {
+      enemies.bossSweepAngle[primary] -= _bloomCycleSeconds;
+    }
+
+    enemies.plateHalfArc[primary] = math.pi;
+    enemies.plateFlatFactor[primary] = _bloomShutPlateFactor;
+    enemies.plateHealth[primary] =
+        enemies.bossSweepAngle[primary] < _bloomExposedSeconds
+            ? 0
+            : store.maxHealth[primary];
   }
 
   /// The Rift Maw's own cycle (`RiftbornTree._riftMaw`), reused directly:
