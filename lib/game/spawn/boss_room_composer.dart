@@ -8,7 +8,8 @@ import 'package:quiverfall/game/sim/world.dart';
 /// (`StageBlueprint.forStage`'s own `isBossStage` rule) — only Cinder Choir
 /// (chapter 1, `CinderChoirSystem`, ADR 0018-0020), Gaunt the Iron Tide
 /// (chapter 2, `GauntSystem`, ADR 0023), Silversong (chapter 3,
-/// `SilversongSystem`, ADR 0024), Vermillion (chapter 5,
+/// `SilversongSystem`, ADR 0024), The Hollow Warden (chapter 4,
+/// `HollowWardenSystem`, ADR 0031), Vermillion (chapter 5,
 /// `VermillionSystem`, ADR 0025), Rimefather (chapter 6,
 /// `RimefatherSystem`, ADR 0026), Arclight (chapter 7, `ArclightSystem`,
 /// ADR 0027), The Green Mother (chapter 8, `GreenMotherSystem`, ADR 0028),
@@ -28,6 +29,7 @@ abstract final class BossRoomComposer {
     1: BossArchetype.cinderChoir,
     2: BossArchetype.gauntIronTide,
     3: BossArchetype.silversong,
+    4: BossArchetype.hollowWarden,
     5: BossArchetype.vermillion,
     6: BossArchetype.rimefather,
     7: BossArchetype.arclight,
@@ -69,6 +71,11 @@ abstract final class BossRoomComposer {
           health: health,
         ),
       BossArchetype.silversong => world.spawnSilversong(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.hollowWarden => world.spawnHollowWarden(
           SimConfig.arenaWidth / 2,
           SimConfig.arenaHeight / 2,
           health: health,

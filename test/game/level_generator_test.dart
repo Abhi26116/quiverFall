@@ -438,7 +438,10 @@ void main() {
 
     test('a chapter with no fight built yet still composes an ordinary room',
         () {
-      final RoomBlueprint room = bossSlot(4);
+      // Chapters 1-11 all have fights built now — see
+      // `BossRoomComposer.bossFor`. Chapter 12 (The Quiverfall, the
+      // campaign finale) does not yet.
+      final RoomBlueprint room = bossSlot(12);
 
       expect(room.bossArchetype, isNull);
       expect(room.enemyCount, greaterThan(0));

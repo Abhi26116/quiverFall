@@ -37,6 +37,7 @@ import 'package:quiverfall/game/sim/systems/firing_system.dart';
 import 'package:quiverfall/game/sim/systems/gaunt_system.dart';
 import 'package:quiverfall/game/sim/systems/green_mother_system.dart';
 import 'package:quiverfall/game/sim/systems/hazard_system.dart';
+import 'package:quiverfall/game/sim/systems/hollow_warden_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
 import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
@@ -191,6 +192,13 @@ class SimWorld {
 
   /// Draw and Momentum state — the game's core trade. See [DrawState].
   final DrawState playerDraw = DrawState();
+
+  /// The Hollow Warden's own Draw state (docs/06 §4, boss 4) — the one
+  /// other combatant in the game that Draws, which is why [DrawState] is a
+  /// class rather than a row of arrays in the first place (see its own doc
+  /// comment). One instance, reused across rooms exactly like [playerDraw]
+  /// — reset alongside it in [clearRoom], not reallocated per fight.
+  final DrawState hollowWardenDraw = DrawState();
 
   final ProjectileStore projectiles = ProjectileStore();
 
@@ -628,6 +636,7 @@ class SimWorld {
     GreenMotherSystem.update(ai);
     ThrallOfNineSystem.update(ai);
     WeepingGateSystem.update(ai);
+    HollowWardenSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -709,6 +718,7 @@ class SimWorld {
       ..globalStage = globalStage
       ..enemyCap = enemyCap
       ..playerDraw = playerDraw
+      ..hollowWardenDraw = hollowWardenDraw
       ..playerFired = _playerFiredThisTick;
 
     if (player.isNone || !entities.isAlive(player)) {
@@ -2514,6 +2524,22 @@ class SimWorld {
         health: health,
       );
 
+  /// Places The Hollow Warden — a single body that mirrors the player's
+  /// own position (inverted about the arena centre) and Draws once its own
+  /// movement settles. Test/tool entry point, the same role [spawnBoss]
+  /// plays for the generic case; [HollowWardenSystem.spawn] does the real
+  /// work. Returns its slot.
+  int spawnHollowWarden(double x, double y, {required double health}) =>
+      HollowWardenSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
   /// Starts a room. Waves release from here on, on the spawn system's schedule.
   void beginRoom(RoomPlan plan) {
     spawnState.begin(plan);
@@ -2561,6 +2587,7 @@ class SimWorld {
     spatial.clear();
     events.clear();
     playerDraw.reset();
+    hollowWardenDraw.reset();
     // *Lingering* (#62) — trails survive the door. Everything else about the
     // room is torn down; this is the one thing the player carries through.
     if (!boons.has(BoonBehaviour.lingering)) {

@@ -151,3 +151,19 @@ kind of problem without a new field: a portal's own wind-up needs to
 remember which point it committed to, so resolve time reads that position
 back out of the telegraph itself (`TelegraphStore.xAt`/`yAt`) rather than
 adding separate storage.
+
+**Update, same day:** and an eleventh — The Hollow Warden (ADR 0031),
+chapter 4, the boss deliberately deferred all session. The one fight
+needing genuinely new sim surface area: `SimWorld.hollowWardenDraw`, a
+second live `DrawState` — the exact instance that class's own doc comment
+had already predicted this boss would need, several phases before it was
+built. Movement reuses the ordinary Echo's own mirror-motion math
+(reimplemented against `Steering` directly, the same "shape, not the
+private function" reuse Gaunt/Vermillion already established); the Draw
+ramps under the player's own exact rule set, fed by whether the mirror is
+still closing. Two large, honestly-flagged scope cuts on an inherently
+large card: neither "the player's own arrow type" nor "80% of the
+player's own stats" is implemented. Both "unbuilt chapter" fallback tests
+this session has kept current now point at chapter 12 — The Quiverfall,
+the only campaign boss left, and the last one this session could build,
+since its own P2 echoes all eleven others by name.

@@ -112,6 +112,12 @@ class AiContext {
   /// by the Screecher's Draw-lock.
   DrawState? playerDraw;
 
+  /// The Hollow Warden's own Draw state (docs/06 §4, boss 4) — a second
+  /// combatant that Draws, ramping and firing by the same rules the player
+  /// does. Nullable for the same reason [playerDraw] is: most contexts
+  /// (every ordinary enemy, every other boss) never touch it.
+  DrawState? hollowWardenDraw;
+
   /// Which Boon behaviours are live, and their state.
   ///
   /// Null in a world with no Boons at all, which is every test that predates

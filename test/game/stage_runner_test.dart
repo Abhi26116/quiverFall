@@ -325,6 +325,21 @@ void main() {
       expect(spawned, isTrue, reason: 'no Silversong primary found in the room');
     });
 
+    test('chapter 4\'s stage 20 spawns the real Hollow Warden', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 4, stage: 20, seed: 513);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.hollowWarden);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Hollow Warden primary found in the room');
+    });
+
     test('chapter 5\'s stage 20 spawns the real Vermillion', () {
       final ({StageRunner runner, SimWorld world}) s =
           stage(chapter: 5, stage: 20, seed: 507);
@@ -443,11 +458,12 @@ void main() {
 
     test('a chapter whose boss is not built yet still composes an ordinary room',
         () {
-      // Chapters 1, 2, 3, 5, 6, 7, 8, 9, 10 and 11 have fights built — see
-      // `BossRoomComposer.bossFor`. Chapter 4's own stage 20 must still be
-      // playable, exactly like a Shrine slot is ahead of Phase 13.
+      // Chapters 1-11 all have fights built now — see
+      // `BossRoomComposer.bossFor`. Chapter 12's own stage 20 (The
+      // Quiverfall, the campaign finale) must still be playable, exactly
+      // like a Shrine slot is ahead of Phase 13.
       final ({StageRunner runner, SimWorld world}) s =
-          stage(chapter: 4, stage: 20, seed: 503);
+          stage(chapter: 12, stage: 20, seed: 503);
       advanceToBossRoom(s.runner, s.world);
 
       expect(s.runner.room.kind, RoomKind.boss);
