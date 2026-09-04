@@ -46,6 +46,7 @@ import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
 import 'package:quiverfall/game/sim/systems/silversong_system.dart';
 import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
+import 'package:quiverfall/game/sim/systems/the_loom_system.dart';
 import 'package:quiverfall/game/sim/systems/the_quiverfall_system.dart';
 import 'package:quiverfall/game/sim/systems/thrall_of_nine_system.dart';
 import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
@@ -643,6 +644,7 @@ class SimWorld {
     HollowWardenSystem.update(ai);
     TheQuiverfallSystem.update(ai);
     MotherOfMotesSystem.update(ai);
+    TheLoomSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2528,6 +2530,22 @@ class SimWorld {
   /// work. Returns its slot.
   int spawnMotherOfMotes(double x, double y, {required double health}) =>
       MotherOfMotesSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places The Loom — a single, stationary body that weaves a tightening
+  /// lattice of crimson threads the player's own Windlines can cut,
+  /// docs/06 §6.3's own Endless Descent boss #17. Test/tool entry point,
+  /// the same role [spawnBoss] plays for the generic case;
+  /// [TheLoomSystem.spawn] does the real work. Returns its slot.
+  int spawnTheLoom(double x, double y, {required double health}) =>
+      TheLoomSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,
