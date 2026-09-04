@@ -12,9 +12,10 @@ import 'package:quiverfall/game/sim/world.dart';
 /// `VermillionSystem`, ADR 0025), Rimefather (chapter 6,
 /// `RimefatherSystem`, ADR 0026), Arclight (chapter 7, `ArclightSystem`,
 /// ADR 0027), The Green Mother (chapter 8, `GreenMotherSystem`, ADR 0028),
-/// Thrall of the Nine (chapter 9, `ThrallOfNineSystem`, ADR 0029) and Skarn
-/// the Unmade (chapter 11, `SkarnSystem`, ADR 0022) have sim code behind
-/// them so far. [bossFor] is
+/// Thrall of the Nine (chapter 9, `ThrallOfNineSystem`, ADR 0029), The
+/// Weeping Gate (chapter 10, `WeepingGateSystem`, ADR 0030) and Skarn the
+/// Unmade (chapter 11, `SkarnSystem`, ADR 0022) have sim code behind them
+/// so far. [bossFor] is
 /// the single place that fact lives: a chapter with no entry here gets its
 /// stage-20 room composed as an ordinary room instead
 /// (`LevelGenerator._assemble`), the same "playable rather than a hole in
@@ -32,6 +33,7 @@ abstract final class BossRoomComposer {
     7: BossArchetype.arclight,
     8: BossArchetype.greenMother,
     9: BossArchetype.thrallOfNine,
+    10: BossArchetype.weepingGate,
     11: BossArchetype.skarnUnmade,
   };
 
@@ -92,6 +94,11 @@ abstract final class BossRoomComposer {
           health: health,
         ),
       BossArchetype.thrallOfNine => world.spawnThrallOfNine(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.weepingGate => world.spawnWeepingGate(
           SimConfig.arenaWidth / 2,
           SimConfig.arenaHeight / 2,
           health: health,

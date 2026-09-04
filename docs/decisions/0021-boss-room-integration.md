@@ -139,3 +139,15 @@ side-resource bodies (their own real health, never redirected to the
 Thrall's own bar) rather than a shared pool — simpler than Cinder Choir's
 or Skarn's own multi-body wiring, not more complex, since no redirect logic
 anywhere needed to change.
+
+**Update, same day:** and a tenth — The Weeping Gate (ADR 0030), chapter
+10, the first boss with no attack of its own at all — its entire P1 threat
+is delegated to the ordinary enemies it spawns through portals, each
+running its own already-built family tree. Reused `EnemySpawner.
+findSpawnPoint` (ordinary wave composition's own "anywhere legal in the
+arena" search) for the first time by any boss, rather than the
+ring-around-itself placement every prior add-spawner uses. Solved a new
+kind of problem without a new field: a portal's own wind-up needs to
+remember which point it committed to, so resolve time reads that position
+back out of the telegraph itself (`TelegraphStore.xAt`/`yAt`) rather than
+adding separate storage.

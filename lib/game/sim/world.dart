@@ -45,6 +45,7 @@ import 'package:quiverfall/game/sim/systems/skarn_system.dart';
 import 'package:quiverfall/game/sim/systems/spawn_system.dart';
 import 'package:quiverfall/game/sim/systems/thrall_of_nine_system.dart';
 import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
+import 'package:quiverfall/game/sim/systems/weeping_gate_system.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/windline_store.dart';
 import 'package:quiverfall/game/spawn/enemy_spawner.dart';
@@ -626,6 +627,7 @@ class SimWorld {
     ArclightSystem.update(ai);
     GreenMotherSystem.update(ai);
     ThrallOfNineSystem.update(ai);
+    WeepingGateSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2487,6 +2489,22 @@ class SimWorld {
   /// the Thrall's own slot.
   int spawnThrallOfNine(double x, double y, {required double health}) =>
       ThrallOfNineSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places The Weeping Gate — a single, stationary, unplated body with no
+  /// attack of its own; the threat is entirely the ordinary enemies it
+  /// spawns through portals. Test/tool entry point, the same role
+  /// [spawnBoss] plays for the generic case; [WeepingGateSystem.spawn]
+  /// does the real work. Returns its slot.
+  int spawnWeepingGate(double x, double y, {required double health}) =>
+      WeepingGateSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

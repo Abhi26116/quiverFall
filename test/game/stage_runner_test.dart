@@ -400,6 +400,21 @@ void main() {
       expect(spawned, isTrue, reason: 'no Thrall of the Nine primary found in the room');
     });
 
+    test('chapter 10\'s stage 20 spawns the real Weeping Gate', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 10, stage: 20, seed: 512);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.weepingGate);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Weeping Gate primary found in the room');
+    });
+
     test('the boss room does not clear until the boss actually dies', () {
       final ({StageRunner runner, SimWorld world}) s =
           stage(chapter: 1, stage: 20, seed: 502);
@@ -428,7 +443,7 @@ void main() {
 
     test('a chapter whose boss is not built yet still composes an ordinary room',
         () {
-      // Chapters 1, 2, 3, 5, 6, 7, 8, 9 and 11 have fights built — see
+      // Chapters 1, 2, 3, 5, 6, 7, 8, 9, 10 and 11 have fights built — see
       // `BossRoomComposer.bossFor`. Chapter 4's own stage 20 must still be
       // playable, exactly like a Shrine slot is ahead of Phase 13.
       final ({StageRunner runner, SimWorld world}) s =
