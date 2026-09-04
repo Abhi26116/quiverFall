@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/balance/clear_time.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
@@ -23,11 +24,17 @@ import 'package:test/test.dart';
 /// would be shipping the same conservative room over and over.
 void main() {
   late ContentLibrary content;
+  late ContentLibrary bossContent;
 
   setUpAll(() {
     content = ContentLibrary.parse(
       enemiesJson: File('assets/data/enemies.json').readAsStringSync(),
       arenasJson: File('assets/data/arenas.json').readAsStringSync(),
+    ).$1!;
+    bossContent = ContentLibrary.parse(
+      enemiesJson: File('assets/data/enemies.json').readAsStringSync(),
+      arenasJson: File('assets/data/arenas.json').readAsStringSync(),
+      bossesJson: File('assets/data/bosses.json').readAsStringSync(),
     ).$1!;
   });
 
@@ -400,6 +407,54 @@ void main() {
         );
         expect(plan.usedAnyFallback, isFalse, reason: 'chapter $chapter');
       }
+    });
+  });
+
+  group('boss rooms', () {
+    LevelGenerator bossGenerator() =>
+        LevelGenerator(content: bossContent, arenas: bossContent.arenas);
+
+    RoomBlueprint bossSlot(int chapter) => bossGenerator().generate(
+          rng: Rng(1),
+          slot: const RoomSlot(index: 0, kind: RoomKind.boss),
+          chapter: chapter,
+          globalStage: StageBlueprint.forStage(
+            chapter: chapter,
+            stage: 20,
+            seed: 1,
+          ).globalStage,
+        );
+
+    test('chapter 1 spawns no ordinary composition — Cinder Choir instead',
+        () {
+      final RoomBlueprint room = bossSlot(1);
+
+      expect(room.bossArchetype, BossArchetype.cinderChoir);
+      expect(room.enemyCount, 0);
+      // docs/06 §1: "55 s".
+      expect(room.estimatedSeconds, 55);
+      expect(BlueprintValidator.validate(room, bossContent), isEmpty);
+    });
+
+    test('a chapter with no fight built yet still composes an ordinary room',
+        () {
+      final RoomBlueprint room = bossSlot(2);
+
+      expect(room.bossArchetype, isNull);
+      expect(room.enemyCount, greaterThan(0));
+      expect(BlueprintValidator.validate(room, bossContent), isEmpty);
+    });
+
+    test('a chapter 1 stage 20 stage generates cleanly end to end', () {
+      final StagePlan plan = generateStage(
+        generator: bossGenerator(),
+        blueprint: StageBlueprint.forStage(chapter: 1, stage: 20, seed: 2024),
+      );
+
+      expect(plan.validate(bossContent), isEmpty);
+      expect(plan.usedAnyFallback, isFalse);
+      expect(plan.rooms.last.kind, RoomKind.boss);
+      expect(plan.rooms.last.bossArchetype, BossArchetype.cinderChoir);
     });
   });
 }

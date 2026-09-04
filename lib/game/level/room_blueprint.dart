@@ -1,4 +1,5 @@
 import 'package:quiverfall/game/balance/clear_time.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
 import 'package:quiverfall/game/level/stage_blueprint.dart';
@@ -18,11 +19,20 @@ class RoomBlueprint {
     required this.estimatedSeconds,
     this.attempts = 1,
     this.usedFallback = false,
+    this.bossArchetype,
   });
 
   final ArenaDefinition arena;
   final RoomPlan plan;
   final RoomSlot slot;
+
+  /// Which boss to spawn, for a [RoomKind.boss] slot whose chapter actually
+  /// has one built — null for every other slot, and for a boss slot whose
+  /// own chapter's boss is not built yet (`BossRoomComposer.bossFor`), in
+  /// which case [plan] is an ordinary composed room like any other, the same
+  /// "playable rather than a hole in the stage" fallback a Shrine slot gets
+  /// before Phase 13. See ADR 0021.
+  final BossArchetype? bossArchetype;
 
   /// From [ClearTimeModel]. Phase 12's balance harness replaces the model; this
   /// field survives it.

@@ -92,6 +92,12 @@ is a direct test/tool entry point, not wired into `room_composer.dart` or
 see its own doc comment. That wiring is the natural next slice once a boss
 actually has a fight to spawn into.
 
+**Update, same day:** this happened too, once Cinder Choir's fight was
+complete — see ADR 0021. `LevelGenerator`/`StageRunner`/`BossRoomComposer`
+now spawn it for real on chapter 1's stage 20; every other chapter still
+falls back to an ordinary room until its own boss is built. No bespoke
+arena yet — still open, an ordinary arena's own centre stands in for one.
+
 **No VFX/audio for the phase transition itself.** `SimEventType.bossPhaseChanged`
 fires; `FeedbackDirector` and `FeelTelemetry` both have an explicit no-op
 case for it (comment points here) rather than a placeholder screen-shake —

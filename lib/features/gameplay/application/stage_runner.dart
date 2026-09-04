@@ -7,6 +7,7 @@ import 'package:quiverfall/game/boons/boon_inventory.dart';
 import 'package:quiverfall/game/boons/boon_pool.dart';
 import 'package:quiverfall/game/boons/loadout_resolver.dart';
 import 'package:quiverfall/game/boons/synergy_catalogue.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/level/level_generator.dart';
 import 'package:quiverfall/game/level/room_blueprint.dart';
@@ -14,6 +15,7 @@ import 'package:quiverfall/game/level/stage_blueprint.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/world.dart';
+import 'package:quiverfall/game/spawn/boss_room_composer.dart';
 
 /// Where a stage is.
 enum StageStatus {
@@ -343,6 +345,25 @@ class StageRunner {
       ..enemyHpBase = Curves.enemyHp(plan.blueprint.globalStage)
       ..globalStage = plan.blueprint.globalStage
       ..beginRoom(next.plan);
+
+    // `next.plan` is deliberately empty for a boss slot (`LevelGenerator
+    // ._assemble`) — nothing for `SpawnSystem` to release, so the room stays
+    // open exactly as long as the boss's own entities do. `encounterCount`
+    // is always 0: this run has no access to how many times the player's
+    // own save has beaten this boss before (`PlayerSave`, not something
+    // `StageRunner` reads) — a real, deliberate gap, not an oversight; see
+    // ADR 0021.
+    final BossArchetype? boss = next.bossArchetype;
+    if (boss != null) {
+      final BossDefinition? def = content.bosses.byArchetype(boss);
+      if (def != null) {
+        BossRoomComposer.spawn(
+          world,
+          boss,
+          Curves.bossHp(plan.blueprint.globalStage, def.hpMultiplier, 0),
+        );
+      }
+    }
   }
 
   double _playerHealth() {

@@ -108,3 +108,6 @@ relationships, reusing `state`/`stateTimer` for a bare child's own attack
 cycle) are the concrete answers ADR 0018 asked Skarn, Coilspine and Thrall
 to come back and check against — Skarn's own 1→2/4 split in particular
 looks like a very close cousin of this exact split, done twice.
+
+**Update, same day:** with the fight complete, it got wired into a real run
+next — see ADR 0021.

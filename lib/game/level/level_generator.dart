@@ -1,11 +1,13 @@
 import 'package:quiverfall/core/rng.dart';
 import 'package:quiverfall/game/balance/clear_time.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
 import 'package:quiverfall/game/level/blueprint_validator.dart';
 import 'package:quiverfall/game/level/room_blueprint.dart';
 import 'package:quiverfall/game/level/stage_blueprint.dart';
+import 'package:quiverfall/game/spawn/boss_room_composer.dart';
 import 'package:quiverfall/game/spawn/composition_validator.dart';
 import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:quiverfall/game/spawn/wave_plan.dart';
@@ -110,6 +112,36 @@ class LevelGenerator {
     required int attempts,
     bool usedFallback = false,
   }) {
+    // A boss slot whose chapter actually has a fight built gets no ordinary
+    // composition at all — an empty plan, so `SpawnSystem` never releases a
+    // wave (`RoomComposer`/`CompositionValidator`/`BlueprintValidator` all
+    // already treat an empty plan as trivially valid; `StageRunner` is the
+    // one that spawns the real boss once the room loads, through
+    // `BossRoomComposer`). Every other chapter's boss slot — none built yet
+    // — falls straight through to the ordinary path below, exactly like any
+    // other room. See ADR 0021.
+    final BossArchetype? boss =
+        slot.kind == RoomKind.boss ? BossRoomComposer.bossFor(chapter) : null;
+
+    if (boss != null) {
+      final RoomPlan empty = RoomPlan(
+        waves: const <WavePlan>[],
+        threatBudget: 0,
+        chapter: chapter,
+        globalStage: globalStage,
+      );
+      return RoomBlueprint(
+        arena: arena,
+        plan: empty,
+        slot: slot,
+        bossArchetype: boss,
+        estimatedSeconds:
+            content.bosses.byArchetype(boss)?.targetDurationSeconds ?? 0,
+        attempts: attempts,
+        usedFallback: usedFallback,
+      );
+    }
+
     final RoomPlan plan = RoomComposer.compose(
       content: content,
       rng: rng,

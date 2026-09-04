@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
 import 'package:quiverfall/game/level/level_generator.dart';
@@ -24,6 +25,7 @@ void main() {
     content = ContentLibrary.parse(
       enemiesJson: File('assets/data/enemies.json').readAsStringSync(),
       arenasJson: File('assets/data/arenas.json').readAsStringSync(),
+      bossesJson: File('assets/data/bosses.json').readAsStringSync(),
     ).$1!;
   });
 
@@ -242,6 +244,80 @@ void main() {
       expect(s.runner.status, StageStatus.complete);
       expect(seconds, greaterThan(45));
       expect(seconds, lessThan(60 * 12));
+    });
+  });
+
+  group('boss rooms', () {
+    /// Skips rooms exactly like the other tests in this file already do —
+    /// killing everything and letting `update()` advance — stopping at the
+    /// first `RoomKind.boss` slot rather than running the whole stage.
+    void advanceToBossRoom(StageRunner runner, SimWorld world) {
+      while (runner.room.kind != RoomKind.boss &&
+          runner.status == StageStatus.fighting) {
+        final int before = runner.roomIndex;
+        while (runner.roomIndex == before &&
+            runner.status == StageStatus.fighting) {
+          _killAll(world);
+          world.tick(InputSnapshot());
+          world.events.clear();
+          runner.update();
+        }
+      }
+    }
+
+    test('chapter 1\'s stage 20 spawns the real Cinder Choir', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 1, stage: 20, seed: 501);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, BossArchetype.cinderChoir);
+
+      final bool spawned = List<int>.generate(s.world.entities.highWater, (i) => i)
+          .any((int i) =>
+              s.world.entities.alive[i] == 1 && s.world.enemies.bossIndex[i] >= 0);
+      expect(spawned, isTrue, reason: 'no Cinder Choir primary found in the room');
+    });
+
+    test('the boss room does not clear until the boss actually dies', () {
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 1, stage: 20, seed: 502);
+      advanceToBossRoom(s.runner, s.world);
+      final int bossRoomIndex = s.runner.roomIndex;
+
+      // Ticking alone, with the boss untouched, must not clear the room —
+      // unlike every other room in this file, there is no wave plan feeding
+      // `SpawnState`, only the boss's own live entities.
+      for (int i = 0; i < 60; i++) {
+        s.world.tick(InputSnapshot());
+      }
+      s.world.events.clear();
+      s.runner.update();
+      expect(s.runner.roomIndex, bossRoomIndex);
+      expect(s.runner.status, StageStatus.fighting);
+
+      _killAll(s.world);
+      s.world.tick(InputSnapshot());
+      s.world.events.clear();
+      s.runner.update();
+
+      // Chapter 1's boss room is its stage's last room.
+      expect(s.runner.status, StageStatus.complete);
+    });
+
+    test('a chapter whose boss is not built yet still composes an ordinary room',
+        () {
+      // Only Cinder Choir (chapter 1) has a fight built — see
+      // `BossRoomComposer.bossFor`. Chapter 2's own stage 20 must still be
+      // playable, exactly like a Shrine slot is ahead of Phase 13.
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 2, stage: 20, seed: 503);
+      advanceToBossRoom(s.runner, s.world);
+
+      expect(s.runner.room.kind, RoomKind.boss);
+      expect(s.runner.room.bossArchetype, isNull);
+      expect(s.runner.room.enemyCount, greaterThan(0));
     });
   });
 }
