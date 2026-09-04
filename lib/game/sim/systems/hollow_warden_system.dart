@@ -13,6 +13,7 @@ import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
+import 'package:quiverfall/game/sim/windline_store.dart';
 
 /// The Hollow Warden — docs/06 §4, chapter 4's boss. "Tests: understanding
 /// your own kit." "A mirror of the player's current hero, at 80% of the
@@ -74,14 +75,38 @@ import 'package:quiverfall/game/sim/systems/draw_system.dart';
 /// accordingly, read by `SimWorld._applyInput` as a direct multiplier on
 /// move speed.
 ///
-/// **Not built here: P3 (both Windline sets live; crossing your line
-/// through its line creates a Discord — a neutral detonation damaging
-/// whoever is closer).** P3 needs an idea nothing in the sim has any
-/// analogue for: a hazard whose *source* is a crossing between two
-/// independently-drawn trail sets, not a single enemy's own attack. Once
-/// `bossPhase` reaches 2, the mirror halts, the Draw ramp freezes
-/// wherever it was, and the player's own slow is cleared — the same
-/// posture every other boss's own undone phases already take.
+/// **P3, built here: "Both Windline sets are live. Crossing your line
+/// through its line creates a Discord — a neutral detonation that damages
+/// whoever is closer."** Additive on top of P1+P2, which both keep
+/// running completely unmodified — "both sets are live" reads as keep
+/// everything, add one thing, the same posture P2's own card already
+/// established for this boss. The genuinely new idea this needed — a
+/// hazard whose *source* is a crossing between two independently-owned
+/// trail sets, not a single enemy's own attack — turned out to need no
+/// new storage either: both sets already coexist in the same
+/// `WindlineStore` P2 already writes to (the player's own arrows under
+/// owner `0`, the Warden's own shots under its own slot), so "both sets
+/// are live" was already true the moment P2 shipped. `_tickDiscord`
+/// scans for segments added *since it last checked* on either side
+/// (`comboStep`/`bossActiveChildIndex`, both free — nothing else in this
+/// system touches either — hold each side's own last-seen serial, the
+/// same "read the store's own serial ordering" trick this boss's own P2
+/// already uses for Confluence) and tests each new segment against every
+/// live segment owned by the *other* side, using the same parametric
+/// line-intersection math `ConfluenceSystem.segmentsIntersect` already
+/// uses internally (reimplemented to also return the crossing point,
+/// which that method's own boolean-only signature doesn't expose) —
+/// simplified to a genuine proper crossing only, skipping Confluence's
+/// own near-miss tolerance and parallel-rejection rules, since neither
+/// is about protecting a "crossed your own trail at the bow" degenerate
+/// case here. Each pair is checked exactly once, the instant the later
+/// of the two segments appears, so a long-lived overlapping pair can
+/// never re-trigger. "Whoever is closer" compares the crossing point's
+/// own distance to the player and to the Warden's own body; the loser
+/// takes the roster's own derived heavy hit — the player through the
+/// ordinary `EnemyAttack.damagePlayer`, the Warden through a direct
+/// health subtraction, since nothing in the game has ever needed an
+/// enemy to damage *itself* before. See ADR 0053.
 abstract final class HollowWardenSystem {
   /// Reused from the ordinary Echo (docs/05 #24) — the same movement speed
   /// and mirror-catch-up gain its own family tree already uses.
@@ -115,6 +140,20 @@ abstract final class HollowWardenSystem {
   /// (`BoonSystem.applyWindlineField`) — the same magnitude, applied in
   /// the opposite direction.
   static const double _windlineSlow = SimConfig.windlineSlow;
+
+  // ── P3: Discord ────────────────────────────────────────────────────────
+  // See ADR 0053.
+
+  /// The hardcoded sentinel every consumer of `WindlineStore.ownerAt`
+  /// already treats as "the player's own trail" (`ProjectileSystem`'s own
+  /// private `_playerOwner`, `BoonSystem.applyWindlineField`'s own
+  /// filter) — not this boss's own invention.
+  static const int _playerLineOwner = 0;
+
+  /// A sixth reuse of the roster's own derived heavy hit — a neutral
+  /// detonation deserves the same "how heavy is heavy" answer as every
+  /// other decisive hit in this roster, whichever side it lands on.
+  static const double _discordDamage = 0.09 * 2.10;
 
   /// Places the Warden's single, mirroring body. Returns its slot, or -1
   /// if the entity pool was full or [BossArchetype.hollowWarden] has no
@@ -170,16 +209,8 @@ abstract final class HollowWardenSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — the mirror halts,
-      // the ramp simply stops advancing, and the player's own slow is
-      // cleared, rather than any of the three being left stuck mid-effect.
-      if (enemies.bossPhase[i] >= 2) {
-        Steering.halt(ctx, i);
-        ctx.playerDraw?.windlineSlowFactor = 1.0;
-        continue;
-      }
-
       final bool inP2 = enemies.bossPhase[i] >= 1;
+      final bool inP3 = enemies.bossPhase[i] >= 2;
 
       final bool isMoving = _mirror(ctx, i);
       DrawSystem.update(draw, isMoving, dt, ctx.events);
@@ -194,6 +225,8 @@ abstract final class HollowWardenSystem {
       } else {
         ctx.playerDraw?.windlineSlowFactor = 1.0;
       }
+
+      if (inP3) _tickDiscord(ctx, i);
     }
   }
 
@@ -349,5 +382,137 @@ abstract final class HollowWardenSystem {
     final double ox = px - cx;
     final double oy = py - cy;
     return ox * ox + oy * oy <= radius * radius;
+  }
+
+  /// Finds every new crossing between the two independently-owned
+  /// Windline sets since the last tick, resolving each into a Discord.
+  /// Two passes — new player segments against every live Warden segment,
+  /// then new Warden segments against only the *old* player segments —
+  /// together cover every pair exactly once, whichever side laid the
+  /// later of the two.
+  static void _tickDiscord(AiContext ctx, int primary) {
+    final EnemyStore enemies = ctx.enemies;
+    final WindlineStore lines = ctx.lines;
+
+    final int lastPlayerSerial = enemies.comboStep[primary];
+    final int lastWardenSerial = enemies.bossActiveChildIndex[primary];
+    int maxPlayerSerial = lastPlayerSerial;
+    int maxWardenSerial = lastWardenSerial;
+
+    final int cap = lines.capacity;
+    for (int s = 0; s < cap; s++) {
+      if (!lines.isAlive(s)) continue;
+      final int owner = lines.ownerAt(s);
+      final int serial = lines.serialAt(s);
+      if (owner == _playerLineOwner) {
+        if (serial > maxPlayerSerial) maxPlayerSerial = serial;
+      } else if (owner == primary) {
+        if (serial > maxWardenSerial) maxWardenSerial = serial;
+      }
+    }
+
+    for (int s = 0; s < cap; s++) {
+      if (!lines.isAlive(s)) continue;
+      if (lines.ownerAt(s) != _playerLineOwner) continue;
+      if (lines.serialAt(s) <= lastPlayerSerial) continue;
+      for (int w = 0; w < cap; w++) {
+        if (!lines.isAlive(w)) continue;
+        if (lines.ownerAt(w) != primary) continue;
+        _checkDiscord(ctx, primary, lines, s, w);
+      }
+    }
+
+    for (int w = 0; w < cap; w++) {
+      if (!lines.isAlive(w)) continue;
+      if (lines.ownerAt(w) != primary) continue;
+      if (lines.serialAt(w) <= lastWardenSerial) continue;
+      for (int s = 0; s < cap; s++) {
+        if (!lines.isAlive(s)) continue;
+        if (lines.ownerAt(s) != _playerLineOwner) continue;
+        // A new player segment was already covered against every Warden
+        // segment (including this one) in the pass above.
+        if (lines.serialAt(s) > lastPlayerSerial) continue;
+        _checkDiscord(ctx, primary, lines, s, w);
+      }
+    }
+
+    enemies.comboStep[primary] = maxPlayerSerial;
+    enemies.bossActiveChildIndex[primary] = maxWardenSerial;
+  }
+
+  static void _checkDiscord(AiContext ctx, int primary, WindlineStore lines,
+      int playerSeg, int wardenSeg) {
+    _segmentCrossing(
+      lines.x0(playerSeg),
+      lines.y0(playerSeg),
+      lines.x1(playerSeg),
+      lines.y1(playerSeg),
+      lines.x0(wardenSeg),
+      lines.y0(wardenSeg),
+      lines.x1(wardenSeg),
+      lines.y1(wardenSeg),
+      (double x, double y) => _resolveDiscord(ctx, primary, x, y),
+    );
+  }
+
+  /// Damages whichever of the player or the Warden's own body is closer
+  /// to the crossing point — the player through the ordinary
+  /// `EnemyAttack.damagePlayer`, the Warden through a direct health
+  /// subtraction, since no plate/Momentum/Boon mitigation applies to an
+  /// enemy taking damage from its own crossed lines.
+  static void _resolveDiscord(AiContext ctx, int primary, double x, double y) {
+    if (!ctx.hasPlayer) return;
+    final EntityStore store = ctx.entities;
+
+    final double dxPlayer = ctx.playerX - x;
+    final double dyPlayer = ctx.playerY - y;
+    final double distPlayerSq = dxPlayer * dxPlayer + dyPlayer * dyPlayer;
+
+    final double dxWarden = store.posX[primary] - x;
+    final double dyWarden = store.posY[primary] - y;
+    final double distWardenSq = dxWarden * dxWarden + dyWarden * dyWarden;
+
+    if (distPlayerSq <= distWardenSq) {
+      EnemyAttack.damagePlayer(ctx, _discordDamage, source: primary);
+    } else {
+      store.health[primary] -= store.maxHealth[primary] * _discordDamage;
+    }
+  }
+
+  /// A proper segment-segment crossing, parametrically — the same shape
+  /// `ConfluenceSystem.segmentsIntersect` already uses internally, kept
+  /// separate since that method only ever returns whether a crossing
+  /// happened, never where. Deliberately does not carry over that
+  /// method's own near-miss tolerance or parallel-rejection rules — both
+  /// exist there to stop a player's own consecutive arrows from
+  /// Confluencing with themselves at the bow, a degenerate case that has
+  /// no analogue for two independently-owned trail sets.
+  static bool _segmentCrossing(
+    double ax0,
+    double ay0,
+    double ax1,
+    double ay1,
+    double bx0,
+    double by0,
+    double bx1,
+    double by1,
+    void Function(double x, double y) onCross,
+  ) {
+    final double d1x = ax1 - ax0;
+    final double d1y = ay1 - ay0;
+    final double d2x = bx1 - bx0;
+    final double d2y = by1 - by0;
+
+    final double denom = d1x * d2y - d1y * d2x;
+    if (denom.abs() < 1e-12) return false; // parallel or degenerate
+
+    final double ex = bx0 - ax0;
+    final double ey = by0 - ay0;
+    final double t = (ex * d2y - ey * d2x) / denom;
+    final double u = (ex * d1y - ey * d1x) / denom;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return false;
+
+    onCross(ax0 + d1x * t, ay0 + d1y * t);
+    return true;
   }
 }

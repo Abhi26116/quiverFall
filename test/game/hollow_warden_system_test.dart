@@ -218,36 +218,142 @@ void main() {
     });
   });
 
-  group('past P2', () {
-    test('halts the mirror, freezes the Draw, and clears the player\'s '
-        'slow', () {
-      final (:world, :primary) = spawnWarden(
-        playerX: centerX + 0.05,
-      );
-      for (int i = 0; i < 20; i++) {
-        world.tick(InputSnapshot());
-      }
-      final double drawBefore = world.hollowWardenDraw.drawSeconds;
-      expect(drawBefore, greaterThan(0));
-
-      world.playerDraw.windlineSlowFactor = 0.5;
-
+  group('P3: Discord', () {
+    test('P1 and P2 both keep running unmodified — P3 is additive', () {
+      final (:world, :primary) = spawnWarden(playerX: centerX + 0.05);
       world.enemies.bossPhase[primary] = 2;
-      // One extra tick for the halt to actually take effect — the same
-      // one-transitional-tick ordering every other boss's own phase-halt
-      // test already accounts for (ADR 0023).
-      world.tick(InputSnapshot());
-      final double posXAfterHalt = world.entities.posX[primary];
-      final double posYAfterHalt = world.entities.posY[primary];
-      expect(world.playerDraw.windlineSlowFactor, 1.0);
 
-      for (int i = 0; i < 60; i++) {
+      for (int i = 0; i < 40; i++) {
         world.tick(InputSnapshot());
       }
 
-      expect(world.entities.posX[primary], posXAfterHalt);
-      expect(world.entities.posY[primary], posYAfterHalt);
-      expect(world.hollowWardenDraw.drawSeconds, drawBefore);
+      expect(world.hollowWardenDraw.drawSeconds, greaterThan(0),
+          reason: 'the Draw ramp should still be advancing in P3');
+    });
+
+    test('the player, when closer to the crossing point, takes the hit',
+        () {
+      final (:world, :primary) = spawnWarden(playerX: centerX + 0.05);
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      // A vertical player-owned line and a horizontal Warden-owned line,
+      // crossing at (centerX + 2.0, centerY).
+      world.windlines.add(
+        fromX: centerX + 2.0,
+        fromY: centerY - 2.0,
+        toX: centerX + 2.0,
+        toY: centerY + 2.0,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: 0,
+        trailId: -1001,
+      );
+      world.windlines.add(
+        fromX: centerX + 1.0,
+        fromY: centerY,
+        toX: centerX + 3.0,
+        toY: centerY,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: primary,
+        trailId: -1002,
+      );
+
+      // The player sits right on the crossing point; the Warden's own
+      // body is left at its default spawn, 2u away.
+      world.entities.posX[player] = centerX + 2.0;
+      world.entities.posY[player] = centerY;
+      final double wardenHealthBefore = world.entities.health[primary];
+      expect(world.entities.health[player], 100.0);
+
+      world.tick(InputSnapshot());
+
+      // 0.09 * 2.10 == 18.9% of max health.
+      expect(world.entities.health[player], closeTo(100.0 * (1 - 0.189), 1.0));
+      expect(world.entities.health[primary], wardenHealthBefore);
+    });
+
+    test('the Warden, when closer to the crossing point, damages itself',
+        () {
+      final (:world, :primary) = spawnWarden(playerX: centerX - 6.0);
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      world.windlines.add(
+        fromX: centerX + 2.0,
+        fromY: centerY - 2.0,
+        toX: centerX + 2.0,
+        toY: centerY + 2.0,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: 0,
+        trailId: -1003,
+      );
+      world.windlines.add(
+        fromX: centerX + 1.0,
+        fromY: centerY,
+        toX: centerX + 3.0,
+        toY: centerY,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: primary,
+        trailId: -1004,
+      );
+
+      // The Warden's own body sits right on the crossing point; the
+      // player is left far away.
+      world.entities.posX[primary] = centerX + 2.0;
+      world.entities.posY[primary] = centerY;
+      final double wardenHealthBefore = world.entities.health[primary];
+      expect(world.entities.health[player], 100.0);
+
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[player], 100.0);
+      expect(
+        world.entities.health[primary],
+        closeTo(wardenHealthBefore - world.entities.maxHealth[primary] * 0.189, 1.0),
+      );
+    });
+
+    test('a single crossing only triggers once, even held alive for many '
+        'ticks', () {
+      final (:world, :primary) = spawnWarden(playerX: centerX + 0.05);
+      world.enemies.bossPhase[primary] = 2;
+      final int player = world.player.index;
+
+      world.windlines.add(
+        fromX: centerX + 2.0,
+        fromY: centerY - 2.0,
+        toX: centerX + 2.0,
+        toY: centerY + 2.0,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: 0,
+        trailId: -1005,
+      );
+      world.windlines.add(
+        fromX: centerX + 1.0,
+        fromY: centerY,
+        toX: centerX + 3.0,
+        toY: centerY,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: primary,
+        trailId: -1006,
+      );
+      world.entities.posX[player] = centerX + 2.0;
+      world.entities.posY[player] = centerY;
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      final double healthAfterFirstBatch = world.entities.health[player];
+      expect(healthAfterFirstBatch, closeTo(100.0 * (1 - 0.189), 1.0));
+
+      for (int i = 0; i < 30; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], healthAfterFirstBatch,
+          reason: 'the same pair of segments must not re-trigger a second '
+              'Discord while both stay alive');
     });
   });
 }
