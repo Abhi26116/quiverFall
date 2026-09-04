@@ -6,6 +6,7 @@ import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
 import 'package:quiverfall/game/sim/ai/steering.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
+import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
@@ -61,6 +62,30 @@ import 'package:quiverfall/game/sim/systems/draw_system.dart';
 /// Hollow Warden's own heavy shot, since porting real arrow behaviour onto
 /// an enemy body is the identical out-of-scope redesign question here that
 /// it was there.
+///
+/// P2, built here: "Gains the player's own current Boon set, mirrored."
+/// Additive on top of P1, which keeps running unmodified — nothing in the
+/// card's own wording says the duel stops. A literal port of every one of
+/// the roughly 60 Boons' own bespoke mechanic onto an enemy body is a
+/// materially larger redesign question than a single pass can resolve
+/// (most are deeply tied to the player's own arrow — pierce falloff,
+/// ricochet, elemental procs, hit-streak bookkeeping — concepts a
+/// bolt-firing enemy body has no analogue for), so this reads the
+/// player's own live CombatModifiers (AiContext.combat, the exact same
+/// instance the player's own arrows read every hit, not a snapshot) for
+/// the two terms generic enough to reapply as-is: flatDamage (an
+/// unconditional percentage) and a real critChance/critMultiplier roll,
+/// both folded directly into the heavy shot's own damage at fire time
+/// rather than through EnemyStore.attackBuff — AiSystem.update's own
+/// generic pass zeroes every enemy's attackBuff every tick before hazards
+/// resolve (Chanter auras are meant to be recomputed fresh, not to
+/// persist), which runs after every boss system including this one, so a
+/// write there would be silently discarded before HazardSystem ever reads
+/// it. Baking the bonus into the bolt's own damage field at the moment it
+/// is created sidesteps that ordering entirely. Every Boon whose bonus is
+/// conditional (vsWounded, perHitStreak, perMomentumStack, and the rest of
+/// CombatModifiers) is deliberately not mirrored — flagged here, not
+/// guessed at. See ADR 0060.
 abstract final class LastWardenSystem {
   /// Reused from the Hollow Warden's own mirror-approach speed — a
   /// deliberate, readable closing pace, not a lunge.
@@ -197,16 +222,32 @@ abstract final class LastWardenSystem {
 
   static void _fireHeavyShot(AiContext ctx, int slot, DrawState draw) {
     final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
     final double fromX = store.posX[slot];
     final double fromY = store.posY[slot];
     final double angle = math.atan2(ctx.playerY - fromY, ctx.playerX - fromX);
+
+    double damage = _heavyShotDamage;
+
+    // P2: "Gains the player's own current Boon set, mirrored" — the flat,
+    // unconditional portion of it, plus a real crit roll, folded in here
+    // rather than through `attackBuff` (see the class doc comment for why).
+    if (enemies.bossPhase[slot] >= 1) {
+      final CombatModifiers? combat = ctx.combat;
+      if (combat != null) {
+        damage *= 1.0 + combat.flatDamage;
+        if (combat.critChance > 0 && ctx.rng.nextDouble() < combat.critChance) {
+          damage *= combat.critMultiplier;
+        }
+      }
+    }
 
     EnemyAttack.fireBolt(
       ctx,
       slot,
       angle: angle,
       speed: _boltProjectileSpeed,
-      damage: _heavyShotDamage,
+      damage: damage,
       radius: _boltRadius,
       lifetime: _boltRange / _boltProjectileSpeed,
     );

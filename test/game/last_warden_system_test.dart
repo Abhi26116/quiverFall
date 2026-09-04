@@ -157,4 +157,69 @@ void main() {
       expect(world.entities.health[primary], closeTo(before - 50.0, 1e-6));
     });
   });
+
+  group('P2: gains the player\'s own current Boon set, mirrored', () {
+    const double baseDamage = 0.09 * 2.10;
+
+    int? fireAndFindHazard(SimWorld world, int primary) {
+      for (int i = 0; i < 600; i++) {
+        world.tick(InputSnapshot());
+        for (int h = 0; h < world.hazards.capacity; h++) {
+          if (world.hazards.isAlive(h) && world.hazards.ownerAt(h) == primary) {
+            return h;
+          }
+        }
+      }
+      return null;
+    }
+
+    test('before P2, the player\'s own flat damage bonus is not mirrored '
+        'into the heavy shot', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+      world.combat.flatDamage = 0.5;
+
+      final int? hazardSlot = fireAndFindHazard(world, primary);
+      expect(hazardSlot, isNotNull);
+      expect(world.hazards.damage[hazardSlot!], closeTo(baseDamage, 1e-9));
+    });
+
+    test('once P2 begins, the player\'s own current flat damage bonus is '
+        'mirrored into the heavy shot\'s own damage', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+      world.enemies.bossPhase[primary] = 1;
+      world.combat.flatDamage = 0.5;
+
+      final int? hazardSlot = fireAndFindHazard(world, primary);
+      expect(hazardSlot, isNotNull);
+      expect(
+        world.hazards.damage[hazardSlot!],
+        closeTo(baseDamage * 1.5, 1e-9),
+      );
+    });
+
+    test('a guaranteed crit is mirrored too, at the player\'s own current '
+        'crit multiplier', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+      world.enemies.bossPhase[primary] = 1;
+      world.combat.critChance = 1.0;
+      final double critMult = world.combat.critMultiplier;
+
+      final int? hazardSlot = fireAndFindHazard(world, primary);
+      expect(hazardSlot, isNotNull);
+      expect(
+        world.hazards.damage[hazardSlot!],
+        closeTo(baseDamage * critMult, 1e-9),
+      );
+    });
+
+    test('zero crit chance never crits, even in P2', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 2.0);
+      world.enemies.bossPhase[primary] = 1;
+      world.combat.critChance = 0;
+
+      final int? hazardSlot = fireAndFindHazard(world, primary);
+      expect(hazardSlot, isNotNull);
+      expect(world.hazards.damage[hazardSlot!], closeTo(baseDamage, 1e-9));
+    });
+  });
 }
