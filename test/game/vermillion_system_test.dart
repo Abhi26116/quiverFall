@@ -116,7 +116,7 @@ void main() {
       expect(trailOf(world, primary), isNotEmpty);
     });
 
-    test('halts and stops laying trail once past P2', () {
+    test('halts and lays no further trail once past P2', () {
       final (:world, :primary) = spawnVermillion();
       for (int i = 0; i < 30; i++) {
         world.tick(InputSnapshot());
@@ -131,12 +131,108 @@ void main() {
       final double posBefore = world.entities.posX[primary];
       final int trailBefore = trailOf(world, primary).length;
 
-      for (int i = 0; i < 179; i++) {
+      // Comfortably under the first detonation interval, so this is
+      // purely a "no new segment appears" check — P3's own detonation is
+      // covered separately below.
+      for (int i = 0; i < 50; i++) {
         world.tick(InputSnapshot());
       }
 
       expect(world.entities.posX[primary], posBefore);
       expect(trailOf(world, primary), hasLength(trailBefore));
+    });
+  });
+
+  group('P3: sequenced detonation', () {
+    ({SimWorld world, int primary}) spawnWithThreeSegments() {
+      final (:world, :primary) = spawnVermillion();
+      // Trail interval is 1.0s; three full drops land at t = 1s, 2s, 3s.
+      for (int i = 0; i < 210; i++) {
+        world.tick(InputSnapshot());
+      }
+      return (world: world, primary: primary);
+    }
+
+    test('lays no further trail once P3 begins, and the existing trail '
+        'stays untouched before its own turn', () {
+      final (:world, :primary) = spawnWithThreeSegments();
+      expect(trailOf(world, primary), hasLength(3));
+
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+
+      // Comfortably under the first per-segment interval (6.0/3 == 2.0s).
+      for (int i = 0; i < 100; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(trailOf(world, primary), hasLength(3));
+    });
+
+    test('detonates the oldest segment first, on the derived per-segment '
+        'interval', () {
+      final (:world, :primary) = spawnWithThreeSegments();
+      world.enemies.bossPhase[primary] = 2;
+
+      // Just past 2.0s (6.0/3) — the first of three should be gone.
+      for (int i = 0; i < 121; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(trailOf(world, primary), hasLength(2));
+
+      // Just past 4.0s total — the second gone too.
+      for (int i = 0; i < 120; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(trailOf(world, primary), hasLength(1));
+
+      // Just past 6.0s total — the whole trail is gone.
+      for (int i = 0; i < 120; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(trailOf(world, primary), isEmpty);
+    });
+
+    test('a detonation deals the derived heavy hit to a player standing '
+        'on that segment', () {
+      final (:world, :primary) = spawnWithThreeSegments();
+      final List<int> segments = trailOf(world, primary);
+      // The oldest — least `remaining` — is the first to detonate.
+      final int oldest = segments.reduce((int a, int b) =>
+          world.hazards.remaining[a] < world.hazards.remaining[b] ? a : b);
+      final double x = world.hazards.x[oldest];
+      final double y = world.hazards.y[oldest];
+
+      // Vermillion spends the whole of `spawnWithThreeSegments` walking
+      // toward (and eventually standing on) the player's own default
+      // spawn point, so the player has already taken some incidental P1
+      // trail damage by now — already covered by its own dedicated test
+      // above, not what this one is measuring. Move well clear of the
+      // whole trail and reset health explicitly, rather than assume the
+      // default position was ever safe (ADR 0039's own lesson).
+      final int player = world.player.index;
+      world.entities.posX[player] = centerX;
+      world.entities.posY[player] = centerY - 4.0;
+      world.entities.health[player] = 100.0;
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      expect(world.entities.health[player], 100.0);
+
+      // Wait almost the entire first interval before stepping onto the
+      // segment, so the player's own exposure to its ordinary ambient
+      // burn (unrelated to the detonation burst) is only a couple of
+      // ticks — negligible against the burst itself.
+      for (int i = 0; i < 118; i++) {
+        world.tick(InputSnapshot());
+      }
+      world.entities.posX[player] = x;
+      world.entities.posY[player] = y;
+      for (int i = 0; i < 3; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 0.09 * 2.10 == 18.9% of max health.
+      expect(world.entities.health[player], closeTo(100.0 * (1 - 0.189), 1.0));
     });
   });
 

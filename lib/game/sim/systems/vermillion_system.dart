@@ -9,6 +9,7 @@ import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
+import 'package:quiverfall/game/sim/hazard_store.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
 
@@ -45,14 +46,41 @@ import 'package:quiverfall/game/sim/telegraph.dart';
 /// path. Charging halts P1's own walk for the wind-up's own duration, so
 /// the line's own origin stays exactly where it was drawn. See ADR 0037.
 ///
-/// **Not built here: P3 (detonating the whole accumulated trail in
-/// sequence; Frost arrows extinguishing a segment).** P3 especially needs
-/// to *track* which hazards are this boss's own trail to sequence them,
-/// and "extinguish" needs hazards to know their own element, which nothing
-/// in `HazardStore` carries yet. Once `bossPhase` reaches 2 this system
-/// stops moving, stops laying trail, stops igniting, and stops charging —
-/// a known, flagged gap, the same posture every other boss's own undone
-/// phase already takes.
+/// **P3, built here: "Detonates the entire accumulated trail in sequence
+/// over 6s, creating a moving safe window the player must chase."**
+/// Walking, laying new trail, the aura, and the charge all stop — P3
+/// replaces the offence entirely. "Track which hazards are this boss's
+/// own trail" turned out to need no new storage at all: every puddle
+/// [EnemyAttack.dropPuddle] already lays is recorded in `HazardStore`
+/// with `owner: primary` (read via `ownerAt`), so a live scan already
+/// answers "which hazards are mine" — and since every segment shares an
+/// identical original lifetime and lay rate, the one with the *least*
+/// `remaining` time left is reliably the *oldest*, giving a correct lay
+/// order with no separate list to maintain. `_tickP3Detonation` counts
+/// however many segments exist the instant P3 begins (`comboStep`, free
+/// here — nothing else in this system touches it) and derives a fixed
+/// per-segment interval from the card's own 6s total
+/// (`bossLastHitAgo`, also free once P2's own charge cooldown stops
+/// reading it); every interval, the currently-oldest surviving segment
+/// detonates for the roster's own derived heavy hit and is released —
+/// `HazardStore.release` plus `TelegraphStore.release` on that segment's
+/// own recorded telegraph handle, not `EnemyAttack.endTelegraph` (which
+/// only ever tracks *one* telegraph per owner via `enemies.
+/// telegraphSlot`; `dropPuddle` never used that bookkeeping in the first
+/// place, since many puddles already coexist under the same owner).
+/// "The moving safe window" is a free consequence, not separately
+/// implemented: ground already detonated is gone (safe), ground not yet
+/// reached keeps burning exactly as it always has, so the safe/lethal
+/// boundary visibly sweeps through the original lay order on its own.
+///
+/// **Not built here: "Frost arrows extinguish trail segments."** This is
+/// two missing primitives stacked, not one: `HazardStore` carries no
+/// element for anything it holds (bolts, shells, puddles alike), *and*
+/// nothing in the sim today lets an arrow collide with a hazard at all —
+/// arrows only ever hit enemies, hazards only ever hit the player. Adding
+/// either is real, separate, wide-blast-radius work (a shared struct
+/// every enemy's own ordnance already uses, and a genuinely new
+/// interaction category) this pass does not attempt. See ADR 0052.
 abstract final class VermillionSystem {
   /// Reused from Husk (docs/05), the same "no stated speed, borrow the base
   /// Carapace archetype's own" choice ADR 0023 already made for Gaunt.
@@ -110,6 +138,17 @@ abstract final class VermillionSystem {
   /// Hollow Warden, Skarn and Gaunt already share.
   static const double _chargeDamage = 0.09 * 2.10;
 
+  // ── P3: the sequenced detonation ──────────────────────────────────────
+  // See ADR 0052.
+
+  /// docs/06 §5 P3's own stated total.
+  static const double _p3DetonationSeconds = 6.0;
+
+  /// A fifth reuse of the same derived heavy hit — the trail's own
+  /// climactic finale deserves the roster's established "how heavy is
+  /// heavy" answer, not a fresh guess.
+  static const double _p3DetonationDamage = _chargeDamage;
+
   /// Places Vermillion's single body. Returns its slot, or -1 if the entity
   /// pool was full or [BossArchetype.vermillion] has no catalogue entry.
   static int spawn({
@@ -166,12 +205,15 @@ abstract final class VermillionSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — halted rather than
-      // left carrying stale velocity into a wall, the same fix ADR 0023
-      // made for Gaunt; any live charge telegraph is cleared too.
+      // P3: walking, new trail, the aura, and the charge all stop —
+      // halted rather than left carrying stale velocity into a wall, the
+      // same fix ADR 0023 made for Gaunt; any live charge telegraph is
+      // cleared too. The trail already laid detonates in sequence
+      // instead (see the class doc comment).
       if (enemies.bossPhase[i] >= 2) {
         Steering.halt(ctx, i);
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
+        _tickP3Detonation(ctx, i, dt);
         continue;
       }
 
@@ -297,5 +339,86 @@ abstract final class VermillionSystem {
 
     store.posX[primary] = toX;
     store.posY[primary] = toY;
+  }
+
+  /// Detonates the accumulated trail one segment at a time, oldest first,
+  /// spread evenly across [_p3DetonationSeconds]. `comboStep` holds how
+  /// many segments are still queued (counted once, the instant this
+  /// first runs); `bossLastHitAgo` holds the fixed interval derived from
+  /// that count, and doubles as the live countdown to the next
+  /// detonation. See the class doc comment for why no separate ordered
+  /// list is needed.
+  static void _tickP3Detonation(AiContext ctx, int primary, double dt) {
+    final EnemyStore enemies = ctx.enemies;
+
+    if (enemies.comboStep[primary] == 0) {
+      final int count = _countOwnedTrailSegments(ctx, primary);
+      if (count == 0) return; // nothing left to detonate, ever
+      enemies.comboStep[primary] = count;
+      enemies.bossLastHitAgo[primary] = _p3DetonationSeconds / count;
+      // `bossTimer` is P1's own trail-interval countdown, mid-cycle the
+      // instant P3 begins — reset to a fresh full interval rather than
+      // inheriting that stale remainder, or the very first detonation
+      // would land early by however much P1's own countdown had left.
+      enemies.bossTimer[primary] = enemies.bossLastHitAgo[primary];
+    }
+
+    enemies.bossTimer[primary] -= dt;
+    if (enemies.bossTimer[primary] > 0) return;
+    enemies.bossTimer[primary] += enemies.bossLastHitAgo[primary];
+
+    final int oldest = _oldestOwnedTrailSegment(ctx, primary);
+    if (oldest < 0) return; // already fully detonated
+
+    _detonateSegment(ctx, primary, oldest);
+    enemies.comboStep[primary]--;
+  }
+
+  static int _countOwnedTrailSegments(AiContext ctx, int primary) {
+    final HazardStore hazards = ctx.hazards;
+    int count = 0;
+    for (int h = 0; h < hazards.capacity; h++) {
+      if (!hazards.isAlive(h)) continue;
+      if (hazards.kindAt(h) != HazardKind.puddle) continue;
+      if (hazards.ownerAt(h) != primary) continue;
+      count++;
+    }
+    return count;
+  }
+
+  /// The puddle with the least time left — every segment shares an
+  /// identical original lifetime and lay rate, so the one closest to its
+  /// own natural expiry is reliably the one laid earliest.
+  static int _oldestOwnedTrailSegment(AiContext ctx, int primary) {
+    final HazardStore hazards = ctx.hazards;
+    int oldest = -1;
+    double leastRemaining = double.infinity;
+    for (int h = 0; h < hazards.capacity; h++) {
+      if (!hazards.isAlive(h)) continue;
+      if (hazards.kindAt(h) != HazardKind.puddle) continue;
+      if (hazards.ownerAt(h) != primary) continue;
+      if (hazards.remaining[h] < leastRemaining) {
+        leastRemaining = hazards.remaining[h];
+        oldest = h;
+      }
+    }
+    return oldest;
+  }
+
+  static void _detonateSegment(AiContext ctx, int primary, int hazardSlot) {
+    final HazardStore hazards = ctx.hazards;
+    EnemyAttack.blast(
+      ctx,
+      source: primary,
+      x: hazards.x[hazardSlot],
+      y: hazards.y[hazardSlot],
+      radius: hazards.radius[hazardSlot],
+      damage: _p3DetonationDamage,
+    );
+    ctx.telegraphs.release(
+      hazards.telegraphSlotAt(hazardSlot),
+      hazards.telegraphSerialAt(hazardSlot),
+    );
+    hazards.release(hazardSlot);
   }
 }
