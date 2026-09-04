@@ -204,7 +204,98 @@ void main() {
     });
   });
 
-  group('past P2', () {
+  List<int> mirrorsOf(SimWorld world, int primary) {
+    final List<int> found = <int>[];
+    for (int j = 0; j < world.entities.highWater; j++) {
+      if (world.entities.alive[j] == 0) continue;
+      if (world.enemies.bossParent[j] != primary) continue;
+      found.add(j);
+    }
+    return found;
+  }
+
+  int realMirrorOf(SimWorld world, int primary) {
+    final int realOrdinal = world.enemies.bossActiveChildIndex[primary];
+    return mirrorsOf(world, primary)
+        .firstWhere((int j) => world.enemies.bossChildIndex[j] == realOrdinal);
+  }
+
+  group('P3: the ice-mirrors', () {
+    test('shatters into three targetable mirrors, exactly one marked real',
+        () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+
+      final List<int> mirrors = mirrorsOf(world, primary);
+      expect(mirrors.length, 3);
+      for (final int m in mirrors) {
+        expect(world.enemies.untargetable[m], 0,
+            reason: 'a mirror the player can never mistakenly hit would '
+                'make the puzzle meaningless');
+      }
+      final int realOrdinal = world.enemies.bossActiveChildIndex[primary];
+      expect(mirrors.where((int m) => world.enemies.bossChildIndex[m] == realOrdinal).length, 1);
+    });
+
+    test('damaging the real mirror reduces the shared health', () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      final int real = realMirrorOf(world, primary);
+      final double before = world.entities.health[real];
+
+      world.entities.health[real] -= 1000;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[real], before - 1000);
+      expect(world.entities.health[primary], before - 1000);
+    });
+
+    test('damaging a fake mirror is refunded in full and heals the real '
+        'one instead', () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      final int real = realMirrorOf(world, primary);
+      final int fake =
+          mirrorsOf(world, primary).firstWhere((int j) => j != real);
+
+      // Leave headroom below max health so the heal is actually visible
+      // rather than clamped away.
+      world.entities.health[real] -= 5000;
+      world.tick(InputSnapshot());
+      final double realHealthBefore = world.entities.health[real];
+      final double fakeHealthBefore = world.entities.health[fake];
+
+      world.entities.health[fake] -= 1000;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[fake], fakeHealthBefore,
+          reason: 'a decoy is never actually killable — the hit is '
+              'refunded in full');
+      expect(world.entities.health[real], realHealthBefore + 1000,
+          reason: 'wrong-target damage heals the real one instead');
+    });
+
+    test("the primary's own death despawns every mirror", () {
+      final (:world, :primary) = spawnRimefather();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
+      final List<int> mirrors = mirrorsOf(world, primary);
+      final int real = realMirrorOf(world, primary);
+
+      world.entities.health[real] = 0;
+      world.tick(InputSnapshot());
+
+      for (final int m in mirrors) {
+        expect(world.entities.alive[m], 0,
+            reason: 'a mirror must not outlive the primary it belongs to');
+      }
+    });
+  });
+
+  group('P3 also stops the cone and the ice', () {
     test('resets the Momentum multiplier and stops growing the ice', () {
       final (:world, :primary) = spawnRimefather();
       world.enemies.bossPhase[primary] = 1;
