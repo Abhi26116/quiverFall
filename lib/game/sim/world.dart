@@ -2186,8 +2186,14 @@ class SimWorld {
             (hero.has(HeroBehaviour.nyxChainKill) ? hero.firstBloodSpeedStacks : 1)
         : 0.0;
 
+    // The Hollow Warden's own P2 ("Crossing its Windlines slows the
+    // player", docs/06 §4) — a separate multiplicative lever from
+    // Momentum's own bonus, so a player mid-Momentum crossing a Warden
+    // line is slowed off their current speed rather than off a lowered
+    // baseline. See ADR 0043.
     final double speed = playerMoveSpeed *
-        (1.0 + playerDraw.moveSpeedBonus + firstBloodBonus);
+        (1.0 + playerDraw.moveSpeedBonus + firstBloodBonus) *
+        playerDraw.windlineSlowFactor;
 
     entities.velX[i] = input.stickX * inv * speed;
     entities.velY[i] = input.stickY * inv * speed;

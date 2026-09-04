@@ -10,6 +10,8 @@ import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
+import 'package:quiverfall/game/sim/sim_config.dart';
+import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 
 /// The Hollow Warden — docs/06 §4, chapter 4's boss. "Tests: understanding
@@ -54,15 +56,32 @@ import 'package:quiverfall/game/sim/systems/draw_system.dart';
 /// Echo's own attack damage, scaled by Tier III's own damage multiplier)
 /// rather than by "80%" of anything. See ADR 0031.
 ///
-/// **Not built here: P2 (lays Windlines, gains Confluence off them;
-/// crossing them slows the player) and P3 (both Windline sets live;
-/// crossing your line through its line creates a Discord — a neutral
-/// detonation damaging whoever is closer).** P3 especially needs an idea
-/// nothing in the sim has any analogue for: a hazard whose *source* is a
-/// crossing between two independently-drawn trail sets, not a single
-/// enemy's own attack. Once `bossPhase` reaches 1, the mirror halts and
-/// the Draw ramp freezes wherever it was — the same posture every other
-/// boss's own undone phases already take.
+/// **P2, built here: "It lays Windlines and gains Confluence off them.
+/// Crossing its Windlines slows the player."** Additive on top of P1's
+/// own mirror/Draw/heavy-shot loop, which keeps running unmodified — see
+/// ADR 0043. Each heavy shot now also lays a Windline segment along its
+/// own flight path, owned by the Warden's own slot rather than the
+/// player's (`WindlineStore`'s own owner field already anticipated this —
+/// see its own doc comment), and sweeps [ConfluenceSystem] against its
+/// own older lines before firing, scaling `_heavyShotDamage` by whatever
+/// stack count it threads — the exact mirror of what a player's own arrow
+/// does, reusing the same primitives (`ConfluenceSystem.sweep`,
+/// `ConfluenceTuning.bonusFor`) rather than new ones. Every tick, the
+/// player's own position is checked against the Warden's own live lines
+/// (the same `_pointNearSegment` shape `BoonSystem.applyWindlineField`
+/// already uses for the reverse direction) and `DrawState.
+/// windlineSlowFactor` — new, genuinely new sim surface — is set
+/// accordingly, read by `SimWorld._applyInput` as a direct multiplier on
+/// move speed.
+///
+/// **Not built here: P3 (both Windline sets live; crossing your line
+/// through its line creates a Discord — a neutral detonation damaging
+/// whoever is closer).** P3 needs an idea nothing in the sim has any
+/// analogue for: a hazard whose *source* is a crossing between two
+/// independently-drawn trail sets, not a single enemy's own attack. Once
+/// `bossPhase` reaches 2, the mirror halts, the Draw ramp freezes
+/// wherever it was, and the player's own slow is cleared — the same
+/// posture every other boss's own undone phases already take.
 abstract final class HollowWardenSystem {
   /// Reused from the ordinary Echo (docs/05 #24) — the same movement speed
   /// and mirror-catch-up gain its own family tree already uses.
@@ -81,6 +100,21 @@ abstract final class HollowWardenSystem {
   /// scaled by Tier III's own damage multiplier (2.10x) — a derived,
   /// reused-anchor number, not an invented one. See the class doc comment.
   static const double _heavyShotDamage = 0.06 * 2.10;
+
+  // ── P2: Windlines and Confluence, mirrored from the player's own kit ─────
+  // See ADR 0043.
+
+  /// Reused verbatim from the player's own arrow trail lifetime.
+  static const double _windlineDuration = SimConfig.windlineDuration;
+
+  /// Reused verbatim from the player's own arrow hit width — the same
+  /// tolerance a Confluence crossing is measured against.
+  static const double _windlineHitWidth = SimConfig.windlineHitWidth;
+
+  /// Reused verbatim from the enemy-side "standing on a Windline" slow
+  /// (`BoonSystem.applyWindlineField`) — the same magnitude, applied in
+  /// the opposite direction.
+  static const double _windlineSlow = SimConfig.windlineSlow;
 
   /// Places the Warden's single, mirroring body. Returns its slot, or -1
   /// if the entity pool was full or [BossArchetype.hollowWarden] has no
@@ -136,20 +170,29 @@ abstract final class HollowWardenSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — the mirror
-      // halts and the ramp simply stops advancing, rather than either
-      // being left mid-chase or silently continuing to threaten.
-      if (enemies.bossPhase[i] >= 1) {
+      // P3 not built yet (see the class doc comment) — the mirror halts,
+      // the ramp simply stops advancing, and the player's own slow is
+      // cleared, rather than any of the three being left stuck mid-effect.
+      if (enemies.bossPhase[i] >= 2) {
         Steering.halt(ctx, i);
+        ctx.playerDraw?.windlineSlowFactor = 1.0;
         continue;
       }
+
+      final bool inP2 = enemies.bossPhase[i] >= 1;
 
       final bool isMoving = _mirror(ctx, i);
       DrawSystem.update(draw, isMoving, dt, ctx.events);
 
       if (draw.tier == DrawTier.three) {
-        _fireHeavyShot(ctx, i);
+        _fireHeavyShot(ctx, i, inP2);
         draw.drawSeconds = 0;
+      }
+
+      if (inP2) {
+        _tickPlayerSlow(ctx, i);
+      } else {
+        ctx.playerDraw?.windlineSlowFactor = 1.0;
       }
     }
   }
@@ -199,20 +242,112 @@ abstract final class HollowWardenSystem {
     return true;
   }
 
-  static void _fireHeavyShot(AiContext ctx, int slot) {
+  static void _fireHeavyShot(AiContext ctx, int slot, bool inP2) {
     final EntityStore store = ctx.entities;
+    final double fromX = store.posX[slot];
+    final double fromY = store.posY[slot];
     final double angle = math.atan2(
-      ctx.playerY - store.posY[slot],
-      ctx.playerX - store.posX[slot],
+      ctx.playerY - fromY,
+      ctx.playerX - fromX,
     );
+
+    double damage = _heavyShotDamage;
+
+    if (inP2) {
+      final double toX = fromX + math.cos(angle) * _boltRange;
+      final double toY = fromY + math.sin(angle) * _boltRange;
+
+      // Swept *before* this shot's own line is added, so every currently
+      // live Warden-owned segment is automatically strictly older —
+      // `nextSerial` names exactly the serial the new segment is about to
+      // receive, the same "read the store's own upcoming id" trick rather
+      // than a second counter.
+      final ConfluenceResult found = ConfluenceSystem.sweep(
+        lines: ctx.lines,
+        fromX: fromX,
+        fromY: fromY,
+        toX: toX,
+        toY: toY,
+        arrowSerial: ctx.lines.nextSerial,
+        ownerIndex: slot,
+        hitWidth: _windlineHitWidth,
+        maxStacks: ConfluenceTuning.defaultMaxStacks,
+        alreadyCrossed: const <int>[],
+        crossedBase: 0,
+        crossedCount: 0,
+      );
+      if (found.stacks > 0) {
+        damage *= 1.0 + ConfluenceTuning.bonusFor(found.stacks);
+      }
+
+      ctx.lines.add(
+        fromX: fromX,
+        fromY: fromY,
+        toX: toX,
+        toY: toY,
+        expiresAt: ctx.now + _windlineDuration,
+        ownerIndex: slot,
+        trailId: ctx.nextEchoTrailId(),
+      );
+    }
+
     EnemyAttack.fireBolt(
       ctx,
       slot,
       angle: angle,
       speed: _boltProjectileSpeed,
-      damage: _heavyShotDamage,
+      damage: damage,
       radius: _boltRadius,
       lifetime: _boltRange / _boltProjectileSpeed,
     );
+  }
+
+  /// Slows the player while they stand on one of the Warden's own live
+  /// Windlines — the mirror image of `BoonSystem.applyWindlineField`'s own
+  /// "enemy standing on the player's line" check, reusing its exact
+  /// `_pointNearSegment` shape (not the private method itself) against
+  /// lines owned by this boss's own slot instead of the player's.
+  static void _tickPlayerSlow(AiContext ctx, int primary) {
+    final DrawState? draw = ctx.playerDraw;
+    if (draw == null) return;
+    if (!ctx.hasPlayer) {
+      draw.windlineSlowFactor = 1.0;
+      return;
+    }
+
+    final double px = ctx.playerX;
+    final double py = ctx.playerY;
+    final double r = ctx.playerRadius;
+
+    final int found =
+        ctx.lineIndex.querySegment(px, py, px, py, r, ctx.segmentScratch);
+    bool standing = false;
+    for (int c = 0; c < found; c++) {
+      final int seg = ctx.segmentScratch[c];
+      if (!ctx.lines.isAlive(seg)) continue;
+      if (ctx.lines.ownerAt(seg) != primary) continue;
+      if (_pointNearSegment(px, py, ctx.lines.x0(seg), ctx.lines.y0(seg),
+          ctx.lines.x1(seg), ctx.lines.y1(seg), r)) {
+        standing = true;
+        break;
+      }
+    }
+
+    draw.windlineSlowFactor = standing ? (1.0 - _windlineSlow) : 1.0;
+  }
+
+  static bool _pointNearSegment(double px, double py, double ax, double ay,
+      double bx, double by, double radius) {
+    final double dx = bx - ax;
+    final double dy = by - ay;
+    final double lenSq = dx * dx + dy * dy;
+    double t = lenSq <= 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    final double cx = ax + dx * t;
+    final double cy = ay + dy * t;
+    final double ox = px - cx;
+    final double oy = py - cy;
+    return ox * ox + oy * oy <= radius * radius;
   }
 }

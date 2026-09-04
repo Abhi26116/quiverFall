@@ -129,6 +129,16 @@ class DrawState {
   /// method. See ADR 0038.
   double momentumEffectivenessMultiplier = 1.0;
 
+  /// Multiplies the player's own move speed directly — a genuinely
+  /// different lever from [momentumEffectivenessMultiplier], which only
+  /// scales Momentum's *reward*. Built for the Hollow Warden's own P2
+  /// ("Crossing its Windlines slows the player", docs/06 §4): set fresh
+  /// every tick by [HollowWardenSystem] from whether the player currently
+  /// stands on one of its live Windlines, the same "recomputed live, not
+  /// accumulated" posture [momentumEffectivenessMultiplier] already uses.
+  /// See ADR 0043.
+  double windlineSlowFactor = 1.0;
+
   DrawTier get tier {
     if (drawSeconds >= tierThreeAt * drawSpeedMultiplier) return DrawTier.three;
     if (drawSeconds >= tierTwoAt * drawSpeedMultiplier) return DrawTier.two;
@@ -162,6 +172,7 @@ class DrawState {
     drawLockRemaining = 0;
     rootRemaining = 0;
     momentumEffectivenessMultiplier = 1.0;
+    windlineSlowFactor = 1.0;
   }
 
   /// Restores the tunables to their unmodified values. Separate from [reset],

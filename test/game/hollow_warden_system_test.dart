@@ -117,8 +117,110 @@ void main() {
     });
   });
 
-  group('past P1', () {
-    test('halts the mirror and freezes the Draw', () {
+  group('P2: Windlines and Confluence', () {
+    test('a heavy shot lays a Windline of its own, owned by the Warden', () {
+      final (:world, :primary) = spawnWarden(
+        playerX: centerX + 0.05,
+      );
+      world.enemies.bossPhase[primary] = 1;
+
+      for (int i = 0; i < 100; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      bool foundOwnLine = false;
+      for (int s = 0; s < world.windlines.capacity; s++) {
+        if (!world.windlines.isAlive(s)) continue;
+        if (world.windlines.ownerAt(s) == primary) foundOwnLine = true;
+      }
+      expect(foundOwnLine, isTrue,
+          reason: 'a P2 heavy shot should lay its own Windline segment');
+    });
+
+    test('threading its own older Windline scales the heavy shot up', () {
+      final (:world, :primary) = spawnWarden(
+        playerX: centerX + 0.05,
+      );
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+
+      // The Warden's mirror point sits within arrival distance of its own
+      // spawn (see the "stops once it catches its own mirror point" test
+      // above), so it stays put at (centerX, centerY) facing dead along
+      // +x toward the player the whole fight — every heavy shot travels
+      // the same horizontal line, y == centerY, x from centerX outward.
+      // A perpendicular segment placed across that line, well clear of
+      // the parallel-rejection band, is guaranteed to be threaded by the
+      // very first shot.
+      world.windlines.add(
+        fromX: centerX + 2.0,
+        fromY: centerY - 2.0,
+        toX: centerX + 2.0,
+        toY: centerY + 2.0,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: primary,
+        trailId: -12345,
+      );
+
+      for (int i = 0; i < 100; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // Bare heavy shot: 0.06 * 2.10 == 12.6% of max health. One threaded
+      // stack adds ConfluenceTuning.bonusByStacks[1] == 0.40 on top:
+      // 100 - 100 * 0.126 * 1.40 == 82.36.
+      expect(world.entities.health[player], closeTo(82.36, 1e-6));
+    });
+
+    test('a heavy shot that threads nothing deals the bare amount', () {
+      final (:world, :primary) = spawnWarden(
+        playerX: centerX + 0.05,
+      );
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+
+      for (int i = 0; i < 100; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 100 - 100 * 0.126 == 87.4, no Confluence bonus.
+      expect(world.entities.health[player], closeTo(87.4, 1e-6));
+    });
+
+    test('the player is slowed while standing on one of its live Windlines',
+        () {
+      final (:world, :primary) = spawnWarden();
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+      final double px = world.entities.posX[player];
+      final double py = world.entities.posY[player];
+
+      world.windlines.add(
+        fromX: px - 2.0,
+        fromY: py,
+        toX: px + 2.0,
+        toY: py,
+        expiresAt: world.elapsedSeconds + 999,
+        ownerIndex: primary,
+        trailId: -54321,
+      );
+
+      world.tick(InputSnapshot());
+
+      expect(world.playerDraw.windlineSlowFactor, closeTo(0.92, 1e-9));
+    });
+
+    test('the player is not slowed standing clear of any Warden line', () {
+      final (:world, :primary) = spawnWarden();
+      world.enemies.bossPhase[primary] = 1;
+      world.tick(InputSnapshot());
+      expect(world.playerDraw.windlineSlowFactor, 1.0);
+    });
+  });
+
+  group('past P2', () {
+    test('halts the mirror, freezes the Draw, and clears the player\'s '
+        'slow', () {
       final (:world, :primary) = spawnWarden(
         playerX: centerX + 0.05,
       );
@@ -128,13 +230,16 @@ void main() {
       final double drawBefore = world.hollowWardenDraw.drawSeconds;
       expect(drawBefore, greaterThan(0));
 
-      world.enemies.bossPhase[primary] = 1;
+      world.playerDraw.windlineSlowFactor = 0.5;
+
+      world.enemies.bossPhase[primary] = 2;
       // One extra tick for the halt to actually take effect — the same
       // one-transitional-tick ordering every other boss's own phase-halt
       // test already accounts for (ADR 0023).
       world.tick(InputSnapshot());
       final double posXAfterHalt = world.entities.posX[primary];
       final double posYAfterHalt = world.entities.posY[primary];
+      expect(world.playerDraw.windlineSlowFactor, 1.0);
 
       for (int i = 0; i < 60; i++) {
         world.tick(InputSnapshot());
