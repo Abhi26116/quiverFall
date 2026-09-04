@@ -3,21 +3,23 @@ import 'dart:math' as math;
 import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
+import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
 import 'package:quiverfall/game/sim/ai/steering.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 
 /// Gaunt, the Iron Tide — docs/06 §2, chapter 2's boss. "Tests: flanking."
 ///
-/// **P1 only, built here.** "A colossal shield-bearer. Frontal 180° arc
-/// takes 5% damage... Slow advance, shield always facing the player.
-/// Rotates 70°/s — beatable by circling." A single body the whole fight
-/// (no split, unlike Cinder Choir/Skarn) — the entire lesson is positional:
-/// the shield tracks the player at a *capped* turn rate
-/// (`Steering.faceToward`, the same primitive Husk's own family tree
-/// already turns with), so a player who strafes faster than 70°/s walks
-/// around behind it while the front stays locked on where they used to be.
+/// **P1: "A colossal shield-bearer. Frontal 180° arc takes 5% damage...
+/// Slow advance, shield always facing the player. Rotates 70°/s — beatable
+/// by circling."** A single body the whole fight (no split, unlike Cinder
+/// Choir/Skarn) — the entire P1 lesson is positional: the shield tracks
+/// the player at a *capped* turn rate (`Steering.faceToward`, the same
+/// primitive Husk's own family tree already turns with), so a player who
+/// strafes faster than 70°/s walks around behind it while the front stays
+/// locked on where they used to be.
 ///
 /// The frontal arc reuses the *existing* plate system (`plateHalfArc`,
 /// `_armourFor`'s arc check) but not its Tier-scaled reduction — docs/06 §2
@@ -25,15 +27,34 @@ import 'package:quiverfall/game/sim/events.dart';
 /// caveat, so `EnemyStore.plateFlatFactor` (new) overrides the usual
 /// 10/55/100% switch. See ADR 0023.
 ///
-/// **Not built here: P2 (the shockwave slam, faster rotation) and P3
-/// (dropping the shield for +80% speed and a 3-hit combo).** Once
-/// `bossPhase` reaches 1 this system stops moving and turning the boss
-/// entirely — a known, flagged gap, not a silent one; docs/06's own
-/// "Tests: flanking" lesson lives entirely in P1, so this is a real,
-/// standalone slice rather than a fragment of a larger one.
+/// **P2: "Shield slams, sending a crimson shockwave ring outward (jumpable
+/// only by being outside 5u — there is no jump, so this is a positioning
+/// check). Rotation rises to 110°/s."** A "ring outward" is a rendering
+/// question, not a sim one — the hit test at resolve time is the same
+/// `beginCircle`/`playerInCircle` every other boss's own circle attack
+/// already uses, at the card's own stated 5u radius. Unlike Skarn's own
+/// P1 slam (ADR 0034), this one is *not* range-gated: it fires on a plain
+/// cooldown regardless of distance, since the shockwave's own radius
+/// already *is* the range question — "outside 5u" is the entire dodge.
+/// The wind-up (1.8s) and cooldown (2.0s) reuse Skarn's own "enormous
+/// telegraph" magnitudes (ADR 0034), and the damage reuses the same
+/// derived "heavy hit" anchor Hollow Warden's shot and Skarn's slam
+/// already share (the Thresher's own 9%, scaled by Tier III's own 2.10x
+/// multiplier) — a third boss agreeing on what "heavy" means numerically,
+/// not a fourth independently-guessed number. The shield keeps advancing
+/// and tracking the player between slams, just at P2's own faster,
+/// GDD-stated rotation rate. See ADR 0035.
+///
+/// **Not built here: P3 (dropping the shield for +80% speed and a 3-hit
+/// combo with a stagger window).** Once `bossPhase` reaches 2 this system
+/// stops moving, turning, and slamming entirely — the same posture P1's
+/// own gap already took before P2 was built.
 abstract final class GauntSystem {
   /// docs/06 §2 P1's own stated rotation rate.
   static const double _p1RotationDegreesPerSecond = 70.0;
+
+  /// docs/06 §2 P2's own stated rotation rate.
+  static const double _p2RotationDegreesPerSecond = 110.0;
 
   /// docs/06 §2's own stated frontal factor.
   static const double _frontalFactor = 0.05;
@@ -47,6 +68,21 @@ abstract final class GauntSystem {
   /// docs/06 gives no speed number of its own for "slow advance". See ADR
   /// 0023.
   static const double _p1Speed = 1.0;
+
+  // ── P2: the shockwave slam ───────────────────────────────────────────────
+  // See ADR 0035.
+
+  /// docs/06 §2 P2's own stated radius — "outside 5u" is the entire dodge.
+  static const double _p2SlamRadius = 5.0;
+
+  /// Reused from Skarn's own "enormous telegraph" magnitude (ADR 0034).
+  static const double _p2SlamWindUpSeconds = 1.8;
+  static const double _p2SlamCooldownSeconds = 2.0;
+
+  /// Derived, not guessed a third time: the Thresher's own 9% anchor
+  /// scaled by Tier III's own 2.10x damage multiplier — the same
+  /// derivation Hollow Warden's shot and Skarn's slam already use.
+  static const double _p2SlamDamage = 0.09 * 2.10;
 
   /// Places Gaunt's single, always-plated body. Returns its slot, or -1 if
   /// the entity pool was full or [BossArchetype.gauntIronTide] has no
@@ -93,12 +129,14 @@ abstract final class GauntSystem {
     return slot;
   }
 
-  /// Turns Gaunt's shield to track the player (capped at P1's own rotation
-  /// rate) and advances it slowly toward them.
+  /// Turns Gaunt's shield to track the player (capped at the current
+  /// phase's own rotation rate), advances it toward them, and — once P2
+  /// begins — slams on a cooldown.
   static void update(AiContext ctx) {
     final EntityStore store = ctx.entities;
     final EnemyStore enemies = ctx.enemies;
     final ContentLibrary content = ctx.content;
+    final double dt = ctx.dt;
 
     final int high = store.highWater;
     for (int i = 0; i < high; i++) {
@@ -111,28 +149,90 @@ abstract final class GauntSystem {
         continue;
       }
 
-      // P2/P3 not built yet (see the class doc comment) — frozen exactly
-      // where `BossPhaseSystem` leaves it once past P1, rather than
-      // continuing to move and turn at P1's own (now stale) numbers. Halted
-      // explicitly rather than merely skipped: `MovementSystem` still
-      // integrates whatever velocity `moveToward` last set, so a P1→P2
-      // transition mid-stride would otherwise leave it sliding in a
+      // P3 not built yet (see the class doc comment) — frozen exactly
+      // where `BossPhaseSystem` leaves it once past P2, rather than
+      // continuing to move, turn and slam at P2's own (now stale) numbers.
+      // Halted explicitly rather than merely skipped: `MovementSystem`
+      // still integrates whatever velocity `moveToward` last set, so a
+      // P2→P3 transition mid-stride would otherwise leave it sliding in a
       // straight line — into a wall, and stuck there — for the rest of the
       // fight.
-      if (enemies.bossPhase[i] >= 1) {
+      if (enemies.bossPhase[i] >= 2) {
         Steering.halt(ctx, i);
+        if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
         continue;
       }
       if (!ctx.hasPlayer) continue;
 
+      final bool inP2 = enemies.bossPhase[i] >= 1;
       Steering.faceToward(
         ctx,
         i,
         ctx.playerX,
         ctx.playerY,
-        _p1RotationDegreesPerSecond,
+        inP2 ? _p2RotationDegreesPerSecond : _p1RotationDegreesPerSecond,
       );
-      Steering.moveToward(ctx, i, ctx.playerX, ctx.playerY, _p1Speed);
+
+      if (inP2) {
+        _tickP2Slam(ctx, i, dt);
+      } else {
+        Steering.moveToward(ctx, i, ctx.playerX, ctx.playerY, _p1Speed);
+      }
+    }
+  }
+
+  /// The shockwave cycle: advance between slams, plant its feet and wind
+  /// up on a plain cooldown (not range-gated — see the class doc comment),
+  /// resolve into a lethal circle at the card's own stated radius.
+  static void _tickP2Slam(AiContext ctx, int primary, double dt) {
+    final EntityStore store = ctx.entities;
+    final EnemyStore enemies = ctx.enemies;
+
+    if (enemies.stateOf(primary) == AiState.windUp) {
+      Steering.halt(ctx, primary);
+      enemies.stateTimer[primary] -= dt;
+      if (enemies.stateTimer[primary] > 0) return;
+      _resolveShockwave(ctx, primary);
+      enemies.state[primary] = AiState.idle.index;
+      enemies.attackCooldown[primary] = _p2SlamCooldownSeconds;
+      return;
+    }
+
+    if (enemies.attackCooldown[primary] > 0) {
+      enemies.attackCooldown[primary] -= dt;
+      Steering.moveToward(ctx, primary, ctx.playerX, ctx.playerY, _p1Speed);
+      return;
+    }
+
+    Steering.halt(ctx, primary);
+    enemies.state[primary] = AiState.windUp.index;
+    enemies.stateTimer[primary] = _p2SlamWindUpSeconds;
+    EnemyAttack.beginCircle(
+      ctx,
+      primary,
+      store.posX[primary],
+      store.posY[primary],
+      _p2SlamRadius,
+      _p2SlamWindUpSeconds,
+    );
+  }
+
+  static void _resolveShockwave(AiContext ctx, int primary) {
+    final EntityStore store = ctx.entities;
+    final double x = store.posX[primary];
+    final double y = store.posY[primary];
+
+    EnemyAttack.beginCircle(
+      ctx,
+      primary,
+      x,
+      y,
+      _p2SlamRadius,
+      0,
+      severity: TelegraphSeverity.lethal,
+    );
+    if (EnemyAttack.playerInCircle(ctx, x, y, _p2SlamRadius)) {
+      EnemyAttack.damagePlayer(ctx, _p2SlamDamage, source: primary);
     }
   }
 }

@@ -1,14 +1,18 @@
+import 'dart:math' as math;
+
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// Gaunt, the Iron Tide — P1 only (docs/06 §2): a single body whose frontal
+/// Gaunt, the Iron Tide — P1/P2 (docs/06 §2): a single body whose frontal
 /// 180° arc takes a flat 5% at any Draw tier, and whose shield turns to
 /// track the player at a capped rate, which is what makes flanking real.
+/// P2 adds a shockwave slam and a faster rotation rate (ADR 0035).
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e7;
@@ -123,7 +127,7 @@ void main() {
           reason: 'the player is east of it — it should have advanced east');
     });
 
-    test('movement and turning stop once past P1', () {
+    test('movement and turning stop once past P2', () {
       // Diagonal, so posX genuinely moves too — a due-south player would
       // leave posX unchanged for the entire test regardless of whether the
       // halt fix below does anything at all.
@@ -132,11 +136,11 @@ void main() {
         playerY: centerY - 3.0,
       );
       // Let it move for real first — a stale velocity from mid-stride is
-      // exactly what a P1→P2 transition must not leave it sliding on.
+      // exactly what a P2→P3 transition must not leave it sliding on.
       for (int i = 0; i < 30; i++) {
         world.tick(InputSnapshot());
       }
-      world.enemies.bossPhase[primary] = 1;
+      world.enemies.bossPhase[primary] = 2;
       // `MovementSystem` still integrates the velocity `moveToward` set on
       // the tick just before the phase changed — one tick's worth of
       // residual drift, then `Steering.halt` (called later that same tick)
@@ -152,6 +156,75 @@ void main() {
 
       expect(world.entities.posX[primary], posBefore);
       expect(world.entities.facing[primary], facingBefore);
+    });
+  });
+
+  group('P2: the shockwave slam', () {
+    test('the rotation rate rises to 110°/s', () {
+      final (:world, :primary) = spawnGaunt(
+        playerX: centerX,
+        playerY: centerY - 4.0,
+      );
+      world.enemies.bossPhase[primary] = 1;
+
+      world.tick(InputSnapshot());
+      // At 110°/s, one 1/60s tick can turn at most 110/60 ≈ 1.833° —
+      // noticeably more than P1's own ~1.167° cap in the same tick.
+      final double facing = world.entities.facing[primary].abs();
+      expect(facing, greaterThan(70 / 60 * math.pi / 180));
+      expect(facing, lessThan(0.04));
+    });
+
+    test('winds up, then resolves a lethal ring at the stated 5u radius',
+        () {
+      final (:world, :primary) = spawnGaunt(playerX: centerX + 2.0);
+      world.enemies.bossPhase[primary] = 1;
+      final int player = world.player.index;
+      expect(world.entities.health[player], 100.0);
+
+      world.tick(InputSnapshot());
+      final int telegraphSlot = world.enemies.telegraphSlot[primary];
+      expect(telegraphSlot, greaterThanOrEqualTo(0));
+      expect(world.telegraphs.severityAt(telegraphSlot), TelegraphSeverity.warning);
+
+      // Wind-up is 1.8s (108 ticks); comfortable margin past it.
+      for (int i = 0; i < 115; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 9% * 2.10 — the same derived "heavy hit" every other boss's own
+      // slam/shot already uses.
+      expect(world.entities.health[player], closeTo(100.0 * (1 - 0.189), 1e-6));
+    });
+
+    test('a player outside 5u when it resolves takes nothing', () {
+      final (:world, :primary) = spawnGaunt(playerX: centerX + 2.0);
+      world.enemies.bossPhase[primary] = 1;
+      // Committed one tick in, same as every other telegraphed circle.
+      world.tick(InputSnapshot());
+
+      final int player = world.player.index;
+      world.entities.posX[player] = centerX + 8.9;
+      world.entities.posY[player] = centerY;
+
+      for (int i = 0; i < 115; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.health[player], 100.0);
+    });
+
+    test('keeps advancing between slams', () {
+      final (:world, :primary) = spawnGaunt(playerX: centerX + 6.0);
+      world.enemies.bossPhase[primary] = 1;
+      final double startX = world.entities.posX[primary];
+
+      // Past the first slam's own wind-up + cooldown (108 + 120 ticks).
+      for (int i = 0; i < 240; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.entities.posX[primary], greaterThan(startX));
     });
   });
 }
