@@ -26,6 +26,7 @@ import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/spatial_hash.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/ai_system.dart';
+import 'package:quiverfall/game/sim/systems/arclight_system.dart';
 import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
 import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
@@ -620,6 +621,7 @@ class SimWorld {
     SilversongSystem.update(ai);
     VermillionSystem.update(ai);
     RimefatherSystem.update(ai);
+    ArclightSystem.update(ai);
 
     AiSystem.update(ai);
 
@@ -2434,6 +2436,22 @@ class SimWorld {
   /// does the real work. Returns its slot.
   int spawnRimefather(double x, double y, {required double health}) =>
       RimefatherSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Arclight — a single, stationary body that spawns Swarmlings
+  /// (Rift Maw's own cadence) and chains a lethal line to each one still
+  /// alive. Test/tool entry point, the same role [spawnBoss] plays for the
+  /// generic case; [ArclightSystem.spawn] does the real work. Returns its
+  /// slot.
+  int spawnArclight(double x, double y, {required double health}) =>
+      ArclightSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

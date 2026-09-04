@@ -109,3 +109,14 @@ progress) needed a genuinely new primitive — `DrawState.rootRemaining` —
 the first campaign boss since Cinder Choir's own linked-health slot to
 require new sim surface area rather than composing entirely from what
 already existed.
+
+**Update, same day:** and a seventh — Arclight (ADR 0027), chapter 7, the
+first boss requiring **zero** new sim surface area at all: its own "chain
+lightning to any active Swarmlings" mechanic is the Rift Maw's own
+add-spawning (docs/05 #22) plus Cinder Choir's own tether sweep (ADR 0019),
+composed rather than extended. Also the first boss whose own "children" are
+real, independently-alive ordinary enemies rather than inert bare bodies —
+which means the room-clear condition this ADR established ("zero alive
+enemy entities", not "the boss died") now visibly matters: a player who
+kills Arclight while Swarmlings are still up must still clear them before
+the room does.
