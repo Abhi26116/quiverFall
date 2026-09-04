@@ -1,4 +1,5 @@
 import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/enemy_store.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
@@ -201,37 +202,54 @@ void main() {
     });
   });
 
-  group('past P2', () {
-    test('stops screaming, stops growing pillars, and any existing pillar '
-        'stops locking', () {
+  group('P3: permanent Draw-lock', () {
+    test('stops screaming and stops growing pillars — the lock itself is '
+        'now ambient', () {
       final (:world, :primary) = spawnSilversong();
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
 
       world.enemies.bossPhase[primary] = 1;
       world.tick(InputSnapshot());
-      final int pillar = pillarsOf(world, primary).first;
       for (int i = 0; i < 40; i++) {
         world.tick(InputSnapshot());
       }
-      expect(world.enemies.state[pillar], isNot(AiState.windUp.index));
+      final int pillarCountInP2 = pillarsOf(world, primary).length;
+      expect(pillarCountInP2, greaterThan(0));
 
       world.enemies.bossPhase[primary] = 2;
       world.tick(InputSnapshot());
       expect(world.enemies.telegraphSlot[primary], -1);
 
-      // No further screams, no further pillars, and standing directly on
-      // the existing one does nothing, even given plenty of time.
-      world.playerDraw.drawLockRemaining = 0;
-      final int player = world.player.index;
-      world.entities.posX[player] = world.entities.posX[pillar];
-      world.entities.posY[player] = world.entities.posY[pillar];
-      final int pillarCountBefore = pillarsOf(world, primary).length;
-      for (int i = 0; i < 1300; i++) {
+      for (int i = 0; i < 300; i++) {
         world.tick(InputSnapshot());
       }
-      expect(world.playerDraw.drawLockRemaining, 0.0);
-      expect(pillarsOf(world, primary).length, pillarCountBefore);
+      expect(pillarsOf(world, primary).length, pillarCountInP2,
+          reason: 'P3 grows no further pillars — any already standing are '
+              'harmless leftovers');
+    });
+
+    test('locks the player permanently, anywhere in the room — Draw-lock '
+        'only denies tier progress, so Momentum still builds', () {
+      final (:world, :primary) = spawnSilversong(
+        // Far from the boss's own body and from where any pillar could
+        // have landed — the ambient lock must not depend on position.
+        playerX: centerX + 6.0,
+        playerY: centerY + 3.0,
+      );
+      world.enemies.bossPhase[primary] = 2;
+
+      world.tick(InputSnapshot());
+      expect(world.playerDraw.isDrawLocked, isTrue);
+      expect(world.playerDraw.drawSeconds, 0.0);
+
+      // Standing still for well over a Tier III's own threshold never
+      // ramps the Draw while the lock holds.
+      for (int i = 0; i < 200; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.playerDraw.isDrawLocked, isTrue);
+      expect(world.playerDraw.tier, DrawTier.one);
     });
   });
 }

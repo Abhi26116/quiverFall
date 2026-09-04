@@ -44,13 +44,21 @@ import 'package:quiverfall/game/spawn/enemy_spawner.dart';
 /// cone already makes — the same effect, the same number, a different
 /// trigger, not a second lock duration invented for it. See ADR 0036.
 ///
-/// **Not built here: P3 ("Permanent Draw-lock. The entire final third must
-/// be won at Tier I with maximum Momentum").** Once `bossPhase` reaches 2
-/// this system stops screaming and stops growing new pillars — any pillar
-/// already standing also stops applying its own lock, the same "the whole
-/// mechanic freezes, not just the parts still mid-cycle" posture every
-/// other boss's own undone phase already takes, chosen deliberately here
-/// over leaving placed objects half-alive in a phase nothing has built.
+/// **P3, built here: "Permanent Draw-lock. The entire final third must be
+/// won at Tier I with maximum Momentum."** Read literally — an ambient
+/// effect, not a dodgeable attack — rather than "the cone just keeps
+/// firing forever": once `bossPhase` reaches 2, the cone stops winding up
+/// and no new pillar is grown (any pillar already standing keeps
+/// existing, harmlessly redundant, rather than being torn down), and a
+/// new `_tickPermanentLock` re-applies `DrawState.applyDrawLock` directly,
+/// every tick, with no telegraph at all. This needed genuinely zero new
+/// mechanism: `applyDrawLock` only ever suppresses *tier progress*, never
+/// Momentum itself (`DrawState.rootRemaining`'s own doc comment already
+/// states this is exactly why Momentum builds exist as a real
+/// alternative) — a continuously-refreshed lock and an unlocked Momentum
+/// system together already *are* "Tier I with maximum Momentum," with no
+/// extra rule needed to keep the player capped at Tier I specifically. See
+/// ADR 0045.
 abstract final class SilversongSystem {
   /// docs/06 §3's own stated lock duration — reused for both the cone and
   /// the pillars; the same effect deserves the same number, not two.
@@ -154,12 +162,13 @@ abstract final class SilversongSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — everything freezes,
-      // including any pillar already standing, rather than leaving placed
-      // objects half-alive in a phase nothing has built.
+      // P3: the cone itself stops (see the class doc comment) — the lock
+      // is now ambient, not attack-driven — but any pillar mid-formation
+      // still needs its own telegraph cleared rather than left forever.
       if (enemies.bossPhase[i] >= 2) {
         if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
         _clearPillarTelegraphs(ctx, i);
+        _tickPermanentLock(ctx);
         continue;
       }
 
@@ -327,5 +336,14 @@ abstract final class SilversongSystem {
       if (enemies.bossParent[j] != primary) continue;
       if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
     }
+  }
+
+  /// P3's whole mechanic: re-applies the same [_drawLockSeconds] lock
+  /// every tick, no telegraph, no position check — `applyDrawLock`'s own
+  /// "refreshes to the longer of current remaining and this" rule means a
+  /// tick-sized gap in coverage never opens up, so this reads as a
+  /// genuinely permanent lock rather than a fast-repeating one.
+  static void _tickPermanentLock(AiContext ctx) {
+    ctx.playerDraw?.applyDrawLock(_drawLockSeconds);
   }
 }
