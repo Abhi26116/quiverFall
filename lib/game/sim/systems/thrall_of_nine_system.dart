@@ -55,14 +55,25 @@ import 'package:quiverfall/game/sim/telegraph.dart';
 /// by equalling the first when there is no second (P1, or only one living
 /// sigil remains). See ADR 0041.
 ///
-/// **Not built here: P3 ("absorbs all remaining sigils for +25% damage
-/// each... a player who destroyed five sigils fights a fundamentally
-/// different, easier phase 3").** Needs a damage multiplier keyed to
-/// however many sigils survived to that point — real, scoped work not
-/// attempted here. Once `bossPhase` reaches 2, the rotation and orbit both
-/// freeze and every live telegraph (the primary's own, and any live second
-/// ability's own) is cleared — the same posture every other boss's own
-/// undone phase already takes.
+/// **P3, built here: "Absorbs all remaining sigils for +25% damage each.
+/// A player who destroyed five sigils fights a fundamentally different,
+/// easier phase 3."** Read as continuing P2's own exact orbit/rotation
+/// mechanics unmodified (docs/06 states no further change to either),
+/// with one new number layered on top: the instant `bossPhase` reaches 2,
+/// however many sigils are still alive at that exact moment are counted
+/// *once* and locked in as a permanent +25%-per-survivor damage bonus on
+/// every hit for the rest of the fight — "the choices you made 60 seconds
+/// ago," not a live count a player could still influence by killing more
+/// sigils mid-P3. The sigils themselves are not despawned ("absorbed" is
+/// read as flavour for where the bonus came from, not a literal removal
+/// of the still-orbiting, still-independently-killable bodies) — P3's own
+/// rotation still skips whichever have died, exactly as P1/P2 already do,
+/// so a player who kept killing sigils into P3 still shortens the
+/// rotation, just no longer changes the damage bonus already locked in.
+/// The one-time snapshot uses `bossChildIndex` (free on the *primary's*
+/// own slot — every existing use of that field is on a child) as a 0/1
+/// latch, and `bossLastHitAgo` (unused anywhere in this file until now) to
+/// hold the locked bonus fraction itself. See ADR 0046.
 abstract final class ThrallOfNineSystem {
   static const int sigilCount = 9;
 
@@ -91,6 +102,10 @@ abstract final class ThrallOfNineSystem {
   /// range and footprint, the same "one damage anchor, several shapes"
   /// choice Cinder Choir's own P2/P3 already made.
   static const double _abilityDamage = 0.09;
+
+  /// docs/06's own P3 number — a permanent damage bonus per sigil that
+  /// survived into P3, locked in once at the P2→P3 transition.
+  static const double _p3DamageBonusPerSigil = 0.25;
 
   // ── Cone ability (sigil index % 3 == 0) — Silversong/Rimefather's own
   // numbers (ADR 0024/0026).
@@ -195,13 +210,13 @@ abstract final class ThrallOfNineSystem {
         continue;
       }
 
-      // P3 not built yet (see the class doc comment) — frozen, orbit and
-      // rotation both stopped, every live telegraph (the primary's own,
-      // and any live second ability's own on a sigil) cleared, rather
-      // than left mid-wind-up or mid-orbit forever.
+      // P3: the orbit and rotation both keep running exactly as P2 already
+      // has them (see the class doc comment) — the only new behaviour is
+      // the one-time damage-bonus snapshot below.
       if (enemies.bossPhase[i] >= 2) {
-        if (EnemyAttack.hasTelegraph(ctx, i)) EnemyAttack.endTelegraph(ctx, i);
-        _clearSigilTelegraphs(ctx, i);
+        _tickP3DamageBonus(ctx, i);
+        _orbit(ctx, i, dt, true);
+        _tickRotation(ctx, i, dt, true);
         continue;
       }
 
@@ -355,18 +370,35 @@ abstract final class ThrallOfNineSystem {
         hit = EnemyAttack.playerInCircle(ctx, x, y, _circleRadius);
     }
 
-    if (hit) EnemyAttack.damagePlayer(ctx, _abilityDamage, source: primary);
+    if (hit) {
+      // P1/P2: `bossLastHitAgo` is still its own zero default, so this is
+      // `_abilityDamage * 1.0` — unchanged from before P3 existed. P3:
+      // the bonus locked in by `_tickP3DamageBonus`.
+      final double bonus = ctx.enemies.bossLastHitAgo[primary];
+      EnemyAttack.damagePlayer(ctx, _abilityDamage * (1.0 + bonus), source: primary);
+    }
   }
 
-  static void _clearSigilTelegraphs(AiContext ctx, int primary) {
-    final EntityStore store = ctx.entities;
+  /// Counts however many sigils are alive at the *exact* moment this
+  /// first runs after `bossPhase` reaches 2, and locks that count in as a
+  /// permanent damage bonus — `bossChildIndex[primary]` (free; every
+  /// other use of that field is on a child, never the primary itself)
+  /// gates this to run exactly once, so a sigil killed later in P3
+  /// shortens the rotation without changing a bonus already earned.
+  static void _tickP3DamageBonus(AiContext ctx, int primary) {
     final EnemyStore enemies = ctx.enemies;
+    if (enemies.bossChildIndex[primary] != 0) return;
+    enemies.bossChildIndex[primary] = 1;
+
+    final EntityStore store = ctx.entities;
+    int survivors = 0;
     final int high = store.highWater;
     for (int j = 0; j < high; j++) {
       if (store.alive[j] == 0) continue;
       if (enemies.bossParent[j] != primary) continue;
-      if (EnemyAttack.hasTelegraph(ctx, j)) EnemyAttack.endTelegraph(ctx, j);
+      survivors++;
     }
+    enemies.bossLastHitAgo[primary] = _p3DamageBonusPerSigil * survivors;
   }
 
   /// This Thrall's own living sigil at ordinal [sigilIndex], or -1.

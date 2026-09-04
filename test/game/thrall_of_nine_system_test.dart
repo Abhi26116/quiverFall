@@ -200,31 +200,74 @@ void main() {
     });
   });
 
-  group('past P2', () {
-    test('freezes the orbit, stops the rotation, and clears every live '
-        'telegraph', () {
+  group('P3: absorbed sigils', () {
+    test('locks in a permanent damage bonus equal to however many sigils '
+        'survived to the transition', () {
       final (:world, :primary) = spawnThrall();
-      for (int i = 0; i < 10; i++) {
+      final List<int> sigils = sigilsOf(world, primary);
+      // Kill every sigil but the first (a cone, ordinal 0) — with only one
+      // survivor, no *second* ability can fire this turn (the sentinel
+      // "equals first" rule), so exactly one hit lands and the resulting
+      // health is unambiguous.
+      for (int k = 1; k < sigils.length; k++) {
+        world.entities.health[sigils[k]] = 0;
+      }
+      for (int i = 0; i < 5; i++) {
         world.tick(InputSnapshot());
       }
-      expect(world.enemies.telegraphSlot[primary], greaterThanOrEqualTo(0));
+      expect(sigilsOf(world, primary).length, 1);
 
       world.enemies.bossPhase[primary] = 2;
-      world.tick(InputSnapshot());
-      expect(world.enemies.telegraphSlot[primary], -1);
+      final int player = world.player.index;
 
+      // 0.6s wind-up plus a margin.
+      for (int i = 0; i < 45; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      // 0.09 * (1 + 0.25*1) == 0.1125 == 11.25% of max health.
+      expect(world.entities.health[player], closeTo(88.75, 1e-6));
+    });
+
+    test('killing more sigils during P3 does not change the bonus already '
+        'locked in', () {
+      final (:world, :primary) = spawnThrall();
+      world.enemies.bossPhase[primary] = 2;
+      // The snapshot latches on the very first P3 tick, all nine still
+      // alive.
+      world.tick(InputSnapshot());
+      expect(world.enemies.bossLastHitAgo[primary], closeTo(0.25 * 9, 1e-9));
+
+      for (final int s in sigilsOf(world, primary)) {
+        world.entities.health[s] = 0;
+      }
+      for (int i = 0; i < 40; i++) {
+        world.tick(InputSnapshot());
+      }
+
+      expect(world.enemies.bossLastHitAgo[primary], closeTo(0.25 * 9, 1e-9),
+          reason: 'the bonus reflects P1/P2 choices, not P3 kills');
+    });
+
+    test('the orbit keeps running in P3, unlike every earlier undone-phase '
+        'freeze', () {
+      final (:world, :primary) = spawnThrall();
+      world.enemies.bossPhase[primary] = 2;
+      world.tick(InputSnapshot());
       final int sigil = sigilsOf(world, primary).first;
       final double sigilX = world.entities.posX[sigil];
       final double sigilY = world.entities.posY[sigil];
-      final int activeIndexBefore = world.enemies.bossActiveChildIndex[primary];
 
-      for (int i = 0; i < 200; i++) {
+      for (int i = 0; i < 60; i++) {
         world.tick(InputSnapshot());
       }
 
-      expect(world.entities.posX[sigil], sigilX);
-      expect(world.entities.posY[sigil], sigilY);
-      expect(world.enemies.bossActiveChildIndex[primary], activeIndexBefore);
+      expect(
+        world.entities.posX[sigil] != sigilX ||
+            world.entities.posY[sigil] != sigilY,
+        isTrue,
+        reason: 'P3 keeps the orbit running — only the damage bonus is new',
+      );
     });
   });
 }
