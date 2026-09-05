@@ -1114,6 +1114,23 @@ abstract final class ProjectileSystem {
         store.posX[target] += dx / dist * actualPull;
         store.posY[target] += dy / dist * actualPull;
       }
+
+      // *Anchor* (T3b) — "pulled enemies are rooted 0.6 s" (docs/07's own
+      // number). Reuses Frost's own hard-stop primitive directly
+      // (`StatusStore.frozenRemaining`, the same "velocity zeroed,
+      // telegraph cancelled" effect `AiSystem._freeze` already gives any
+      // frozen enemy) rather than inventing a second, narrower root — this
+      // is Rook's own crit-pull moment, not an elemental proc, so the
+      // bonus damage `isFrozen` also grants elsewhere is a real, if
+      // unstated, side effect of the reuse, not a new bonus invented for
+      // this talent. "Never shortens an active effect" — the same rule
+      // `DrawState.applyDrawLock`/`applyRoot` already use — so a genuine
+      // Frost freeze already running is never cut short by a briefer one.
+      if (hero.has(HeroBehaviour.rookAnchor) &&
+          status != null &&
+          _rookAnchorDuration > status.frozenRemaining[target]) {
+        status.frozenRemaining[target] = _rookAnchorDuration;
+      }
     }
 
     // Death is **not** resolved here. [AiSystem]'s death pass owns it, because a
@@ -1241,6 +1258,9 @@ abstract final class ProjectileSystem {
   static const int _rookGroupingCountCap = 4;
   static const double _rookGroupingBonus = 0.12;
   static const double _rookDenserGroupingBonus = 0.18;
+
+  /// *Anchor* (T3b) — docs/07's own stated number.
+  static const double _rookAnchorDuration = 0.6;
 
   static const double _selaBrittleDamageBonus = 0.45;
 

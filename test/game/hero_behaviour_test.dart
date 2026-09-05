@@ -2761,6 +2761,79 @@ void main() {
       expect(a.world.entities.posX[a.primary], closeTo(x0, 1e-9));
       expect(a.world.entities.posY[a.primary], closeTo(y0, 1e-9));
     });
+
+    test('Anchor (★3b): a crit pull roots the target for 0.6 s', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        forceCrit: true,
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+
+      final InputSnapshot idle = InputSnapshot();
+      bool hit = false;
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.events.countOf(SimEventType.damageDealt) > 0) {
+          hit = true;
+          break;
+        }
+      }
+      expect(hit, isTrue);
+
+      // One tick's worth of decay has already elapsed within the same
+      // tick the root was set — the same "set mid-tick" shape every other
+      // timed field in this pipeline has.
+      expect(a.world.status.frozenRemaining[a.primary], closeTo(0.6, 0.02));
+
+      // A rooted enemy is a frozen one, structurally — the same hard stop
+      // `AiSystem._freeze` already gives Sela's own Frost freeze, not a
+      // second, narrower primitive invented for this talent.
+      expect(a.world.status.isFrozen(a.primary), isTrue);
+    });
+
+    test('without Anchor, a crit pull never roots the target', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        forceCrit: true,
+      );
+
+      final InputSnapshot idle = InputSnapshot();
+      bool hit = false;
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.events.countOf(SimEventType.damageDealt) > 0) {
+          hit = true;
+          break;
+        }
+      }
+      expect(hit, isTrue);
+      expect(a.world.status.frozenRemaining[a.primary], 0);
+    });
+
+    test('Anchor never shortens a longer Frost freeze already running',
+        () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        forceCrit: true,
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+      a.world.status.frozenRemaining[a.primary] = 5.0;
+
+      final InputSnapshot idle = InputSnapshot();
+      bool hit = false;
+      for (int t = 0; t < 120; t++) {
+        a.world.tick(idle);
+        if (a.world.events.countOf(SimEventType.damageDealt) > 0) {
+          hit = true;
+          break;
+        }
+      }
+      expect(hit, isTrue);
+      // The pre-set freeze decays for real across however many ticks the
+      // crit's own travel takes, so this only needs to confirm Anchor's
+      // own briefer 0.6 s never overwrote it — comfortable margin above
+      // that, not an exact figure.
+      expect(a.world.status.frozenRemaining[a.primary], greaterThan(3.5));
+    });
   });
 
   group('Crush', () {
@@ -4308,12 +4381,13 @@ void main() {
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
       // Body/Phoenix Trail/Supernova, Vane's Marked, Corvin's whole kit
       // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
-      // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush, Lira's
-      // Overheal, and Halden's own boss half — Zealot/Warded/Sentence/
-      // Swift Judgment (ADR 0069, unblocked by Phase 11's own `isBoss`).
+      // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush and Anchor,
+      // Lira's Overheal, and Halden's own boss half — Zealot/Warded/
+      // Sentence/Swift Judgment (ADR 0069, unblocked by Phase 11's own
+      // `isBoss`).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(40),
+        lessThanOrEqualTo(39),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4493,14 +4567,16 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // the "Pull" group. rookCrush is implemented too — see the "Crush" group;
   // ADR 0015's own update covers how it reuses Kestrel's Bleed storage at
   // its own stated 5 %/s, re-evaluated a few times a second from each
-  // enemy's live neighbours rather than a fire-and-forget timed DoT. The
-  // Ultimate (Singularity) and its own two ★5 variants stay pending: a
-  // multi-tick "pull everything toward a point, then detonate" well needs a
-  // sustained field effect nothing before now has asked of Ultimates (every
-  // other one so far resolves in a single tick). Anchor needs a per-enemy
-  // root/stun timer, which does not exist yet.
+  // enemy's live neighbours rather than a fire-and-forget timed DoT.
+  // rookAnchor is implemented too, also in the "Pull" group — a per-enemy
+  // root/stun timer already existed under Frost's own name
+  // (`StatusStore.frozenRemaining`), found by looking closer rather than
+  // building a second one; see ADR 0070. The Ultimate (Singularity) and
+  // its own two ★5 variants stay pending: a multi-tick "pull everything
+  // toward a point, then detonate" well needs a sustained field effect
+  // nothing before now has asked of Ultimates (every other one so far
+  // resolves in a single tick).
   HeroBehaviour.rookSingularity,
-  HeroBehaviour.rookAnchor,
   HeroBehaviour.rookTwinSingularity,
   HeroBehaviour.rookCollapsingSingularity,
 
