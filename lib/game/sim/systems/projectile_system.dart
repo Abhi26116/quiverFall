@@ -764,17 +764,21 @@ abstract final class ProjectileSystem {
       boonSum += _vaneCloseRangePenalty;
     }
 
-    // *Marked* (T3a, Vane) / *Sentence* (T3a, Halden) — reads whatever mark
-    // this target is already carrying from an earlier hit; the hit that
-    // lands the mark itself (below, after damage resolves) does not get its
-    // own bonus retroactively, the same "applies to what comes after, not
-    // what caused it" shape Kindling's own Burn already has. Both heroes
-    // share `markedRemaining` — only one hero is ever equipped, so reading
-    // Halden's own bonus whenever he holds Sentence is unambiguous.
+    // *Marked* (T3a, Vane) / *Sentence* (T3a, Halden) / *Overload* (T3b,
+    // Torv) — reads whatever mark this target is already carrying from an
+    // earlier hit; the hit that lands the mark itself (below, after damage
+    // resolves for Vane/Halden, or inside `_applyTorvChain` for Torv's own
+    // chain links) does not get its own bonus retroactively, the same
+    // "applies to what comes after, not what caused it" shape Kindling's
+    // own Burn already has. All three heroes share `markedRemaining` — only
+    // one is ever equipped, so reading the right one's own bonus is
+    // unambiguous.
     if (enemies != null && enemies.markedRemaining[target] > 0) {
       boonSum += (hero != null && hero.has(HeroBehaviour.haldenSentence))
           ? _haldenSentenceBonus
-          : _vaneMarkedBonus;
+          : (hero != null && hero.has(HeroBehaviour.torvOverload))
+              ? _torvOverloadBonus
+              : _vaneMarkedBonus;
     }
 
     // *Verdict* — "+40 % to bosses and elites." *Zealot* (T1a) raises only
@@ -1076,6 +1080,17 @@ abstract final class ProjectileSystem {
             ? _torvTempestNockTargets
             : chainCount,
         chainDamage: toHealth * _torvArcDamageShare,
+        enemies: enemies,
+        markDuration:
+            hero.has(HeroBehaviour.torvOverload) ? _torvOverloadMarkDuration : 0,
+        status: status,
+        // *Thunderhead* (T5b) — "Tempest also stuns 0.5 s per chain," only
+        // while Tempest Nock's own window is actually running (the base
+        // passive's own chains never stun).
+        stunDuration: (hero.tempestNockRemaining > 0 &&
+                hero.has(HeroBehaviour.torvThunderhead))
+            ? _torvThunderheadStunDuration
+            : 0,
       );
     }
 
@@ -1183,6 +1198,15 @@ abstract final class ProjectileSystem {
   /// Linear scan, same reasoning and same cost profile as
   /// [_applyBramSplash] — bounded by how often a chain-eligible hit lands,
   /// not paid every tick.
+  ///
+  /// [markDuration] above zero also marks every chained target (Torv's own
+  /// *Overload*, T3b) — reusing `EnemyStore.markedRemaining`, the same
+  /// shared field Vane's own Marked and Halden's own Sentence already read,
+  /// on the same "only one hero is ever equipped" reasoning as those two.
+  /// [stunDuration] above zero also roots every chained target (Torv's own
+  /// *Thunderhead*, T5b) — reusing `StatusStore.frozenRemaining`, the same
+  /// hard-stop primitive Rook's own Anchor already reuses from Frost,
+  /// guarded the identical "never shortens an active effect" way.
   static void _applyTorvChain({
     required EntityStore store,
     required int primaryTarget,
@@ -1190,6 +1214,10 @@ abstract final class ProjectileSystem {
     required double y,
     required int chainCount,
     required double chainDamage,
+    EnemyStore? enemies,
+    double markDuration = 0,
+    StatusStore? status,
+    double stunDuration = 0,
   }) {
     // Small, fixed-size "nearest N" via insertion — chainCount never
     // exceeds 5, so this beats allocating and sorting a list.
@@ -1219,11 +1247,22 @@ abstract final class ProjectileSystem {
     for (final int target in nearest) {
       if (target < 0) continue;
       store.health[target] -= chainDamage;
+      if (markDuration > 0 && enemies != null) {
+        enemies.markedRemaining[target] = markDuration;
+      }
+      if (stunDuration > 0 &&
+          status != null &&
+          stunDuration > status.frozenRemaining[target]) {
+        status.frozenRemaining[target] = stunDuration;
+      }
     }
   }
 
   static const double _torvArcDamageShare = 0.60;
   static const int _torvArcTargets = 3;
+  static const double _torvOverloadBonus = 0.20;
+  static const double _torvOverloadMarkDuration = 4.0;
+  static const double _torvThunderheadStunDuration = 0.5;
   static const int _torvWideArcTargets = 5;
   static const int _torvTempestNockTargets = 5;
 

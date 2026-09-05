@@ -2928,6 +2928,89 @@ void main() {
       a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
       expect(a.world.hero.tempestNockRemaining, closeTo(8.0, 1e-9));
     });
+
+    test('Overload (★3b): a chain hit marks its targets for 4 s', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.markedRemaining[a.nearby[0]], greaterThan(0));
+    });
+
+    test('without Overload, chains never mark their targets', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena();
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.enemies.markedRemaining[a.nearby[0]], 0);
+    });
+
+    test("Overload's own mark adds +20 % damage to the marked target's next hit",
+        () {
+      final ({SimWorld world, int primary, List<int> nearby}) base =
+          torvArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      final double? plain = firstDamageDealt(base.world);
+
+      final ({SimWorld world, int primary, List<int> nearby}) marked =
+          torvArena(stars: 3, talentChoices: <String, String>{'3': 'b'});
+      marked.world.enemies.markedRemaining[marked.primary] = 5.0;
+      final double? boosted = firstDamageDealt(marked.world);
+
+      expect(plain, isNotNull);
+      expect(boosted, isNotNull);
+      expect(boosted! / plain!, closeTo(1.20, 0.01));
+    });
+
+    test('Thunderhead (★5b): Tempest Nock chains also stun for 0.5 s', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      bool sawFrozen = false;
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+        if (a.world.status.isFrozen(a.nearby[0])) {
+          sawFrozen = true;
+          break;
+        }
+      }
+      expect(sawFrozen, isTrue);
+    });
+
+    test('without Thunderhead, Tempest Nock chains do not stun', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+        expect(a.world.status.isFrozen(a.nearby[0]), isFalse);
+      }
+    });
+
+    test(
+        'the base Arc passive never stuns, even with Thunderhead, outside '
+        "Tempest Nock's own window", () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = torvArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+        expect(a.world.status.isFrozen(a.nearby[0]), isFalse);
+      }
+    });
   });
 
   group('Pull', () {
@@ -4991,11 +5074,13 @@ void main() {
       // primitive plus a new guaranteed-duplication timer), and Ovrin's
       // Aegis Pin/Riposte/Long Wall/Mirror Wall (ADR 0075, a new
       // reflect-damage-to-attacker primitive that also fixed the
-      // long-dead Thorns Boon), and Sela's Shatter (ADR 0076, an on-kill
-      // AoE hook centred on the kill rather than the player).
+      // long-dead Thorns Boon), Sela's Shatter (ADR 0076, an on-kill AoE
+      // hook centred on the kill rather than the player), and Torv's
+      // Overload/Thunderhead (ADR 0077, both reusing existing per-enemy
+      // timers built for other heroes).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(23),
+        lessThanOrEqualTo(21),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -5080,18 +5165,19 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // hold, not on Sela at all.
   HeroBehaviour.selaLingeringFrost,
 
-  // torvArc, torvTempestNock, torvFrequentArc, torvWideArc and
-  // torvLongTempest are implemented — see the "Arc and Tempest Nock" group.
-  // Chains hit the nearest enemies by distance rather than genuinely
-  // travelling along Windlines, which nothing in the sim currently indexes
-  // (see the implementation's own note) — Conductive Lines specifically
-  // rewards the Windline-travel case and stays pending until that
-  // relationship exists to reward. Overload needs a timed per-enemy debuff
-  // this hit path does not track yet; Thunderhead needs a stun applied per
-  // chain link.
+  // torvArc, torvTempestNock, torvFrequentArc, torvWideArc,
+  // torvLongTempest, torvOverload and torvThunderhead are all implemented —
+  // see the "Arc and Tempest Nock" group (ADR 0077). Overload reuses
+  // `EnemyStore.markedRemaining`, the same shared per-enemy timer Vane's
+  // Marked and Halden's Sentence already read (only one hero equipped at a
+  // time, so a third reader is unambiguous); Thunderhead reuses
+  // `StatusStore.frozenRemaining`, the same hard-stop Rook's own Anchor
+  // already borrows from Frost. Chains still hit the nearest enemies by
+  // distance rather than genuinely travelling along Windlines, which
+  // nothing in the sim indexes (see `_applyTorvChain`'s own doc comment) —
+  // Conductive Lines specifically rewards the Windline-travel case and
+  // stays pending until that relationship exists to reward.
   HeroBehaviour.torvConductiveLines,
-  HeroBehaviour.torvOverload,
-  HeroBehaviour.torvThunderhead,
 
   // sableToxin is implemented — see the "three innate elements" group.
   // sableMiasma, sableVirulence, sableFastActing, sableContagion,
