@@ -142,6 +142,30 @@ import 'package:quiverfall/game/sim/systems/weeping_gate_system.dart';
 /// though no entity can ever fall through the arena floor, because the
 /// sim has no such floor to fall through in the first place. See ADR
 /// 0062.
+///
+/// P5, built here: "One HP each. Pure duel — first hit wins, 20s timer,
+/// sudden death." `boss_definition.dart`'s own doc comment already flags
+/// this phase as needing "its own end-of-fight rule," not one of
+/// `BossPhaseSystem`'s ordinary fractional thresholds — the moment the
+/// fourth threshold is crossed, `_beginSuddenDeath` drops both combatants
+/// to exactly one hit point, once. Nothing further is needed to make
+/// "first hit wins" mechanically true: the game's damage model always
+/// computes a hit as a fraction of `maxHealth`, never a fixed amount, so
+/// any landed hit from either side is many times larger than 1.0 and ends
+/// the fight through the ordinary death/reap path every other boss and
+/// every player death already uses. "Pure duel" is read as stripping the
+/// one mechanical crutch fully within this system's own control — the
+/// Warden's own Momentum damage reduction (`_tickDamageReduction`) stops
+/// running — while the player's own Momentum stays exactly as it always
+/// works; touching the player's own core damage-reduction path would mean
+/// the same shared-code risk this system has avoided everywhere else in
+/// this fight. **The 20s timer and whatever "sudden death" means if it
+/// elapses with no hit landed are not built.** No "timer-based win
+/// condition" primitive exists anywhere in the sim — the Weeping Gate's
+/// own 40s survival timer (docs/06 §6.1) is the same already-flagged gap
+/// — and deciding the timeout's own consequence (a forced loss, a forced
+/// win, a reset) is a genuine design question this pass does not guess
+/// at. See ADR 0063.
 abstract final class LastWardenSystem {
   /// Reused from the Hollow Warden's own mirror-approach speed — a
   /// deliberate, readable closing pace, not a lunge.
@@ -273,7 +297,10 @@ abstract final class LastWardenSystem {
         continue;
       }
 
-      _tickDamageReduction(ctx, i, draw);
+      // P5: "Pure duel." Momentum's damage reduction is a mechanical
+      // crutch this phase deliberately strips away — see the class doc
+      // comment.
+      if (enemies.bossPhase[i] < 4) _tickDamageReduction(ctx, i, draw);
 
       final bool isMoving = _tickMovement(ctx, i, draw, dt);
       DrawSystem.update(draw, isMoving, dt, ctx.events);
@@ -296,6 +323,13 @@ abstract final class LastWardenSystem {
       // scoped reading — standing off a live player-owned Windline is
       // punished directly rather than modelled as a real fall.
       if (enemies.bossPhase[i] >= 3) _tickVoidFloor(ctx, i, dt);
+
+      // P5: "One HP each. Pure duel." `bossSweepAngle` doubles as the
+      // one-time latch — free here, nothing in P1-P4 ever sets it.
+      if (enemies.bossPhase[i] >= 4 && enemies.bossSweepAngle[i] == 0) {
+        _beginSuddenDeath(ctx, i);
+        enemies.bossSweepAngle[i] = 1;
+      }
     }
   }
 
@@ -578,6 +612,22 @@ abstract final class LastWardenSystem {
       case BossArchetype.lastWarden:
         return -1;
     }
+  }
+
+  /// Drops both combatants to exactly one hit point, once, the instant P5
+  /// begins. Nothing further is needed to make "first hit wins" true: the
+  /// game's own damage model always computes a hit as a fraction of
+  /// `maxHealth`, never a fixed amount, so any landed hit from either side
+  /// — the player's own arrow against the Warden's own six-figure max
+  /// health, or the Warden's own heavy shot against the player's — is
+  /// many times larger than 1.0 and ends the fight outright through the
+  /// ordinary death/reap path every other boss and every player death
+  /// already uses. See the class doc comment for what P5 leaves
+  /// deliberately unbuilt.
+  static void _beginSuddenDeath(AiContext ctx, int slot) {
+    final EntityStore store = ctx.entities;
+    store.health[slot] = 1.0;
+    if (ctx.hasPlayer) store.health[ctx.player] = 1.0;
   }
 
   /// While the player is not standing on any live player-owned Windline

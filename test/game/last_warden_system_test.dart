@@ -7,16 +7,19 @@ import 'package:test/test.dart';
 
 import 'boss_test_support.dart';
 
-/// The Last Warden — docs/06 §6.3, Endless Descent boss #20. P1-P4 only —
-/// see `LastWardenSystem`'s own doc comment for what each phase means and
-/// what P5 still needs. P1 (ADR 0059): the Draw ramp, the Momentum-driven
-/// speed and damage-reduction trade, and the approach/hold/disengage
-/// rhythm. P2 (ADR 0060): mirroring the player's own current flat damage
-/// bonus and crit into the heavy shot. P3 (ADR 0061): summoning echoes of
-/// up to three other bosses, each its own real, independently-driven
-/// fight. P4 (ADR 0062): standing off any live player-owned Windline
-/// deals ongoing damage — "the floor is removed," read as a real, working
-/// stand-in rather than new fall-through physics.
+/// The Last Warden — docs/06 §6.3, Endless Descent boss #20, all five
+/// phases. See `LastWardenSystem`'s own doc comment for what each phase
+/// means and what stays deliberately unbuilt. P1 (ADR 0059): the Draw
+/// ramp, the Momentum-driven speed and damage-reduction trade, and the
+/// approach/hold/disengage rhythm. P2 (ADR 0060): mirroring the player's
+/// own current flat damage bonus and crit into the heavy shot. P3 (ADR
+/// 0061): summoning echoes of up to three other bosses, each its own
+/// real, independently-driven fight. P4 (ADR 0062): standing off any live
+/// player-owned Windline deals ongoing damage — "the floor is removed,"
+/// read as a real, working stand-in rather than new fall-through physics.
+/// P5 (ADR 0063): both combatants drop to one hit point and the Warden's
+/// own Momentum damage reduction stops; the 20s sudden-death timer itself
+/// is not built.
 void main() {
   final ContentLibrary content = loadContentWithBosses();
   const double health = 1.0e5;
@@ -406,6 +409,103 @@ void main() {
       }
 
       expect(world.entities.health[player], closeTo(91.0, 1e-6));
+    });
+  });
+
+  group('P5: one HP each, pure duel', () {
+    test('before P5, health is left completely alone', () {
+      final (:world, :primary) = spawnLastWarden();
+      final int player = world.player.index;
+      world.entities.health[primary] = 4.0e4;
+      world.entities.health[player] = 60.0;
+      world.enemies.bossPhase[primary] = 3;
+
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[primary], 4.0e4);
+      // Void-floor damage (P4, also active at phase 3) is the only other
+      // thing that could touch player health here; a Windline keeps it
+      // out of the way so this test is only about the P5 transition.
+      world.windlines.add(
+        fromX: world.entities.posX[player] - 1.0,
+        fromY: world.entities.posY[player],
+        toX: world.entities.posX[player] + 1.0,
+        toY: world.entities.posY[player],
+        expiresAt: world.elapsedSeconds + 100.0,
+        ownerIndex: 0,
+        trailId: 1,
+      );
+      world.entities.health[player] = 60.0;
+      world.tick(InputSnapshot());
+      expect(world.entities.health[player], 60.0);
+    });
+
+    test('once P5 begins, both combatants drop to exactly one hit point, '
+        'once — not re-applied every tick', () {
+      final (:world, :primary) = spawnLastWarden();
+      final int player = world.player.index;
+
+      // Stand on a Windline so P4's own void-floor damage never
+      // interferes with this test's own health assertions.
+      world.windlines.add(
+        fromX: world.entities.posX[player] - 1.0,
+        fromY: world.entities.posY[player],
+        toX: world.entities.posX[player] + 1.0,
+        toY: world.entities.posY[player],
+        expiresAt: world.elapsedSeconds + 100.0,
+        ownerIndex: 0,
+        trailId: 1,
+      );
+
+      world.entities.health[player] = 42.0;
+      world.enemies.bossPhase[primary] = 4;
+
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[primary], 1.0);
+      expect(world.entities.health[player], 1.0);
+
+      world.entities.health[primary] = 5.0;
+      world.entities.health[player] = 5.0;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[primary], 5.0);
+      expect(world.entities.health[player], 5.0);
+    });
+
+    test('after the transition, even a small hit ends the fight outright '
+        'for whichever side is hit', () {
+      final (:world, :primary) = spawnLastWarden();
+      world.enemies.bossPhase[primary] = 4;
+      world.tick(InputSnapshot());
+      expect(world.entities.health[primary], 1.0);
+
+      // Much smaller than any real arrow's own fraction of the Warden's
+      // six-figure max health, but already exceeds its one hit point.
+      world.entities.health[primary] -= 1.0;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.alive[primary], 0);
+    });
+
+    test('P5 strips the Warden\'s own Momentum damage reduction — a hit '
+        'lands in full, not partially refunded', () {
+      final (:world, :primary) = spawnLastWarden(playerX: centerX + 10.0);
+
+      // Build to max Momentum while still in P1.
+      for (int i = 0; i < 150; i++) {
+        world.tick(InputSnapshot());
+      }
+      expect(world.lastWardenDraw.momentumStacks, DrawState.baseMaxMomentum);
+
+      world.enemies.bossPhase[primary] = 4;
+      world.tick(InputSnapshot());
+      expect(world.entities.health[primary], 1.0);
+
+      world.entities.health[primary] = 0.5;
+      world.tick(InputSnapshot());
+
+      expect(world.entities.health[primary], closeTo(0.5, 1e-6));
     });
   });
 }
