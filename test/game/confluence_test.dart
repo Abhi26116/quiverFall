@@ -531,4 +531,148 @@ void main() {
       expect(run(), run());
     });
   });
+
+  group('reaction bespoke effects', () {
+    // docs/08 §8.2's own "Effect" column — the part beyond the shared
+    // damage multiplier the "end to end" group above already covers.
+
+    /// A world where the player at (8, 4.5) fires east toward an enemy at
+    /// (15, 4.5), crossing a perpendicular Windline at x = 11 carrying
+    /// [trailElement] while the arrow itself carries [arrowElement] —
+    /// resolving to whichever reaction that pair produces on the first
+    /// hit that lands.
+    ({SimWorld world, int target}) reactionArena({
+      required SimElement arrowElement,
+      required SimElement trailElement,
+    }) {
+      final SimWorld world = SimWorld(seed: 11)
+        ..playerAttack = 10
+        ..arrowElement = arrowElement;
+      world.spawnPlayer(8.0, 4.5);
+      final int target =
+          world.spawnAt(EntityKind.enemy, 15.0, 4.5, radius: 0.3, health: 1e9)
+              .index;
+      world.entities.maxHealth[target] = 1e9;
+      world.windlines.add(
+        fromX: 11.0,
+        fromY: 1.0,
+        toX: 11.0,
+        toY: 8.0,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 999,
+        elementIndex: trailElement.index,
+      );
+      return (world: world, target: target);
+    }
+
+    void runUntilFirstHit(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 120 && world.events.countOf(SimEventType.damageDealt) == 0;
+          t++) {
+        world.tick(idle);
+      }
+    }
+
+    test('Steamburst (Ember+Frost): -20 % armour for 5 s, plus its own '
+        '2.5 u AoE', () {
+      final ({SimWorld world, int target}) a = reactionArena(
+        arrowElement: SimElement.ember,
+        trailElement: SimElement.frost,
+      );
+      // 2 u from the target — inside the 2.5 u burst.
+      final int bystander =
+          a.world.spawnAt(EntityKind.enemy, 15.0, 6.5, radius: 0.3, health: 1e9)
+              .index;
+      a.world.entities.maxHealth[bystander] = 1e9;
+
+      runUntilFirstHit(a.world);
+
+      expect(a.world.enemies.steamburstArmourRemaining[a.target],
+          closeTo(5.0, 0.02));
+      expect(1e9 - a.world.entities.health[bystander], greaterThan(0),
+          reason: "Steamburst's own AoE must reach a nearby enemy");
+    });
+
+    test('Blightfire (Ember+Toxin): Burn and Toxin both tick at 2x for 3 s',
+        () {
+      final ({SimWorld world, int target}) a = reactionArena(
+        arrowElement: SimElement.ember,
+        trailElement: SimElement.toxin,
+      );
+      runUntilFirstHit(a.world);
+      expect(a.world.enemies.blightfireRemaining[a.target], closeTo(3.0, 0.02));
+
+      // The arrow's own Ember element already applied a Burn stack — tick
+      // once and confirm the rate is doubled relative to the plain
+      // ElementTuning rate.
+      final double before = a.world.entities.health[a.target];
+      const double dt = 1 / 60;
+      a.world.tick(InputSnapshot());
+      final double doubled = before - a.world.entities.health[a.target];
+      // 4 %/s base Burn, one stack, doubled, over one fixed tick.
+      final double expected =
+          a.world.entities.maxHealth[a.target] * 0.04 * 2 * dt;
+      expect(doubled, closeTo(expected, expected * 0.5));
+    });
+
+    test('Rime Rot (Frost+Toxin): freeze duration +1 s', () {
+      final ({SimWorld world, int target}) a = reactionArena(
+        arrowElement: SimElement.frost,
+        trailElement: SimElement.toxin,
+      );
+      runUntilFirstHit(a.world);
+      // A single Frost hit alone cannot reach the 100-Chill freeze
+      // threshold, so any frozen time here came from Rime Rot's own bonus.
+      expect(a.world.status.frozenRemaining[a.target], closeTo(1.0, 0.05));
+    });
+
+    test('Prismbreak (3+ elements): applies all four elements at max '
+        'stacks, plus its own 4 u AoE', () {
+      final SimWorld world = SimWorld(seed: 11)
+        ..playerAttack = 10
+        ..arrowElement = SimElement.ember;
+      world.spawnPlayer(8.0, 4.5);
+      final int target =
+          world.spawnAt(EntityKind.enemy, 15.0, 4.5, radius: 0.3, health: 1e9)
+              .index;
+      world.entities.maxHealth[target] = 1e9;
+      // 3.5 u from the target — inside the 4 u burst.
+      final int bystander =
+          world.spawnAt(EntityKind.enemy, 15.0, 8.0, radius: 0.3, health: 1e9)
+              .index;
+      world.entities.maxHealth[bystander] = 1e9;
+
+      for (final (double x, int elementIndex) in <(double, int)>[
+        (10.0, SimElement.frost.index),
+        (11.0, SimElement.storm.index),
+        (12.0, SimElement.toxin.index),
+      ]) {
+        world.windlines.add(
+          fromX: x,
+          fromY: 1.0,
+          toX: x,
+          toY: 8.0,
+          expiresAt: 1e9,
+          ownerIndex: 0,
+          trailId: x.toInt(),
+          elementIndex: elementIndex,
+        );
+      }
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 120 && world.events.countOf(SimEventType.damageDealt) == 0;
+          t++) {
+        world.tick(idle);
+      }
+
+      expect(world.status.burnStacks[target], ElementTuning.burnMaxStacks);
+      expect(world.status.isFrozen(target), isTrue);
+      expect(world.status.toxinStacks[target], ElementTuning.toxinMaxStacks);
+      expect(1e9 - world.entities.health[bystander], greaterThan(0),
+          reason: "Prismbreak's own AoE must reach a nearby enemy");
+    });
+  });
 }

@@ -88,6 +88,8 @@ class EnemyStore {
         slowRemaining = Float64List(capacity),
         lingeringFrostRemaining = Float64List(capacity),
         lingeringFrostSlowRemaining = Float64List(capacity),
+        steamburstArmourRemaining = Float64List(capacity),
+        blightfireRemaining = Float64List(capacity),
         untargetable = Uint8List(capacity),
         variant = Uint8List(capacity),
         telegraphSlot = Int32List(capacity),
@@ -265,6 +267,16 @@ class EnemyStore {
   /// [Steering.speedOf], entirely independent of any live Windline — the
   /// gap the ledger's own note on this talent named it for.
   final Float64List lingeringFrostSlowRemaining;
+
+  /// *Steamburst* (Ember+Frost reaction) — "-20% enemy armour for 5s."
+  /// Read in `ProjectileSystem._applyHit`'s own armour computation as a
+  /// timed shred, deliberately separate from [armourShred] (a *permanent*,
+  /// Boon-accumulated stat with no notion of expiry).
+  final Float64List steamburstArmourRemaining;
+
+  /// *Blightfire* (Ember+Toxin reaction) — "Burn and Toxin both tick at 2x
+  /// for 3s." Read by `ElementSystem.update`'s own DoT tick.
+  final Float64List blightfireRemaining;
 
   /// Auto-aim skips these. Airborne Bounders and Gravebound corpses.
   final Uint8List untargetable;
@@ -494,6 +506,8 @@ class EnemyStore {
     slowRemaining[slot] = 0;
     lingeringFrostRemaining[slot] = 0;
     lingeringFrostSlowRemaining[slot] = 0;
+    steamburstArmourRemaining[slot] = 0;
+    blightfireRemaining[slot] = 0;
     markedRemaining[slot] = 0;
     bleedStacks[slot] = 0;
     bleedRemaining[slot] = 0;

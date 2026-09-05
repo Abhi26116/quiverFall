@@ -248,7 +248,8 @@ void main() {
     test('fire only from a Confluence carrying a different element', () {
       final int e = spawnEnemy(health: 1000);
 
-      final double same = ElementSystem.resolveReaction(
+      final ({double multiplier, Reaction? reaction}) same =
+          ElementSystem.resolveReaction(
         status: status,
         events: events,
         target: e,
@@ -257,9 +258,11 @@ void main() {
         x: 0,
         y: 0,
       );
-      expect(same, 1.0, reason: 'matching elements do not react');
+      expect(same.multiplier, 1.0, reason: 'matching elements do not react');
+      expect(same.reaction, isNull);
 
-      final double different = ElementSystem.resolveReaction(
+      final ({double multiplier, Reaction? reaction}) different =
+          ElementSystem.resolveReaction(
         status: status,
         events: events,
         target: e,
@@ -268,7 +271,8 @@ void main() {
         x: 0,
         y: 0,
       );
-      expect(different, Reaction.steamburst.damageMultiplier);
+      expect(different.multiplier, Reaction.steamburst.damageMultiplier);
+      expect(different.reaction, Reaction.steamburst);
     });
 
     test('respect the per-enemy cooldown', () {
@@ -280,14 +284,14 @@ void main() {
         status: status, events: events, target: e,
         elementMask: 1 << SimElement.frost.index,
         incoming: SimElement.ember, x: 0, y: 0,
-      );
+      ).multiplier;
       expect(first, greaterThan(1.0));
 
       final double second = ElementSystem.resolveReaction(
         status: status, events: events, target: e,
         elementMask: 1 << SimElement.frost.index,
         incoming: SimElement.ember, x: 0, y: 0,
-      );
+      ).multiplier;
       expect(second, 1.0, reason: 'still on cooldown');
 
       run((Reactions.perEnemyCooldown * 60).ceil() + 2);
@@ -296,13 +300,14 @@ void main() {
         status: status, events: events, target: e,
         elementMask: 1 << SimElement.frost.index,
         incoming: SimElement.ember, x: 0, y: 0,
-      );
+      ).multiplier;
       expect(third, greaterThan(1.0), reason: 'cooldown elapsed');
     });
 
     test('three distinct elements collapse to Prismbreak', () {
       final int e = spawnEnemy(health: 1000);
-      final double m = ElementSystem.resolveReaction(
+      final ({double multiplier, Reaction? reaction}) result =
+          ElementSystem.resolveReaction(
         status: status,
         events: events,
         target: e,
@@ -313,7 +318,8 @@ void main() {
         x: 0,
         y: 0,
       );
-      expect(m, Reaction.prismbreak.damageMultiplier);
+      expect(result.multiplier, Reaction.prismbreak.damageMultiplier);
+      expect(result.reaction, Reaction.prismbreak);
     });
 
     test('emit an event the view layer can render', () {
@@ -328,12 +334,14 @@ void main() {
 
     test('no reaction without a Confluence element', () {
       final int e = spawnEnemy(health: 1000);
-      final double m = ElementSystem.resolveReaction(
+      final ({double multiplier, Reaction? reaction}) result =
+          ElementSystem.resolveReaction(
         status: status, events: events, target: e,
         elementMask: 0,
         incoming: SimElement.ember, x: 0, y: 0,
       );
-      expect(m, 1.0);
+      expect(result.multiplier, 1.0);
+      expect(result.reaction, isNull);
     });
   });
 }

@@ -3791,6 +3791,141 @@ void main() {
       expect(conductiveDistractorDamage / baseDistractorDamage,
           closeTo(1.0, 0.05));
     });
+
+    /// A Torv world with Tempest Nock cast before `autoFire` starts (so the
+    /// very first arrow fired is guaranteed to chain, never one that
+    /// happened to fire the same tick as the cast itself), the arrow's own
+    /// element fixed at Storm, a perpendicular Windline crossing at x = 8
+    /// carrying [trailElement] — resolving to whichever reaction Storm
+    /// pairs with it — and [nearbyCount] chain-target enemies clustered
+    /// around the primary at (14, 4.5), offset 0.4-1.0 u off the firing
+    /// line (outside the tight Windline-touch reach ADR 0086's own chain
+    /// walk uses, so these are only ever reached by the chain's own
+    /// nearest-by-distance fallback, never mistaken for a Windline hop).
+    ({SimWorld world, int primary, List<int> nearby}) torvReactionArena({
+      required SimElement trailElement,
+      int nearbyCount = 5,
+    }) {
+      final SimWorld world = SimWorld(seed: 101, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(2.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        torv,
+        const HeroState(heroId: 'torv'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      // `HeroLoadoutResolver.apply` sets `arrowElement` from the equipped
+      // arrow itself (`ashShaft`'s own, none) — so the override has to
+      // come after, not before.
+      world.arrowElement = SimElement.storm;
+      world.windlines.add(
+        fromX: 8.0,
+        fromY: 1.0,
+        toX: 8.0,
+        toY: 8.0,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 999,
+        elementIndex: trailElement.index,
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 14.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final List<int> nearby = <int>[];
+      for (int i = 0; i < nearbyCount; i++) {
+        final double offset = 0.4 + i * 0.1;
+        final int e = world.spawnEnemy(EnemyArchetype.mote, 14.0, 4.5 + offset);
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        nearby.add(e);
+      }
+
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      world.autoFire = true;
+      return (world: world, primary: primary, nearby: nearby);
+    }
+
+    test('Firestorm (Ember+Storm): chain targets are ignited; chain count '
+        '+2', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          torvReactionArena(trailElement: SimElement.ember, nearbyCount: 7);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+
+      // The base Tempest Nock chain count is 5; Firestorm's own +2 must
+      // reach all 7, not just the nearest 5.
+      for (final int e in a.nearby) {
+        expect(1e9 - a.world.entities.health[e], greaterThan(0),
+            reason: 'enemy $e never took chain damage');
+        expect(a.world.status.burnStacks[e], greaterThan(0),
+            reason: 'enemy $e was never ignited');
+      }
+    });
+
+    test('without Firestorm, the same chain still stops at 5 targets', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          torvReactionArena(trailElement: SimElement.storm, nearbyCount: 7);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+
+      // A Storm arrow through a Storm trail does not react at all (same
+      // element), so this is a plain Tempest Nock chain: exactly the
+      // nearest 5 of 7.
+      int hit = 0;
+      for (final int e in a.nearby) {
+        if (1e9 - a.world.entities.health[e] > 0) hit++;
+      }
+      expect(hit, 5);
+    });
+
+    test('Superconduct (Frost+Storm): frozen targets take 2x chain damage',
+        () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          torvReactionArena(trailElement: SimElement.frost);
+      // Freeze one of the five chain targets before the hit lands.
+      a.world.status.frozenRemaining[a.nearby[0]] = 10.0;
+
+      // Stop at the very first chain trigger — the reaction's own
+      // per-enemy cooldown lives on the *primary*, so a later trigger
+      // landing while that cooldown is still up would chain without a
+      // reaction at all and dilute the ratio below.
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 200 && a.world.entities.health[a.nearby[1]] >= 1e9;
+          t++) {
+        a.world.tick(idle);
+      }
+
+      final double frozenDamage = 1e9 - a.world.entities.health[a.nearby[0]];
+      final double ordinaryDamage = 1e9 - a.world.entities.health[a.nearby[1]];
+      expect(ordinaryDamage, greaterThan(0));
+      expect(frozenDamage / ordinaryDamage, closeTo(2.0, 0.05));
+    });
+
+    test('Corrosive Arc (Storm+Toxin): chains spread 3 Toxin stacks to '
+        'each target', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          torvReactionArena(trailElement: SimElement.toxin, nearbyCount: 3);
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+
+      for (final int e in a.nearby) {
+        expect(a.world.status.toxinStacks[e], greaterThanOrEqualTo(3),
+            reason: 'enemy $e never picked up the spread Toxin stacks');
+      }
+    });
   });
 
   group('Pull', () {

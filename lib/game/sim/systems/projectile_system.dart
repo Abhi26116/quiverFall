@@ -799,6 +799,15 @@ abstract final class ProjectileSystem {
       if (armour > 1.0) armour = 1.0;
     }
 
+    // *Steamburst* (Ember+Frost reaction) — "-20% enemy armour for 5s," a
+    // timed version of the identical "lift the factor toward 1.0" shape
+    // Rend's own permanent shred just used above, composed multiplicatively
+    // with it rather than replacing it.
+    if (enemies != null && enemies.steamburstArmourRemaining[target] > 0) {
+      armour += (1.0 - armour) * _steamburstArmourShred;
+      if (armour > 1.0) armour = 1.0;
+    }
+
     // *Deadeye* (#18) — crits skip the pierce-falloff curve entirely. Applied
     // as a pierce index of zero rather than by removing the term, so the
     // falloff maths stays in one place.
@@ -973,6 +982,7 @@ abstract final class ProjectileSystem {
     // avoids touching `status.canReact`'s own per-enemy cooldown for
     // nothing on every ordinary hit in the game.
     double reactionMultiplier = 1.0;
+    Reaction? triggeredReaction;
     if (status != null && projectiles.confluenceElementMask[slot] != 0) {
       final int ownMask = projectiles.elementMask[slot];
       final int ownIndex = projectiles.element[slot];
@@ -984,7 +994,8 @@ abstract final class ProjectileSystem {
       // elements still collapses to Prismbreak regardless of `incoming`.
       final SimElement? incoming =
           ownMask == 0 && ownIndex >= 0 ? SimElement.values[ownIndex] : null;
-      reactionMultiplier = ElementSystem.resolveReaction(
+      final ({double multiplier, Reaction? reaction}) resolved =
+          ElementSystem.resolveReaction(
         status: status,
         events: events,
         target: target,
@@ -993,6 +1004,8 @@ abstract final class ProjectileSystem {
         x: store.posX[target],
         y: store.posY[target],
       );
+      reactionMultiplier = resolved.multiplier;
+      triggeredReaction = resolved.reaction;
     }
 
     // *White Light* (Oriel, T5b) — "reactions deal x3," tripling the
@@ -1157,6 +1170,24 @@ abstract final class ProjectileSystem {
       enemies.lingeringFrostRemaining[target] = _selaLingeringFrostDuration;
     }
 
+    // *Reactions* — the four whose own docs/08 "Effect" apply to the
+    // triggering hit's own target directly, regardless of hero or whether
+    // a chain is involved. The three that modify a *chain* instead
+    // (Firestorm, Superconduct, Corrosive Arc) are read where the chain
+    // itself resolves, in `_applyTorvChain` below.
+    if (triggeredReaction != null && enemies != null && status != null) {
+      _applyReactionEffect(
+        reaction: triggeredReaction,
+        store: store,
+        enemies: enemies,
+        status: status,
+        target: target,
+        toHealth: toHealth,
+        x: store.posX[target],
+        y: store.posY[target],
+      );
+    }
+
     events.emit(
       SimEventType.damageDealt,
       entityA: target,
@@ -1280,18 +1311,27 @@ abstract final class ProjectileSystem {
         hero.has(HeroBehaviour.torvArc) &&
         enemies != null &&
         (projectiles.willChain[slot] == 1 || hero.tempestNockRemaining > 0)) {
-      final int chainCount =
+      int chainCount =
           hero.has(HeroBehaviour.torvWideArc) ? _torvWideArcTargets : _torvArcTargets;
+      chainCount = hero.tempestNockRemaining > 0
+          ? _torvTempestNockTargets
+          : chainCount;
+      // *Firestorm* (Ember+Storm reaction) — "chain count +2," read on the
+      // same trigger this chain itself is already resolving from, not
+      // fired independently.
+      if (triggeredReaction == Reaction.firestorm) {
+        chainCount += _firestormChainCountBonus;
+      }
       _applyTorvChain(
         store: store,
         lines: lines,
         lineIndex: lineIndex,
+        events: events,
+        arrowSlot: slot,
         primaryTarget: target,
         x: store.posX[target],
         y: store.posY[target],
-        chainCount: hero.tempestNockRemaining > 0
-            ? _torvTempestNockTargets
-            : chainCount,
+        chainCount: chainCount,
         chainDamage: toHealth * _torvArcDamageShare,
         enemies: enemies,
         markDuration:
@@ -1310,6 +1350,12 @@ abstract final class ProjectileSystem {
         // along anything.
         conductiveLinesBonus:
             hero.has(HeroBehaviour.torvConductiveLines) ? _torvConductiveLinesBonus : 0,
+        // *Firestorm*/*Superconduct*/*Corrosive Arc* — the three reactions
+        // whose own docs/08 "Effect" modifies a chain rather than the
+        // triggering hit itself; applied per-link inside the chain, since
+        // that is the only place each one has a real target list to act
+        // on. See `_applyTorvChain`'s own doc comment.
+        reaction: triggeredReaction,
       );
     }
 
@@ -1444,6 +1490,90 @@ abstract final class ProjectileSystem {
 
   static const double _irisWeaveAoeRadius = 2.0;
 
+  /// A reaction's own bespoke secondary effect (docs/08 §8.2's own
+  /// "Effect" column) — everything beyond the shared damage multiplier
+  /// `ElementSystem.resolveReaction` already resolves. Only the four
+  /// effects that land on the triggering hit's own target (and, for the
+  /// two with an [Reaction.areaRadius], everyone caught in its own burst)
+  /// live here; *Firestorm*, *Superconduct* and *Corrosive Arc* modify a
+  /// *chain* instead of the hit itself, and are applied where a chain
+  /// actually resolves, in `_applyTorvChain`.
+  static void _applyReactionEffect({
+    required Reaction reaction,
+    required EntityStore store,
+    required EnemyStore enemies,
+    required StatusStore status,
+    required int target,
+    required double toHealth,
+    required double x,
+    required double y,
+  }) {
+    // *Steamburst*/*Prismbreak* — "2.5 u AoE"/"4 u AoE". No fraction is
+    // stated for either, so this reuses the hit's own already-resolved
+    // damage in full — the identical reasoning ADR 0009 already gives for
+    // Iris's own Weave AoE. `_applyBramSplash`'s own "no armour or shield
+    // interaction, a flat number" is deliberately kept: the armour debuff
+    // below is Steamburst's own separate clause, applied only to the
+    // struck target, not everyone the blast catches.
+    if (reaction.areaRadius > 0) {
+      _applyBramSplash(
+        store: store,
+        primaryTarget: target,
+        x: x,
+        y: y,
+        radius: reaction.areaRadius,
+        splashDamage: toHealth,
+      );
+    }
+
+    switch (reaction) {
+      case Reaction.steamburst:
+        // "-20% enemy armour for 5s" — a timed debuff, kept separate from
+        // `EnemyStore.armourShred` (a *permanent*, Boon-accumulated stat
+        // with no notion of expiry) rather than repurposing it. Never
+        // shortens a longer window already running, the same rule every
+        // other timed CC in this file already follows.
+        if (_steamburstArmourDuration >
+            enemies.steamburstArmourRemaining[target]) {
+          enemies.steamburstArmourRemaining[target] = _steamburstArmourDuration;
+        }
+      case Reaction.blightfire:
+        // "Burn and Toxin both tick at 2x for 3s" — read by
+        // `ElementSystem.update`'s own Burn/Toxin tick.
+        if (_blightfireDuration > enemies.blightfireRemaining[target]) {
+          enemies.blightfireRemaining[target] = _blightfireDuration;
+        }
+      case Reaction.rimeRot:
+        // "Freeze duration +1s; Toxin stacks are not lost on freeze." The
+        // second half is already true unconditionally — Toxin has no
+        // decay of its own for a freeze to interrupt (`StatusStore`'s own
+        // class doc: "Toxin: stacks and persists") — so only the freeze
+        // extension is real work. Added, not merely raised-to: a fresh
+        // 1 s freeze from nothing is exactly what "+1 s" promises even
+        // when the target was not already frozen.
+        status.frozenRemaining[target] += _rimeRotFreezeBonus;
+      case Reaction.prismbreak:
+        // "Applies all four elements at max stacks." Storm has nothing to
+        // set — it resolves instantly on every hit already — so only the
+        // other three are touched, each set directly rather than rolled,
+        // since "at max stacks" is unconditional rather than a rate.
+        status.burnStacks[target] = ElementTuning.burnMaxStacks;
+        status.burnRemaining[target] = ElementTuning.burnDuration;
+        status.chill[target] = 0;
+        status.frozenRemaining[target] = ElementTuning.freezeDuration;
+        status.toxinStacks[target] = ElementTuning.toxinMaxStacks;
+      case Reaction.firestorm:
+      case Reaction.superconduct:
+      case Reaction.corrosiveArc:
+      // Chain-scoped — see `_applyTorvChain`'s own doc comment.
+    }
+  }
+
+  static const double _steamburstArmourDuration = 5.0;
+  static const double _steamburstArmourShred = 0.20;
+  static const double _blightfireDuration = 3.0;
+  static const double _rimeRotFreezeBonus = 1.0;
+
   /// Damages up to [chainCount] other living enemies reachable from
   /// ([x], [y]) — first by walking the player's own live Windline network
   /// outward from the hit point (docs/07 §7.1: "chains travel along live
@@ -1466,10 +1596,18 @@ abstract final class ProjectileSystem {
   /// *Thunderhead*, T5b) — reusing `StatusStore.frozenRemaining`, the same
   /// hard-stop primitive Rook's own Anchor already reuses from Frost,
   /// guarded the identical "never shortens an active effect" way.
+  ///
+  /// [reaction] is docs/08's own *Firestorm*/*Superconduct*/*Corrosive Arc*
+  /// — the three reactions whose own "Effect" modifies a chain rather than
+  /// the triggering hit, applied per-link below: nothing for any of the
+  /// other four, and never more than one, since [ElementSystem.resolveReaction]
+  /// only ever resolves to a single reaction per hit.
   static void _applyTorvChain({
     required EntityStore store,
     required WindlineStore lines,
     required SegmentHash lineIndex,
+    required SimEventBuffer events,
+    required int arrowSlot,
     required int primaryTarget,
     required double x,
     required double y,
@@ -1480,6 +1618,7 @@ abstract final class ProjectileSystem {
     StatusStore? status,
     double stunDuration = 0,
     double conductiveLinesBonus = 0,
+    Reaction? reaction,
   }) {
     final List<int> targets = <int>[];
     final Set<int> excluded = <int>{primaryTarget};
@@ -1509,10 +1648,46 @@ abstract final class ProjectileSystem {
 
     for (int i = 0; i < targets.length; i++) {
       final int target = targets[i];
-      final double damage = i < foundAlongWindlines
+      double damage = i < foundAlongWindlines
           ? chainDamage * (1.0 + conductiveLinesBonus)
           : chainDamage;
+
+      // *Superconduct* — "frozen targets take 2x chain damage." Checked
+      // before this same link's own stun (below) could freeze it, so a
+      // target only just rooted by this very chain never retroactively
+      // qualifies.
+      if (reaction == Reaction.superconduct &&
+          status != null &&
+          status.isFrozen(target)) {
+        damage *= _superconductFrozenMultiplier;
+      }
+
       store.health[target] -= damage;
+
+      // *Firestorm* — "chain targets are ignited." Routed through
+      // `_applyOneElement` rather than a raw `status.apply`, so a chain's
+      // own ignite respects `resistsElement` and emits the same
+      // `elementApplied` event any other Burn application does.
+      if (reaction == Reaction.firestorm && status != null) {
+        _applyOneElement(enemies, status, events, arrowSlot, target,
+            SimElement.ember, store.posX[target], store.posY[target]);
+      }
+
+      // *Corrosive Arc* — "chains spread 3 Toxin stacks to each target."
+      if (reaction == Reaction.corrosiveArc && status != null) {
+        _applyOneElement(
+          enemies,
+          status,
+          events,
+          arrowSlot,
+          target,
+          SimElement.toxin,
+          store.posX[target],
+          store.posY[target],
+          toxinStacksPerHitOverride: _corrosiveArcToxinStacks,
+        );
+      }
+
       if (markDuration > 0 && enemies != null) {
         enemies.markedRemaining[target] = markDuration;
       }
@@ -1523,6 +1698,10 @@ abstract final class ProjectileSystem {
       }
     }
   }
+
+  static const double _superconductFrozenMultiplier = 2.0;
+  static const int _corrosiveArcToxinStacks = 3;
+  static const int _firestormChainCountBonus = 2;
 
   /// Breadth-first over Windline segment endpoints, starting from
   /// ([x], [y]): every live segment found within [SimConfig.windlineHitWidth]

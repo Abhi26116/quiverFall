@@ -89,6 +89,14 @@ abstract final class ElementSystem {
 
       double damage = 0;
 
+      // *Blightfire* (Ember+Toxin reaction) — "Burn and Toxin both tick at
+      // 2x for 3s." Read once here rather than per-DoT below, since both
+      // rates below already read it.
+      final double blightfireMultiplier =
+          enemies != null && enemies.blightfireRemaining[i] > 0
+              ? _blightfireDotMultiplier
+              : 1.0;
+
       if (status.burnStacks[i] > 0) {
         status.burnRemaining[i] -= dt;
         if (status.burnRemaining[i] <= 0) {
@@ -98,6 +106,7 @@ abstract final class ElementSystem {
           damage += store.maxHealth[healthSlot] *
               burnPerSecond *
               status.burnStacks[i] *
+              blightfireMultiplier *
               dt;
         }
       }
@@ -106,6 +115,7 @@ abstract final class ElementSystem {
         damage += store.maxHealth[healthSlot] *
             ElementTuning.toxinPerStackPerSecond *
             status.toxinStacks[i] *
+            blightfireMultiplier *
             dt;
       }
 
@@ -158,8 +168,14 @@ abstract final class ElementSystem {
   /// build-crafting into an execution problem and is the deepest idea in the
   /// game (docs/08 §8.2).
   ///
-  /// Returns the damage multiplier to apply to the triggering hit, or 1.0.
-  static double resolveReaction({
+  /// Returns the damage multiplier to apply to the triggering hit (1.0 for
+  /// none) alongside the [Reaction] itself, so a caller can apply that
+  /// reaction's own bespoke effect (docs/08's own "Effect" column —
+  /// Steamburst's armour shred, Blightfire's doubled DoT, and so on;
+  /// `ProjectileSystem._applyReactionEffect` is where those live) — a
+  /// second, independent thing from the shared multiplier every reaction
+  /// also grants, which this same call already resolves.
+  static ({double multiplier, Reaction? reaction}) resolveReaction({
     required StatusStore status,
     required SimEventBuffer events,
     required int target,
@@ -168,7 +184,7 @@ abstract final class ElementSystem {
     required double x,
     required double y,
   }) {
-    if (!status.canReact(target)) return 1.0;
+    if (!status.canReact(target)) return (multiplier: 1.0, reaction: null);
 
     final int distinct = _bitCount(elementMask) + (incoming != null ? 1 : 0);
 
@@ -185,7 +201,7 @@ abstract final class ElementSystem {
       }
     }
 
-    if (reaction == null) return 1.0;
+    if (reaction == null) return (multiplier: 1.0, reaction: null);
 
     status.markReacted(target);
     events.emit(
@@ -197,10 +213,13 @@ abstract final class ElementSystem {
       y: y,
     );
 
-    return reaction.damageMultiplier;
+    return (multiplier: reaction.damageMultiplier, reaction: reaction);
   }
 
   static const double _kadeDeepBurnPerSecond = 0.06;
+
+  /// *Blightfire* (Ember+Toxin reaction) — docs/08's own stated rate.
+  static const double _blightfireDotMultiplier = 2.0;
 
   /// ADR 0015 — Kestrel's own Bleed rate, anchored to Burn's own base
   /// (`ElementTuning.burnPerSecond`) since docs/07 states a duration (3 s)
