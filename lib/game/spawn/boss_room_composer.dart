@@ -30,9 +30,11 @@ import 'package:quiverfall/game/sim/world.dart';
 /// Elite-tier boss is still a plain [BossArchetype], so `StageRunner`'s
 /// own `BossRoomComposer.spawn(world, boss, ...)` call needed no changes
 /// at all to place one — only `EliteRoomComposer.eliteFor`, the Elite
-/// tier's own equivalent of [bossFor], and one more `switch` arm here.
-/// Only The Ashen Choir (`AshenChoirSystem`, ADR 0033) has a fight built
-/// so far. See ADR 0055.
+/// tier's own equivalent of [bossFor], and one more `switch` arm here per
+/// boss. All four Elite/Event bosses now have a fight built: The Ashen
+/// Choir (`AshenChoirSystem`, ADR 0033), Bellweather (`BellweatherSystem`,
+/// ADR 0064), The Pale Judge (`PaleJudgeSystem`, ADR 0065), and Umbral
+/// Twin (`UmbralTwinSystem`, ADR 0066). See ADR 0055 and ADR 0067.
 abstract final class BossRoomComposer {
   static const Map<int, BossArchetype> _builtByChapter = <int, BossArchetype>{
     1: BossArchetype.cinderChoir,
@@ -127,6 +129,21 @@ abstract final class BossRoomComposer {
         ),
       // ── Elite tier (docs/06 §6.2) ────────────────────────────────────────
       BossArchetype.ashenChoir => world.spawnAshenChoir(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.bellweather => world.spawnBellweather(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.paleJudge => world.spawnPaleJudge(
+          SimConfig.arenaWidth / 2,
+          SimConfig.arenaHeight / 2,
+          health: health,
+        ),
+      BossArchetype.umbralTwin => world.spawnUmbralTwin(
           SimConfig.arenaWidth / 2,
           SimConfig.arenaHeight / 2,
           health: health,

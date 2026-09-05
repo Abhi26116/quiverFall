@@ -26,20 +26,50 @@ import 'package:quiverfall/game/content/boss_definition.dart';
 /// be," rather than an arbitrary pick. `globalStage` for chapter 3 stage
 /// 10 is `(3 − 1) × 20 + 10 = 50`.
 ///
-/// Extend [_builtByGlobalStage] as Umbral Twin, Bellweather, and The Pale
-/// Judge (docs/06 #14–16) each get a real fight built — nothing else
-/// needs to change to pick one up, the same "one map, everything else
-/// generic" shape [BossRoomComposer] already proved twelve times over
-/// (ADR 0021) and now a thirteenth. `LevelGenerator._assemble` reads
-/// [eliteFor] for any `RoomKind.elite` slot exactly the way it already
-/// reads `BossRoomComposer.bossFor` for a `RoomKind.boss` slot, and
-/// `StageRunner`'s own spawn call (`BossRoomComposer.spawn`, which this
-/// tier also runs through — every Elite-tier archetype is still a
-/// [BossArchetype]) needed no changes at all to pick either tier up. See
-/// ADR 0055.
+/// All four Elite/Event bosses (docs/06 #13-16) now have a fight built and
+/// a placement here — nothing else needed to change to pick each one up,
+/// the same "one map, everything else generic" shape [BossRoomComposer]
+/// already proved twelve times over (ADR 0021) and now four more.
+/// `LevelGenerator._assemble` reads [eliteFor] for any `RoomKind.elite`
+/// slot exactly the way it already reads `BossRoomComposer.bossFor` for a
+/// `RoomKind.boss` slot, and `StageRunner`'s own spawn call
+/// (`BossRoomComposer.spawn`, which this tier also runs through — every
+/// Elite-tier archetype is still a [BossArchetype]) needed no changes at
+/// all to pick any of them up.
+///
+/// **Bellweather, The Pale Judge, and Umbral Twin's own placements are
+/// authored the identical way Ashen Choir's own was** (ADR 0055): docs/06
+/// states no cadence for this tier, so each sits at its own chapter's
+/// stage 10 — "roughly its own midpoint" — spread through the
+/// early-to-mid campaign (3, 5, 7, 10) rather than clustering in one
+/// place. Every stage from chapter 3 onward already carries an ordinary
+/// Elite room slot (`StageBlueprint.eliteIndex`, unconditional past
+/// `firstEliteChapter`), so any stage number here is a valid pick — stage
+/// 10 is a choice for evenness, not a structural requirement the way a
+/// campaign boss's own stage 20 is.
+///
+/// **Umbral Twin sits at chapter 10, not chapter 9** — chapter 9 is
+/// deliberately skipped. `corridor_choke` (`assets/data/arenas.json`,
+/// chapters 6/9/11 only) places a wall pillar directly on the line
+/// between its own left-side spawn points and the arena's geometric
+/// centre, exactly where every boss spawns (`BossRoomComposer.spawn`'s
+/// own `arenaWidth/2, arenaHeight/2`) — a real instance of the "arenas
+/// were never validated wall-clear at a boss's own footprint" risk ADR
+/// 0021 already flagged, not a defect in Umbral Twin's own sim code
+/// (confirmed directly: an instant-kill clears the room fine; only a
+/// realistic bot standing at that arena's own y=4.5 spawn point, firing
+/// straight at a boss dead centre, has its every shot absorbed by the
+/// pillar first). Landing a boss in any of chapters 6/9/11 risks the
+/// identical failure for whichever arena the room's own RNG happens to
+/// pick — sidestepped here by choosing a chapter `corridor_choke` is not
+/// eligible for, not by fixing the general risk, which remains open. See
+/// ADR 0067.
 abstract final class EliteRoomComposer {
   static const Map<int, BossArchetype> _builtByGlobalStage = <int, BossArchetype>{
     50: BossArchetype.ashenChoir, // chapter 3, stage 10.
+    90: BossArchetype.bellweather, // chapter 5, stage 10.
+    130: BossArchetype.paleJudge, // chapter 7, stage 10.
+    190: BossArchetype.umbralTwin, // chapter 10, stage 10.
   };
 
   /// The `BossArchetype` that should replace the ordinary Elite pick on

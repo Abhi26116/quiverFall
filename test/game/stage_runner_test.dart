@@ -538,6 +538,42 @@ void main() {
       expect(s.runner.room.bossArchetype, isNull);
       expect(s.runner.room.enemyCount, greaterThan(0));
     });
+
+    test("chapter 5's stage 10 spawns the real Bellweather", () {
+      // globalStage 90 — `EliteRoomComposer`'s own second authored
+      // occurrence (ADR 0067).
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 5, stage: 10, seed: 522);
+      advanceToEliteRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.elite);
+      expect(s.runner.room.bossArchetype, BossArchetype.bellweather);
+    });
+
+    test("chapter 7's stage 10 spawns the real Pale Judge", () {
+      // globalStage 130 — `EliteRoomComposer`'s own third authored
+      // occurrence (ADR 0067).
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 7, stage: 10, seed: 523);
+      advanceToEliteRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.elite);
+      expect(s.runner.room.bossArchetype, BossArchetype.paleJudge);
+    });
+
+    test("chapter 10's stage 10 spawns the real Umbral Twin", () {
+      // globalStage 190 — `EliteRoomComposer`'s own fourth authored
+      // occurrence (ADR 0067).
+      final ({StageRunner runner, SimWorld world}) s =
+          stage(chapter: 10, stage: 10, seed: 524);
+      advanceToEliteRoom(s.runner, s.world);
+
+      expect(s.runner.status, StageStatus.fighting);
+      expect(s.runner.room.kind, RoomKind.elite);
+      expect(s.runner.room.bossArchetype, BossArchetype.umbralTwin);
+    });
   });
 }
 
