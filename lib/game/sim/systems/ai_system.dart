@@ -61,6 +61,8 @@ abstract final class AiSystem {
       _countDown(ctx.enemies.contactCooldown, i, dt);
       _countDown(ctx.enemies.slowRemaining, i, dt);
       _countDown(ctx.enemies.markedRemaining, i, dt);
+      _countDown(ctx.enemies.lingeringFrostRemaining, i, dt);
+      _countDown(ctx.enemies.lingeringFrostSlowRemaining, i, dt);
 
       if (ctx.enemies.enrageRemaining[i] > 0) {
         ctx.enemies.enrageRemaining[i] -= dt;

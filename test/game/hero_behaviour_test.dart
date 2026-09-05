@@ -5,6 +5,7 @@ import 'package:quiverfall/data/models/inventory.dart';
 import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
 import 'package:quiverfall/game/arrows/arrow_definition.dart';
+import 'package:quiverfall/game/balance/enemy_tuning.dart';
 import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
@@ -4093,6 +4094,91 @@ void main() {
 
       expect(a.world.entities.health[a.nearby[0]], closeTo(before, 1e-6));
     });
+
+    /// Fires until [target] freezes — Chill's own passive accumulation,
+    /// through ordinary combat rather than seeding `frozenRemaining`
+    /// directly, since Lingering Frost triggers on the freeze *transition*
+    /// itself (see `ProjectileSystem._applyHit`'s own comment), which a
+    /// pre-seeded value never produces.
+    void freezeThroughCombat(SimWorld world, int target) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600 && !world.status.isFrozen(target); t++) {
+        world.tick(idle);
+      }
+    }
+
+    test('Lingering Frost (★3b): a fresh freeze radiates a slow field', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+      );
+      freezeThroughCombat(a.world, a.primary);
+      expect(a.world.status.isFrozen(a.primary), isTrue);
+      expect(a.world.enemies.lingeringFrostRemaining[a.primary],
+          greaterThan(0));
+    });
+
+    test('without Lingering Frost, a freeze never radiates a field', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena();
+      freezeThroughCombat(a.world, a.primary);
+      expect(a.world.status.isFrozen(a.primary), isTrue);
+      expect(a.world.enemies.lingeringFrostRemaining[a.primary], 0);
+    });
+
+    test('the field slows a bystander within 3.5 u', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+        nearbyOffsets: <double>[2.0], // within the 3.5 u field
+      );
+      freezeThroughCombat(a.world, a.primary);
+      a.world.tick(InputSnapshot()); // one more tick for the field pass
+      expect(a.world.enemies.lingeringFrostSlowRemaining[a.nearby[0]],
+          greaterThan(0));
+    });
+
+    test('the field does not reach a bystander outside 3.5 u', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+        nearbyOffsets: <double>[5.0], // outside the 3.5 u field
+      );
+      freezeThroughCombat(a.world, a.primary);
+      a.world.tick(InputSnapshot());
+      expect(a.world.enemies.lingeringFrostSlowRemaining[a.nearby[0]], 0);
+    });
+
+    test("the field actually slows a nearby enemy's movement", () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+      );
+      // 1.5 u from the primary — inside the 3.5 u field, and close enough
+      // to the player that it is still approaching (not yet at its own
+      // stand-off distance) once the freeze lands. High HP so a pierced
+      // arrow aimed at the primary (same line, same distance band) cannot
+      // kill and respawn it as something else mid-wait.
+      final int mover = a.world.spawnEnemy(EnemyArchetype.mote, 13.5, 4.5);
+      a.world.entities.maxHealth[mover] = 1e9;
+      a.world.entities.health[mover] = 1e9;
+
+      freezeThroughCombat(a.world, a.primary);
+      a.world.tick(InputSnapshot()); // field pass, then AiSystem steers
+
+      final double speed = math.sqrt(
+        a.world.entities.velX[mover] * a.world.entities.velX[mover] +
+            a.world.entities.velY[mover] * a.world.entities.velY[mover],
+      );
+      final double base = content.byArchetype(EnemyArchetype.mote).speed;
+      // Generous slack: steering (separation from the nearby primary,
+      // heading not perfectly on the player) moves this a little off the
+      // pure `speedOf` reading — the point is confirming a real,
+      // substantial slow landed, not nailing the float exactly.
+      expect(
+        speed,
+        closeTo(base * (1 - EnemyTuning.lingeringFrostSlow), base * 0.15),
+      );
+    });
   });
 
   group('Toxin and Miasma', () {
@@ -5922,12 +6008,13 @@ void main() {
       // clamp and a once-per-room refresh gate — two small, unrelated gaps
       // bundled into one ADR), Oriel's own Faster Cycle and Saturation
       // (ADR 0082, a real once-per-shot grouping for the element cycle and
-      // a generic status-duration multiplier), and Bram's whole kit (ADR
-      // 0083, a new player-owned telegraphed volley primitive plus two
-      // small splash riders).
+      // a generic status-duration multiplier), Bram's whole kit (ADR 0083,
+      // a new player-owned telegraphed volley primitive plus two small
+      // splash riders), and Sela's own Lingering Frost (ADR 0084, a slow
+      // genuinely independent of Windlines).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(4),
+        lessThanOrEqualTo(3),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -6007,15 +6094,15 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // corpse's own status before `clearSlot` erases it — centred on the
   // kill's own position rather than the player, the one thing every
   // existing player AoE (Ashlin's nova, Ovrin's Riposte) never needed
-  // (ADR 0076). Lingering Frost stays pending: it needs a real "timed slow
-  // zone independent of Windlines" primitive — the sim's only existing
-  // slow mechanism (`EnemyStore.slowRemaining`/`windlineSlowFactor`) is
-  // Windline- and Boon-specific by construction (`BoonSystem`'s own pass
-  // only reads the *player's* live trail and a Boon's own `slow` stat), so
-  // faking a zone by dropping a zero-length Windline segment would
-  // silently depend on whatever slow-related Boon the player happens to
-  // hold, not on Sela at all.
-  HeroBehaviour.selaLingeringFrost,
+  // (ADR 0076). Lingering Frost is implemented too now (ADR 0084): a real
+  // slow entirely independent of Windlines — two new `EnemyStore` fields
+  // (a source-side "am I radiating" timer set on the freeze transition
+  // itself, and a target-side "am I slowed" timer it refreshes on nearby
+  // enemies) rather than faking a zone through the Windline-specific path,
+  // which would have silently depended on whatever slow-related Boon the
+  // player happened to hold, not on Sela at all. Sela is the thirteenth
+  // hero (after Sable, Kade, Corvin, Lira, Halden, Zea, Mirelle, Ovrin,
+  // Wren, Rook, Iris, Bram) with nothing deferred.
 
   // torvArc, torvTempestNock, torvFrequentArc, torvWideArc,
   // torvLongTempest, torvOverload and torvThunderhead are all implemented —

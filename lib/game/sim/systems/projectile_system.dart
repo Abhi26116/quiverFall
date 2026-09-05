@@ -1045,6 +1045,16 @@ abstract final class ProjectileSystem {
     store.health[healthSlot] -= toHealth;
     projectiles.pierceRemaining[slot]--;
 
+    // *Lingering Frost* (Sela, T3b) reads a freeze *transition*, not a
+    // live freeze state — a target already frozen from an earlier hit must
+    // not re-trigger the field on every subsequent hit while it stays
+    // frozen. Captured once before either elemental path below, since a
+    // Sela player's own freezes usually come from her innate Chill
+    // passive (`_applyHeroInnateElements`), not a Frost-element arrow
+    // (`_applyElement`) — either one can be the hit that tips the target
+    // over `ElementTuning.chillToFreeze`.
+    final bool wasFrozenBefore = status != null && status.isFrozen(target);
+
     _applyElement(
       projectiles: projectiles,
       enemies: enemies,
@@ -1069,6 +1079,15 @@ abstract final class ProjectileSystem {
       x: store.posX[target],
       y: store.posY[target],
     );
+
+    if (hero != null &&
+        hero.has(HeroBehaviour.selaLingeringFrost) &&
+        enemies != null &&
+        status != null &&
+        !wasFrozenBefore &&
+        status.isFrozen(target)) {
+      enemies.lingeringFrostRemaining[target] = _selaLingeringFrostDuration;
+    }
 
     events.emit(
       SimEventType.damageDealt,
@@ -1602,6 +1621,11 @@ abstract final class ProjectileSystem {
   }
 
   static const double _selaDeeperChillPerHit = 16.0;
+
+  /// *Lingering Frost* (T3b) — docs/07's own stated duration for the field
+  /// itself. See `EnemyStore.lingeringFrostRemaining`'s own doc comment for
+  /// how the field then radiates outward (`SimWorld._tickSelaLingeringFrost`).
+  static const double _selaLingeringFrostDuration = 3.0;
   static const int _sableFastActingPerHit = 2;
   static const int _sableFastActingMaxStacks = 8;
   static const int _sableVirulenceMaxStacks = 12;

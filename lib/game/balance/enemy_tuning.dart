@@ -79,6 +79,17 @@ abstract final class EnemyTuning {
   /// the effect is legible instead of flickering on and off frame by frame.
   static const double windlineSlowLinger = 0.25;
 
+  // ── Sela: Lingering Frost ─────────────────────────────────────────────────
+
+  /// Sela's own *Lingering Frost* (T3b) — "frozen enemies leave a slow
+  /// field." docs/07 states the field's own 3 s duration but no magnitude;
+  /// authored fresh here rather than reusing the ambient
+  /// `SimConfig.windlineSlow` (8%, deliberately small since it applies
+  /// everywhere a Windline exists, all the time) — this is a rare, targeted
+  /// zone that only exists near a freshly-frozen enemy, so a heavier number
+  /// reads as the dedicated crowd-control pick a T3 talent is meant to be.
+  static const double lingeringFrostSlow = 0.30;
+
   // ── Carapace ──────────────────────────────────────────────────────────────
 
   /// Fraction of an enemy's max HP the plate absorbs before breaking. Damage

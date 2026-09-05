@@ -86,6 +86,8 @@ class EnemyStore {
         speedScale = Float64List(capacity),
         enrageRemaining = Float64List(capacity),
         slowRemaining = Float64List(capacity),
+        lingeringFrostRemaining = Float64List(capacity),
+        lingeringFrostSlowRemaining = Float64List(capacity),
         untargetable = Uint8List(capacity),
         variant = Uint8List(capacity),
         telegraphSlot = Int32List(capacity),
@@ -247,6 +249,22 @@ class EnemyStore {
   /// Windline slow, held briefly after leaving the line so the effect is
   /// legible rather than flickering frame by frame.
   final Float64List slowRemaining;
+
+  /// Sela's own *Lingering Frost* (T3b) — while this reads above zero, this
+  /// enemy is radiating its own 3 s slow field (set the instant it froze,
+  /// by `SimWorld._applyHit`'s own freeze-transition check). Deliberately
+  /// separate from [lingeringFrostSlowRemaining] below: a source that also
+  /// updated its own targets' fields as if it were a target too would let
+  /// the slow propagate outward through a swarm indefinitely, which "a
+  /// field left behind by *this* frozen enemy" never promises.
+  final Float64List lingeringFrostRemaining;
+
+  /// Sela's own *Lingering Frost* — the actual movement-affecting timer,
+  /// set on whichever enemies stand near a live [lingeringFrostRemaining]
+  /// source (`SimWorld._tickSelaLingeringFrost`) and read in
+  /// [Steering.speedOf], entirely independent of any live Windline — the
+  /// gap the ledger's own note on this talent named it for.
+  final Float64List lingeringFrostSlowRemaining;
 
   /// Auto-aim skips these. Airborne Bounders and Gravebound corpses.
   final Uint8List untargetable;
@@ -474,6 +492,8 @@ class EnemyStore {
     speedScale[slot] = 1.0;
     enrageRemaining[slot] = 0;
     slowRemaining[slot] = 0;
+    lingeringFrostRemaining[slot] = 0;
+    lingeringFrostSlowRemaining[slot] = 0;
     markedRemaining[slot] = 0;
     bleedStacks[slot] = 0;
     bleedRemaining[slot] = 0;

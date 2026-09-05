@@ -594,6 +594,7 @@ class SimWorld {
     _tickRookSingularity(dt);
     _tickIrisLattice(dt);
     _tickBramMortarRain(dt);
+    _tickSelaLingeringFrost(dt);
 
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
@@ -1855,6 +1856,62 @@ class SimWorld {
           hero.bramShellTelegraphSlot[i], hero.bramShellTelegraphSerial[i]);
     }
   }
+
+  /// *Lingering Frost* (Sela, T3b) — "frozen enemies leave a 3 s slow
+  /// field," independent of any live Windline (the gap the ledger's own
+  /// note on this talent named it for: `EnemyStore.slowRemaining`/
+  /// `windlineSlowFactor` are Windline- and Boon-specific by construction).
+  ///
+  /// Every enemy currently radiating one (`EnemyStore.lingeringFrostRemaining`,
+  /// set the instant it froze — see `ProjectileSystem._applyHit`'s own
+  /// freeze-transition check) refreshes [EnemyTuning.lingeringFrostSlow] on
+  /// every other enemy within [_selaLingeringFrostRadius] of it, every tick
+  /// it stays live — the identical "set, don't accumulate, while in range"
+  /// shape `AiSystem._applyWindlineSlow` already uses for its own slow, so
+  /// several overlapping fields never stack past the one fixed number.
+  /// Deliberately two separate fields rather than one shared timer: a
+  /// slowed target that also radiated its own field the instant it was
+  /// touched would let the effect propagate outward through a whole swarm,
+  /// which "a field left behind by *this* frozen enemy" never promises.
+  ///
+  /// Radius reuses Glacier Nail's own freeze radius — "the same reach as
+  /// her own freeze" — rather than inventing a second number for the same
+  /// hero's own kit.
+  void _tickSelaLingeringFrost(double dt) {
+    if (!hero.has(HeroBehaviour.selaLingeringFrost)) return;
+    const double radiusSq =
+        _selaLingeringFrostRadius * _selaLingeringFrostRadius;
+    for (int i = 0; i < entities.highWater; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      if (enemies.lingeringFrostRemaining[i] <= 0) continue;
+
+      final double cx = entities.posX[i];
+      final double cy = entities.posY[i];
+      // `queryRadius` returns broad-phase candidates only — everything in
+      // the overlapping cells, not everything strictly inside the circle —
+      // so the exact distance test still has to happen here.
+      final int found =
+          spatial.queryRadius(cx, cy, _selaLingeringFrostRadius);
+      for (int k = 0; k < found; k++) {
+        final int j = spatial.resultAt(k);
+        if (entities.alive[j] == 0) continue;
+        if (entities.kind[j] != EntityKind.enemy.index) continue;
+        final double dx = entities.posX[j] - cx;
+        final double dy = entities.posY[j] - cy;
+        if (dx * dx + dy * dy > radiusSq) continue;
+        enemies.lingeringFrostSlowRemaining[j] = _selaLingeringFrostDuration;
+      }
+    }
+  }
+
+  /// Glacier Nail's own base freeze radius (docs/07 §7.1) — Lingering
+  /// Frost's own field reuses it rather than a second number for the same
+  /// idea. Unaffected by *Absolute Zero* (T5a), which raises the
+  /// Ultimate's own radius, a different ability from this passive-side
+  /// talent.
+  static const double _selaLingeringFrostRadius = 3.5;
+  static const double _selaLingeringFrostDuration = 3.0;
 
   /// *Pyre Line* — a straight burning wall along the aim vector, the same
   /// direction [FiringSystem.aimAngle] computes for every other targeted
