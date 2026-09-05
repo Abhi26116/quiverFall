@@ -7,6 +7,7 @@ import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/sim/ai/ai_context.dart';
 import 'package:quiverfall/game/sim/arena.dart';
+import 'package:quiverfall/game/sim/companion_store.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/arrow_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
@@ -33,6 +34,7 @@ import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
 import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
 import 'package:quiverfall/game/sim/systems/coilspine_system.dart';
+import 'package:quiverfall/game/sim/systems/companion_system.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
 import 'package:quiverfall/game/sim/systems/draw_system.dart';
 import 'package:quiverfall/game/sim/systems/element_system.dart';
@@ -216,6 +218,11 @@ class SimWorld {
   final DrawState lastWardenDraw = DrawState();
 
   final ProjectileStore projectiles = ProjectileStore();
+
+  /// Friendly, independently-acting bodies fighting alongside the player —
+  /// Zea's own Skyhawk/Falconry, Mirelle's own Hall of Mirrors clone
+  /// (docs/07 §7.3). See [CompanionStore]/[CompanionSystem] and ADR 0071.
+  final CompanionStore companions = CompanionStore();
 
   /// The trails arrows leave — the game's signature mechanic. See [WindlineStore].
   final WindlineStore windlines = WindlineStore();
@@ -668,6 +675,11 @@ class SimWorld {
     CoilspineSystem.update(ai);
     LastWardenSystem.update(ai);
 
+    // Not a boss — a friendly companion — but the identical "resolve
+    // before the generic death/reap pass" ordering applies: a companion's
+    // own hit can kill an enemy this same tick.
+    CompanionSystem.update(ai, companions);
+
     AiSystem.update(ai);
 
     // *Rekindle* — the revive itself happens inside AiSystem's own call to
@@ -766,6 +778,7 @@ class SimWorld {
       ..playerVelY = entities.velY[p]
       ..playerRadius = entities.radius[p]
       ..playerMaxHealth = entities.maxHealth[p]
+      ..playerAttack = playerAttack
       ..boons = boons
       ..combat = combat
       ..hero = hero
@@ -2507,6 +2520,37 @@ class SimWorld {
         centerX: x,
         centerY: y,
         health: health,
+      );
+
+  /// Places a single friendly companion (docs/07 §7.3: Zea's own Skyhawk/
+  /// Falconry, Mirelle's own Hall of Mirrors clone). Test/tool entry
+  /// point; [CompanionSystem.spawn] does the real work, and wiring an
+  /// actual hero's own numbers into a call here is a separate, later
+  /// piece — see ADR 0071. Returns its slot.
+  int spawnCompanion(
+    double x,
+    double y, {
+    required double damageShare,
+    required double fireRate,
+    double radius = 0.35,
+    double lifetimeSeconds = double.infinity,
+    bool alwaysCrit = false,
+    double followOffsetX = 0,
+    double followOffsetY = 0,
+  }) =>
+      CompanionSystem.spawn(
+        store: entities,
+        companions: companions,
+        events: events,
+        x: x,
+        y: y,
+        damageShare: damageShare,
+        fireRate: fireRate,
+        radius: radius,
+        lifetimeSeconds: lifetimeSeconds,
+        alwaysCrit: alwaysCrit,
+        followOffsetX: followOffsetX,
+        followOffsetY: followOffsetY,
       );
 
   /// Places Skarn the Unmade — a single directly-hittable body, holding its

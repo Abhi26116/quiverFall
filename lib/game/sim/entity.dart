@@ -39,6 +39,11 @@ enum EntityKind {
   projectile,
   pickup,
   hazard,
+
+  /// A friendly, independently-acting body fighting alongside the player —
+  /// Zea's own Skyhawk/Falconry, Mirelle's own Hall of Mirrors clone
+  /// (docs/07 §7.3). See `CompanionStore`/`CompanionSystem` and ADR 0071.
+  companion,
 }
 
 /// Struct-of-arrays entity storage.

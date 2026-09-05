@@ -108,6 +108,11 @@ class AiContext {
   double playerMaxHealth = 1;
   double playerRadius = SimConfig.playerRadius;
 
+  /// `SimWorld.playerAttack` — the hero's own raw ATK stat, read live so a
+  /// companion's own damage share (docs/07 §7.3: "35 % of hero ATK", "60 %
+  /// stats") tracks the player's own current build. See `CompanionSystem`.
+  double playerAttack = 0;
+
   /// The player's Draw and Momentum state. Read for damage reduction, written
   /// by the Screecher's Draw-lock.
   DrawState? playerDraw;

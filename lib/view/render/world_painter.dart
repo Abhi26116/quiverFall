@@ -274,11 +274,31 @@ class WorldPainter {
           _paintArrow(canvas, i);
         case EntityKind.player:
           _paintPlayer(canvas, i);
+        case EntityKind.companion:
+          _paintCompanion(canvas, i);
         case EntityKind.pickup:
         case EntityKind.hazard:
           break;
       }
     }
+  }
+
+  /// A friendly body fighting alongside the player (docs/07 §7.3) — a
+  /// plain accent-coloured marker for now. Real per-hero art (a hawk, a
+  /// mirror clone) is presentation work for whenever one of those kits
+  /// actually ships a look, not this pass's own job.
+  void _paintCompanion(Canvas canvas, int i) {
+    final EntityStore entities = world.entities;
+    final Offset at = Offset(entities.posX[i], entities.posY[i]);
+    final double radius = entities.radius[i];
+
+    _fill.color = const Color(FeelPalette.accent);
+    canvas.drawCircle(at, radius, _fill);
+
+    _stroke
+      ..color = const Color(0xEE080B12)
+      ..strokeWidth = 0.05;
+    canvas.drawCircle(at, radius, _stroke);
   }
 
   void _paintEnemy(Canvas canvas, int i) {
