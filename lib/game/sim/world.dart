@@ -53,6 +53,7 @@ import 'package:quiverfall/game/sim/systems/spawn_system.dart';
 import 'package:quiverfall/game/sim/systems/the_loom_system.dart';
 import 'package:quiverfall/game/sim/systems/the_quiverfall_system.dart';
 import 'package:quiverfall/game/sim/systems/thrall_of_nine_system.dart';
+import 'package:quiverfall/game/sim/systems/umbral_twin_system.dart';
 import 'package:quiverfall/game/sim/systems/vermillion_system.dart';
 import 'package:quiverfall/game/sim/systems/weeping_gate_system.dart';
 import 'package:quiverfall/game/sim/telegraph.dart';
@@ -650,6 +651,7 @@ class SimWorld {
     AshenChoirSystem.update(ai);
     BellweatherSystem.update(ai);
     PaleJudgeSystem.update(ai);
+    UmbralTwinSystem.update(ai);
     SkarnSystem.update(ai);
     GauntSystem.update(ai);
     SilversongSystem.update(ai);
@@ -2480,6 +2482,23 @@ class SimWorld {
         centerY: y,
         health: health,
         playerElement: boons.attunedElement ?? arrowElement,
+      );
+
+  /// Places Umbral Twin — a single stationary body; its own card's
+  /// differentiating mechanic (darkness lit by Windlines, audio-first
+  /// telegraphs) is a presentation concern outside the sim's own
+  /// architectural boundary (ADR 0066). Test/tool entry point, the same
+  /// role [spawnBoss] plays for the generic case; [UmbralTwinSystem.spawn]
+  /// does the real work. Returns its slot.
+  int spawnUmbralTwin(double x, double y, {required double health}) =>
+      UmbralTwinSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
       );
 
   /// Places Skarn the Unmade — a single directly-hittable body, holding its
