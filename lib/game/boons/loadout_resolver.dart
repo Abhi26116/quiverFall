@@ -188,14 +188,18 @@ abstract final class LoadoutResolver {
     SimWorld world,
     BoonInventory inventory, {
     required double baseAttack,
+    double baseFireRateMultiplier = 1.0,
     double baseMaxHealth = 100.0,
+    double baseMoveSpeed = SimConfig.playerMoveSpeed,
   }) =>
       apply(
         world,
         inventory.stats,
         inventory: inventory,
         baseAttack: baseAttack,
+        baseFireRateMultiplier: baseFireRateMultiplier,
         baseMaxHealth: baseMaxHealth,
+        baseMoveSpeed: baseMoveSpeed,
       );
 
   /// *Echo Thread* — the one behaviour that reads its own copy count.

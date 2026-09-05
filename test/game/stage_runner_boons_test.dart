@@ -1,18 +1,28 @@
 import 'dart:io';
 
+import 'package:quiverfall/data/models/inventory.dart';
+import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
+import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
+import 'package:quiverfall/game/arrows/arrow_definition.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_pool.dart';
 import 'package:quiverfall/game/boons/synergy_catalogue.dart';
 import 'package:quiverfall/game/content/content_library.dart';
+import 'package:quiverfall/game/heroes/hero_catalogue.dart';
+import 'package:quiverfall/game/heroes/hero_definition.dart';
+import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
 import 'package:quiverfall/game/level/level_generator.dart';
 import 'package:quiverfall/game/level/stage_blueprint.dart';
+import 'package:quiverfall/game/sim/effects/stat_channel.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:test/test.dart';
 
+import 'arrow_test_support.dart';
 import 'boon_test_support.dart';
+import 'hero_test_support.dart';
 
 /// [StageRunner]'s Phase 9 half: pausing on a room clear for the Boon Choice
 /// or the Shrine, rather than advancing straight through it.
@@ -26,6 +36,8 @@ void main() {
   late ContentLibrary content;
   late BoonCatalogue boons;
   late SynergyCatalogue synergies;
+  late HeroCatalogue heroes;
+  late ArrowCatalogue arrows;
 
   setUpAll(() {
     content = ContentLibrary.parse(
@@ -34,6 +46,8 @@ void main() {
     ).$1!;
     boons = loadBoons();
     synergies = loadSynergies(boons);
+    heroes = loadHeroes();
+    arrows = loadArrows();
   });
 
   /// Chapter 9 is chosen deliberately: `roomCount(9) == 9`, which puts the
@@ -356,6 +370,149 @@ void main() {
         reason: 'an empty catalogue must never produce an interstitial',
       );
       expect(runner.roomIndex, 1);
+    });
+  });
+
+  group('a real hero+arrow loadout survives a Boon pick (ADR 0090)', () {
+    /// Wren + Broadhead at a level/star well past 1/0, so the hero-composed
+    /// attack is nowhere near [lawfulAttackFor]'s own placeholder by
+    /// coincidence — a false pass here would be silent.
+    ({
+      StageRunner runner,
+      SimWorld world,
+      double heroAttack,
+      ({
+        double baseAttack,
+        double baseFireRateMultiplier,
+        double baseMaxHealth,
+        double baseMoveSpeed,
+      }) base,
+    }) heroStage({
+      int chapter = 3,
+      int stage = 5,
+      int seed = 4242,
+      bool wireBaseLoadout = true,
+    }) {
+      final StageBlueprint blueprint =
+          StageBlueprint.forStage(chapter: chapter, stage: stage, seed: seed);
+      final StagePlan plan = generateStage(
+        generator: LevelGenerator(content: content, arenas: content.arenas),
+        blueprint: blueprint,
+      );
+      final SimWorld world =
+          buildStageWorld(blueprint: blueprint, content: content, plan: plan);
+      final StageRunner runner = StageRunner(
+        world: world,
+        content: content,
+        plan: plan,
+        boonCatalogue: boons,
+        synergies: synergies,
+      )..start();
+
+      final HeroDefinition wren = heroes.byArchetype(HeroArchetype.wren)!;
+      final ArrowDefinition broadhead =
+          arrows.byArchetype(ArrowArchetype.broadhead)!;
+      final ({
+        double baseAttack,
+        double baseFireRateMultiplier,
+        double baseMaxHealth,
+        double baseMoveSpeed,
+      }) base = HeroLoadoutResolver.apply(
+        world,
+        wren,
+        const HeroState(heroId: 'wren', level: 40, stars: 3),
+        broadhead,
+        const ArrowInstance(arrowId: 'broadhead', crafted: true),
+      );
+      if (wireBaseLoadout) {
+        runner.setBaseLoadout(
+          baseAttack: base.baseAttack,
+          baseFireRateMultiplier: base.baseFireRateMultiplier,
+          baseMaxHealth: base.baseMaxHealth,
+          baseMoveSpeed: base.baseMoveSpeed,
+        );
+      }
+      return (runner: runner, world: world, heroAttack: base.baseAttack, base: base);
+    }
+
+    test('the hero-composed attack is nowhere near the placeholder', () {
+      // Guards every test below against a coincidental pass: if this ever
+      // fails, `lawfulAttackFor` and the hero build converged by chance and
+      // the other assertions in this group stop meaning anything.
+      final s = heroStage();
+      final double placeholder =
+          lawfulAttackFor(s.runner.plan.blueprint.globalStage);
+      expect(
+        (s.heroAttack - placeholder).abs() / placeholder,
+        greaterThan(0.5),
+      );
+    });
+
+    test(
+      'without setBaseLoadout, a Boon pick silently reverts to the '
+      'placeholder — the bug ADR 0090 fixes, kept as a live regression pin',
+      () {
+        final s = heroStage(wireBaseLoadout: false);
+        expect(s.world.playerAttack, closeTo(s.heroAttack, 1e-6));
+
+        tickUntilPaused(s.runner, s.world);
+        s.runner.pickBoon(s.runner.pendingBoonOffers.first.definition);
+
+        expect(
+          s.world.playerAttack,
+          closeTo(lawfulAttackFor(s.runner.plan.blueprint.globalStage), 1e-6),
+          reason: 'documents the pre-fix behaviour this test group exists '
+              'to prevent regressing back to silently — see ADR 0090',
+        );
+      },
+    );
+
+    test('with setBaseLoadout wired, a Boon pick keeps the hero and arrow',
+        () {
+      final s = heroStage();
+      expect(s.world.playerAttack, closeTo(s.heroAttack, 1e-6));
+
+      tickUntilPaused(s.runner, s.world);
+      s.runner.pickBoon(s.runner.pendingBoonOffers.first.definition);
+
+      // `playerAttack` is never multiplied by any Boon channel (docs/04
+      // §4.1's own damage-sum term lives elsewhere, in `world.combat`) —
+      // it must come through bit-for-bit regardless of which card was
+      // drawn. `fireRateMultiplier`/max HP/move speed genuinely *can*
+      // change if the drawn card touches those channels, so those are
+      // checked against the same formula `LoadoutResolver.apply` itself
+      // uses — hero baseline times whatever the Boon now contributes —
+      // rather than asserted unchanged.
+      expect(s.world.playerAttack, closeTo(s.heroAttack, 1e-6),
+          reason: 'the hero+arrow attack must survive a Boon pick intact');
+      expect(
+        s.world.fireRateMultiplier,
+        closeTo(
+          s.base.baseFireRateMultiplier *
+              s.runner.boons.stats.multiplierFor(StatChannel.fireRate),
+          1e-6,
+        ),
+      );
+      expect(
+        s.world.playerMoveSpeed,
+        closeTo(
+          s.base.baseMoveSpeed *
+              s.runner.boons.stats.multiplierFor(StatChannel.moveSpeed),
+          1e-6,
+        ),
+      );
+    });
+
+    test('survives repeated picks across several rooms, not just the first',
+        () {
+      final s = heroStage(chapter: 9);
+
+      for (int i = 0; i < 3; i++) {
+        tickUntilPaused(s.runner, s.world);
+        resolveInterstitial(s.runner);
+        expect(s.world.playerAttack, closeTo(s.heroAttack, 1e-6),
+            reason: 'lost the hero build after ${i + 1} interstitial(s)');
+      }
     });
   });
 }

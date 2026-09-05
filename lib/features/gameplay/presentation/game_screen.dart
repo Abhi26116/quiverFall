@@ -203,13 +203,27 @@ class _GameScreenState extends State<GameScreen>
           heroState != null &&
           arrow != null &&
           arrowInstance != null) {
-        HeroLoadoutResolver.apply(
+        // The return value matters: forwarding it is what keeps this build
+        // alive past the run's first Boon pick — see `setBaseLoadout`'s own
+        // doc comment and ADR 0090.
+        final ({
+          double baseAttack,
+          double baseFireRateMultiplier,
+          double baseMaxHealth,
+          double baseMoveSpeed,
+        }) base = HeroLoadoutResolver.apply(
           sim,
           hero,
           heroState,
           arrow,
           arrowInstance,
           affixes: content.affixes,
+        );
+        runner.setBaseLoadout(
+          baseAttack: base.baseAttack,
+          baseFireRateMultiplier: base.baseFireRateMultiplier,
+          baseMaxHealth: base.baseMaxHealth,
+          baseMoveSpeed: base.baseMoveSpeed,
         );
       }
 

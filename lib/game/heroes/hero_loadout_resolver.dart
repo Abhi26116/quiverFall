@@ -45,7 +45,19 @@ import 'package:quiverfall/game/sim/world.dart';
 /// should call `world.hero.reset()` first, so a stale ultimate charge or
 /// Rekindle flag never survives onto an unrelated kit.
 abstract final class HeroLoadoutResolver {
-  static void apply(
+  /// Returns the four `base*` values it just composed and handed to
+  /// [LoadoutResolver.apply] — the hero+arrow baseline every *later*
+  /// Boon-only recomposition (a pick, mid-run) needs to apply on top of
+  /// instead of a hero-blind placeholder. `void` until ADR 0090: nothing
+  /// downstream of the very first call ever saw these again, which is
+  /// exactly the bug that ADR fixes. A caller driving a `StageRunner`
+  /// should forward this straight to its own `setBaseLoadout(...)`.
+  static ({
+    double baseAttack,
+    double baseFireRateMultiplier,
+    double baseMaxHealth,
+    double baseMoveSpeed,
+  }) apply(
     SimWorld world,
     HeroDefinition hero,
     HeroState heroState,
@@ -154,6 +166,13 @@ abstract final class HeroLoadoutResolver {
           (HeroRuntime.ultimateChargeDivisor * heroAtk * heroFireRate);
 
     _syncZeaSkyhawk(world, heroActive);
+
+    return (
+      baseAttack: heroAtk * arrowBaseMult,
+      baseFireRateMultiplier: heroFireRate / DrawTier.one.fireRate,
+      baseMaxHealth: heroHp,
+      baseMoveSpeed: heroMoveSpeed,
+    );
   }
 
   /// Zea's own *Skyhawk* passive (docs/07 §7.3) — a permanent companion,

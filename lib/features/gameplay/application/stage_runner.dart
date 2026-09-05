@@ -56,11 +56,47 @@ class StageRunner {
   }) : boons = BoonInventory(
           catalogue: boonCatalogue ?? BoonCatalogue.empty(),
           synergies: synergies,
-        );
+        ),
+        _baseAttack = lawfulAttackFor(plan.blueprint.globalStage);
 
   final SimWorld world;
   final ContentLibrary content;
   final StagePlan plan;
+
+  // ── Base loadout ─────────────────────────────────────────────────────────
+  //
+  // What every *later* Boon-only recomposition (a pick, in [pickBoon]) applies
+  // on top of. Defaults to the same hero-blind [lawfulAttackFor] placeholder
+  // `buildStageWorld` already primes `world.playerAttack` with, so every
+  // existing caller with no real hero (every test in this repo, every tool)
+  // is unaffected. See [setBaseLoadout] and ADR 0090.
+  double _baseAttack;
+  double _baseFireRateMultiplier = 1.0;
+  double _baseMaxHealth = 100.0;
+  double _baseMoveSpeed = SimConfig.playerMoveSpeed;
+
+  /// Records the hero+arrow-composed loadout for every later Boon pick to
+  /// apply on top of.
+  ///
+  /// **Call once, right after applying a real build to [world] via
+  /// `HeroLoadoutResolver.apply` — forward that call's own return value here
+  /// directly.** Without this, [pickBoon] keeps recomposing against the
+  /// hero-blind placeholder [lawfulAttackFor] this runner starts with, which
+  /// silently *discards* the hero and arrow (not just fails to add to them)
+  /// the moment the very first Boon of a real run is picked — this runner
+  /// was written before heroes and arrows existed, and nothing wired the two
+  /// back together when Phase 10 added them. See ADR 0090.
+  void setBaseLoadout({
+    required double baseAttack,
+    double baseFireRateMultiplier = 1.0,
+    double baseMaxHealth = 100.0,
+    double baseMoveSpeed = SimConfig.playerMoveSpeed,
+  }) {
+    _baseAttack = baseAttack;
+    _baseFireRateMultiplier = baseFireRateMultiplier;
+    _baseMaxHealth = baseMaxHealth;
+    _baseMoveSpeed = baseMoveSpeed;
+  }
 
   /// The run's Boon build. Empty (no catalogue) by default, in which case
   /// [update] behaves exactly as it did before Phase 9: a room clear advances
@@ -139,7 +175,10 @@ class StageRunner {
     LoadoutResolver.applyBuild(
       world,
       boons,
-      baseAttack: lawfulAttackFor(plan.blueprint.globalStage),
+      baseAttack: _baseAttack,
+      baseFireRateMultiplier: _baseFireRateMultiplier,
+      baseMaxHealth: _baseMaxHealth,
+      baseMoveSpeed: _baseMoveSpeed,
     );
     _pendingOffers = const <BoonOffer>[];
 
