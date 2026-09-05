@@ -1007,7 +1007,16 @@ class SimWorld {
     if (player.isNone || !entities.isAlive(player)) return;
 
     _fireUltimate();
-    hero.ultimateCharge = 0;
+    // Spends exactly one charge's worth rather than zeroing outright —
+    // for every hero but Nyx this is the same thing, since
+    // `chargeFromDamage`'s own ceiling never lets `ultimateCharge` exceed
+    // 1.0 for anyone else. *Twin Step* (T5a, "2 charges") raises that
+    // ceiling to 2.0, so a player who banked a second charge stays
+    // `ultimateReady` immediately after firing the first — pressing again
+    // fires a genuine second Ultimate, not a re-charge. The floor guards
+    // float drift landing a hair below zero, never a real code path.
+    hero.ultimateCharge -= 1.0;
+    if (hero.ultimateCharge < 0) hero.ultimateCharge = 0;
     events.emit(SimEventType.ultimateUsed, entityA: player.index);
   }
 

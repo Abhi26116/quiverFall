@@ -5215,6 +5215,58 @@ void main() {
       expect(a.world.hero.umbralStepRemaining, closeTo(2.5, 0.02));
     });
 
+    test('Twin Step (★5a): damage past a full charge overflows into a '
+        'second one instead of capping', () {
+      final ({SimWorld world, int near, int far}) a =
+          nyxStepArena(stars: 5, talentChoices: <String, String>{'5': 'a'});
+      a.world.hero
+        ..ultimateCharge = 0.9
+        ..chargePerDamage = 1.0; // 1 raw damage = 100 % charge
+      a.world.hero.chargeFromDamage(1.5); // would reach 2.4 uncapped
+      expect(a.world.hero.ultimateCharge, closeTo(2.0, 1e-9));
+    });
+
+    test('without Twin Step, the same damage still caps at one charge', () {
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.hero
+        ..ultimateCharge = 0.9
+        ..chargePerDamage = 1.0;
+      a.world.hero.chargeFromDamage(1.5);
+      expect(a.world.hero.ultimateCharge, closeTo(1.0, 1e-9));
+    });
+
+    test('firing while a second charge is banked leaves the button still '
+        'ready', () {
+      final ({SimWorld world, int near, int far}) a =
+          nyxStepArena(stars: 5, talentChoices: <String, String>{'5': 'a'});
+      a.world.hero.ultimateCharge = 2.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.ultimateCharge, closeTo(1.0, 1e-9));
+      expect(a.world.hero.ultimateReady, isTrue);
+    });
+
+    test('firing twice in a row spends both banked charges — two real '
+        'Ultimates, not one cast plus a re-charge', () {
+      final ({SimWorld world, int near, int far}) a =
+          nyxStepArena(stars: 5, talentChoices: <String, String>{'5': 'a'});
+      a.world.hero.ultimateCharge = 2.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.ultimateCharge, closeTo(0.0, 1e-9));
+      expect(a.world.hero.ultimateReady, isFalse);
+      expect(a.world.events.countOf(SimEventType.ultimateUsed), 2);
+    });
+
+    test('without Twin Step, a single charge still resets to zero on fire',
+        () {
+      final ({SimWorld world, int near, int far}) a = nyxStepArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.ultimateCharge, 0);
+      expect(a.world.hero.ultimateReady, isFalse);
+    });
+
     /// `_updateFiring` runs before `_updateUltimate` within the same tick,
     /// so pressing the button on a tick where an ordinary shot's cooldown
     /// also happens to be ready would fire that shot *first*, unboosted —
@@ -6321,12 +6373,16 @@ void main() {
       // splash riders), Sela's own Lingering Frost (ADR 0084, a slow
       // genuinely independent of Windlines), Oriel's own White Light
       // (ADR 0085 — Reactions, docs/08's own deepest idea, actually fire in
-      // real gameplay for the first time), and Torv's own Conductive Lines
+      // real gameplay for the first time), Torv's own Conductive Lines
       // (ADR 0086 — chains genuinely walk the player's own live Windline
-      // network, the passive's own headline promise made real).
+      // network, the passive's own headline promise made real), and Nyx's
+      // own Twin Step (ADR 0087 — a real design decision on the shared
+      // Ultimate meter, resolved rather than guessed at). Every hero
+      // behaviour in the Phase 10 roster is implemented; this ledger is
+      // empty.
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(1),
+        lessThanOrEqualTo(0),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -6476,19 +6532,21 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
 
   // nyxFirstBlood and nyxExecutionersEye are implemented — see the "First
   // Blood" group. nyxUmbralStep, nyxDeeperShadow, nyxShadowline,
-  // nyxChainKill and nyxPerfectStep are all implemented too — see the
-  // "Umbral Step" group. Untargetable is a new concept for the *player*
-  // (enemies already had one, for the Bounder's leap and the Gravebound's
-  // downed state) — checked in EnemyAttack.damagePlayer, the same "ignore
-  // this hit outright" spot Covenant/Ghost Step/Immortal Draw already use.
-  // Twin Step (T5a, "2 charges") stays pending: every hero's Ultimate today
-  // shares one single-charge meter (`ultimateCharge`/`ultimateReady`), and
-  // a second charge would mean restructuring that shared system rather
-  // than adding a hero-local check — a bigger, riskier change, and the
-  // card's own text does not say whether charge accumulation overflows
-  // into the second charge or fills it separately, an unanswered design
-  // question worth its own pass rather than a guess here.
-  HeroBehaviour.nyxTwinStep,
+  // nyxChainKill, nyxPerfectStep and nyxTwinStep are all implemented now
+  // too — see the "Umbral Step" group (ADR 0087). Untargetable is a new
+  // concept for the *player* (enemies already had one, for the Bounder's
+  // leap and the Gravebound's downed state) — checked in
+  // EnemyAttack.damagePlayer, the same "ignore this hit outright" spot
+  // Covenant/Ghost Step/Immortal Draw already use. Twin Step's own "2
+  // charges" raises `HeroRuntime.chargeFromDamage`'s ceiling to 2.0 for
+  // this hero only (everyone else's ceiling is still 1.0, so the shared
+  // meter is untouched for the other fourteen), with damage past a full
+  // charge overflowing into the second rather than being wasted at the
+  // cap — a real design decision docs/07 never states, resolved by the
+  // project owner rather than guessed at. Nyx is the sixteenth hero (after
+  // Sable, Kade, Corvin, Lira, Halden, Zea, Mirelle, Ovrin, Wren, Rook,
+  // Iris, Bram, Sela, Oriel, Torv) with nothing deferred — the entire
+  // Phase 10 hero-behaviour roster now has nothing deferred.
 
   // irisWeave is implemented — see the "Weave" group. Its own data half
   // (Windline duration, the raised Confluence stack cap, and the 4th/5th

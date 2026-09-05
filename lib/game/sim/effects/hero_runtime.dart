@@ -75,10 +75,17 @@ class HeroRuntime {
   /// hit actually dealt — pre-mitigation makes an armoured target charge the
   /// Ultimate slower than a fodder one, which is backwards for a resource
   /// meant to reward landing hits at all.
+  ///
+  /// Ceiling is 1.0 for every hero but Nyx: *Twin Step* (T5a, "2 charges")
+  /// raises it to 2.0, so damage dealt while already `ultimateReady`
+  /// overflows into banking a second charge instead of being wasted at the
+  /// cap — the design this codebase picked over filling a second, separate
+  /// meter, since nothing in docs/07 says which of the two the card means.
   void chargeFromDamage(double rawDamage) {
     if (chargePerDamage <= 0) return;
+    final double ceiling = has(HeroBehaviour.nyxTwinStep) ? 2.0 : 1.0;
     final double next = ultimateCharge + rawDamage * chargePerDamage;
-    ultimateCharge = next > 1.0 ? 1.0 : next;
+    ultimateCharge = next > ceiling ? ceiling : next;
   }
 
   bool _readyAnnounced = false;

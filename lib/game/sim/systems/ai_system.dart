@@ -542,6 +542,10 @@ abstract final class AiSystem {
     if (hero != null &&
         hero.has(HeroBehaviour.wrenWardensFury) &&
         ctx.enemies.lastHitWasUltimate[slot] == 1) {
+      // Clamped at 1.0 unconditionally rather than reading Nyx's own Twin
+      // Step ceiling (`HeroRuntime.chargeFromDamage`'s own 2.0): this
+      // branch only ever runs for a Wren player, who is never also a Nyx
+      // player, so the two ceilings can never actually collide.
       final double next = hero.ultimateCharge + _wrenWardensFuryChargeRefund;
       hero.ultimateCharge = next > 1.0 ? 1.0 : next;
     }
