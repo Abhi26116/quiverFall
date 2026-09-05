@@ -760,6 +760,27 @@ class SimWorld {
       dt: dt,
     );
 
+    // *Bloodtide* — "cannot be healed above 70 % max HP by any source"
+    // (*Tempered*, T1b, raises this to 90 %). A single ceiling clamp here,
+    // after every heal source this tick has already run (lifesteal,
+    // `BoonSystem`'s own regen, a room-clear heal, even Vital Surge's own
+    // one-time "heal to full" from `LoadoutResolver.apply`, which runs
+    // before combat resumes and so is caught by this same tick's own
+    // clamp) — deliberately not a check threaded into each heal path
+    // individually, since "by any source" means literally that, and one
+    // clamp cannot miss a source the way N scattered checks eventually
+    // would.
+    if (hero.has(HeroBehaviour.thaneBloodtide) &&
+        !player.isNone &&
+        entities.isAlive(player)) {
+      final int p = player.index;
+      final double cap = entities.maxHealth[p] *
+          (hero.has(HeroBehaviour.thaneTempered)
+              ? _thaneTemperedHealCap
+              : _thaneBloodtideHealCap);
+      if (entities.health[p] > cap) entities.health[p] = cap;
+    }
+
     // ── cleanup ────────────────────────────────────────────────────────────
     telegraphs.expire(_elapsed);
     _tickCount++;
@@ -1175,6 +1196,11 @@ class SimWorld {
   static const double _thaneLowHealthThreshold = 0.25;
   static const double _thaneFrenzyFireRateBonus = 0.50;
   static const double _thaneLastStandReduction = 0.40;
+
+  /// *Bloodtide*'s own healing ceiling — see the clamp at the end of
+  /// [tick]. *Tempered* (T1b) raises it, never lowers it.
+  static const double _thaneBloodtideHealCap = 0.70;
+  static const double _thaneTemperedHealCap = 0.90;
 
   /// *Verdant Bloom* — a timed self-buff like Flurry, not a burst: a heal
   /// rate and a damage bonus, both read every tick rather than applied once
@@ -1914,6 +1940,14 @@ class SimWorld {
   /// *Rebirth Nova* — an AoE burst plus a heal, and (unless *Supernova*, T5b,
   /// traded it away for a bigger burst) resets Rekindle's own charge count
   /// so it can trigger again later in the run.
+  ///
+  /// **The refresh itself only fires once per room** — an authored
+  /// restriction (ADR 0081), since docs/07 states the refresh but no limit
+  /// on it, and *Eternal* (T5a, "Ultimate refresh has no cooldown") needs a
+  /// real cooldown to actually remove or it promises nothing the base kit
+  /// did not already do. Casting Rebirth Nova a second time in the same
+  /// room still fires the AoE and the heal — only the refresh itself is
+  /// gated — and Eternal simply ignores the gate outright.
   void _fireAshlinRebirthNova() {
     if (player.isNone || !entities.isAlive(player)) return;
     final int p = player.index;
@@ -1928,8 +1962,11 @@ class SimWorld {
     final double cap = entities.maxHealth[p];
     entities.health[p] = healed > cap ? cap : healed;
 
-    if (!supernova) {
+    if (!supernova &&
+        (hero.has(HeroBehaviour.ashlinEternal) ||
+            !hero.rebirthNovaRefreshedThisRoom)) {
       hero.rekindlesUsed = 0;
+      hero.rebirthNovaRefreshedThisRoom = true;
     }
   }
 
@@ -3301,6 +3338,7 @@ class SimWorld {
   /// Anchor Line's trail — to be set up exactly as a real room would.
   void beginRoomForTest() {
     boons.beginRoom();
+    hero.beginRoom();
     combat.resetLive();
 
     if (boons.has(BoonBehaviour.anchorLine) && !player.isNone) {

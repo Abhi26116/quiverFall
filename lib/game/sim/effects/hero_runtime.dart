@@ -285,6 +285,13 @@ class HeroRuntime {
   /// needs more than one revive to be possible at all.
   int rekindlesUsed = 0;
 
+  /// Whether Rebirth Nova's own Rekindle-refresh has already fired this
+  /// room — a per-*room* flag, not once-per-run, cleared in [beginRoom].
+  /// The restriction *Eternal* (T5a) removes; see ADR 0081 and
+  /// `SimWorld._fireAshlinRebirthNova`'s own doc comment for why the base
+  /// kit needed one authored at all.
+  bool rebirthNovaRefreshedThisRoom = false;
+
   /// Set the instant Rekindle's revive triggers, inside
   /// `EnemyAttack.damagePlayer`; read and cleared by `SimWorld.tick` right
   /// after `AiSystem` runs. The nova itself is resolved there rather than
@@ -378,6 +385,7 @@ class HeroRuntime {
     latticeLineCount = 0;
     arrowsFired = 0;
     rekindlesUsed = 0;
+    rebirthNovaRefreshedThisRoom = false;
     rekindleNovaPending = false;
     ashlinInvulnRemaining = 0;
     aegisPinRemaining = 0;
@@ -411,5 +419,6 @@ class HeroRuntime {
     singularity2Remaining = 0;
     latticeRemaining = 0;
     latticeLineCount = 0;
+    rebirthNovaRefreshedThisRoom = false;
   }
 }

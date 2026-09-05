@@ -2352,23 +2352,29 @@ void main() {
     }
 
     test('deals +1.2 % damage per 1 % missing HP', () {
-      final double? full = firstDamageDealt(thaneArena().world);
-      final double? half =
+      // Both points sit under Bloodtide's own 70 % heal ceiling (added
+      // later, below), so neither gets clamped — 100 % HP is no longer a
+      // reachable state for Thane at all, so it is no longer a valid
+      // "0 % missing" baseline either.
+      final double? high =
+          firstDamageDealt(thaneArena(playerHealthFraction: 0.65).world);
+      final double? low =
           firstDamageDealt(thaneArena(playerHealthFraction: 0.50).world);
-      expect(full, isNotNull);
-      expect(half, isNotNull);
-      // Full HP: 0 % missing, no bonus. Half HP: 50 % missing * 1.2 = +60 %.
-      expect(half! / full!, closeTo(1.60, 0.01));
+      expect(high, isNotNull);
+      expect(low, isNotNull);
+      // 35 % missing * 1.2 = +42 %; 50 % missing * 1.2 = +60 %.
+      expect(low! / high!, closeTo(1.60 / 1.42, 0.01));
     });
 
     test('caps at +85 %', () {
-      final double? full = firstDamageDealt(thaneArena().world);
+      final double? high =
+          firstDamageDealt(thaneArena(playerHealthFraction: 0.65).world);
       // 90 % missing * 1.2 = 108 %, past the 85 % cap.
       final double? nearlyDead =
           firstDamageDealt(thaneArena(playerHealthFraction: 0.10).world);
-      expect(full, isNotNull);
+      expect(high, isNotNull);
       expect(nearlyDead, isNotNull);
-      expect(nearlyDead! / full!, closeTo(1.85, 0.01));
+      expect(nearlyDead! / high!, closeTo(1.85 / 1.42, 0.01));
     });
 
     test('Deeper Tide (★1a): the cap rises to +120 %', () {
@@ -2391,7 +2397,11 @@ void main() {
     });
 
     test('Red Draw costs 20 % current HP and grants +120 % damage, +30 % fire rate for 6 s', () {
-      final ({SimWorld world, int target}) a = thaneArena();
+      // Under Bloodtide's own 70 % heal ceiling (added below) so the
+      // post-cost health this test checks is never itself clamped —
+      // 100 % HP paying 20 % would still land at 80 %, above that ceiling.
+      final ({SimWorld world, int target}) a =
+          thaneArena(playerHealthFraction: 0.65);
       final int p = a.world.player.index;
       final double before = a.world.entities.health[p];
 
@@ -2491,6 +2501,54 @@ void main() {
       final int fullCount = arrowsOver(full.world, window);
 
       expect(lowCount / fullCount, closeTo(1.50, 0.05));
+    });
+
+    test('cannot be healed above 70 % max HP by any source', () {
+      final ({SimWorld world, int target}) a =
+          thaneArena(playerHealthFraction: 0.30);
+      final int p = a.world.player.index;
+      // Stands in for whichever source actually healed this tick — the
+      // cap does not care which one it was.
+      a.world.entities.health[p] = a.world.entities.maxHealth[p] * 0.95;
+      a.world.tick(InputSnapshot());
+      expect(a.world.entities.health[p],
+          closeTo(a.world.entities.maxHealth[p] * 0.70, 1e-6));
+    });
+
+    test("Vital Surge's own heal to full is capped the same as any other "
+        'source', () {
+      final ({SimWorld world, int target}) a =
+          thaneArena(playerHealthFraction: 0.30);
+      final int p = a.world.player.index;
+      // `LoadoutResolver.apply` sets this directly, outside `tick()`
+      // entirely — the next tick's own clamp still catches it.
+      a.world.entities.health[p] = a.world.entities.maxHealth[p];
+      a.world.tick(InputSnapshot());
+      expect(a.world.entities.health[p],
+          closeTo(a.world.entities.maxHealth[p] * 0.70, 1e-6));
+    });
+
+    test('a heal that lands below the cap is left untouched', () {
+      final ({SimWorld world, int target}) a =
+          thaneArena(playerHealthFraction: 0.30);
+      final int p = a.world.player.index;
+      a.world.entities.health[p] = a.world.entities.maxHealth[p] * 0.50;
+      a.world.tick(InputSnapshot());
+      expect(a.world.entities.health[p],
+          closeTo(a.world.entities.maxHealth[p] * 0.50, 1e-6));
+    });
+
+    test('Tempered (★1b): raises the heal cap to 90 %', () {
+      final ({SimWorld world, int target}) a = thaneArena(
+        playerHealthFraction: 0.30,
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      );
+      final int p = a.world.player.index;
+      a.world.entities.health[p] = a.world.entities.maxHealth[p];
+      a.world.tick(InputSnapshot());
+      expect(a.world.entities.health[p],
+          closeTo(a.world.entities.maxHealth[p] * 0.90, 1e-6));
     });
   });
 
@@ -4822,6 +4880,87 @@ void main() {
           reason: 'Supernova trades the refresh away for a bigger cast');
     });
 
+    test(
+        'the refresh only fires once per room; casting Rebirth Nova again '
+        'does not re-refresh', () {
+      final ({SimWorld world, int target}) a = ashlinArena();
+      final InputSnapshot idle = InputSnapshot();
+
+      setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.hero.rekindlesUsed, 1);
+      a.world.tick(InputSnapshot());
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.rekindlesUsed, 0,
+          reason: 'the first cast this room still refreshes as normal');
+
+      // The revive's own invulnerability blocks a hit outright, so it has
+      // to expire before a second lethal hit can even reach the "refuse to
+      // die" check at all — the same wait the Twice Kindled test above
+      // already needs for the same reason.
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.ashlinInvulnRemaining, 0);
+
+      setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.hero.rekindlesUsed, 1);
+      a.world.tick(InputSnapshot());
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.rekindlesUsed, 1,
+          reason: 'the refresh already fired once this room');
+    });
+
+    test('a room boundary resets the once-per-room refresh gate', () {
+      final ({SimWorld world, int target}) a = ashlinArena();
+      setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      a.world.tick(InputSnapshot());
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.rebirthNovaRefreshedThisRoom, isTrue);
+
+      a.world.beginRoomForTest();
+      expect(a.world.hero.rebirthNovaRefreshedThisRoom, isFalse);
+    });
+
+    test(
+        'Eternal (★5a): the refresh has no cooldown, even cast twice in the '
+        'same room', () {
+      final ({SimWorld world, int target}) a = ashlinArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+
+      setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      a.world.tick(InputSnapshot());
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.rekindlesUsed, 0);
+
+      for (int t = 0; t < 200; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.ashlinInvulnRemaining, 0);
+
+      setUpForLethalHit(a.world);
+      EnemyAttack.damagePlayer(a.world.ai, 2.0, source: -1);
+      expect(a.world.hero.rekindlesUsed, 1);
+      a.world.tick(InputSnapshot());
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.rekindlesUsed, 0,
+          reason: 'Eternal removes the once-per-room gate entirely');
+    });
+
     test('Ember Body (★3a): 3 s invulnerability after any room clear', () {
       final SimWorld world = SimWorld(seed: 4004, content: content)
         ..autoFire = false;
@@ -5475,10 +5614,13 @@ void main() {
       // trio (ADR 0079, a sustained fixed-zone Ultimate — the same shape
       // Miasma/Pyre Line already established, not a new primitive), and
       // Iris's whole Lattice trio (ADR 0080, a guaranteed-max Confluence
-      // override layered on top of the organic sweep, not inside it).
+      // override layered on top of the organic sweep, not inside it), and
+      // Thane's Tempered and Ashlin's Eternal (ADR 0081, a heal-ceiling
+      // clamp and a once-per-room refresh gate — two small, unrelated gaps
+      // bundled into one ADR).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(13),
+        lessThanOrEqualTo(11),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -5613,15 +5755,12 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // StatModifier on damagePerDistanceCap.
 
   // thaneBloodtide, thaneRedDraw, thaneDeeperTide, thaneLastStand,
-  // thaneFrenzy, thaneLongRed and thaneCrimsonDraw are implemented — see
-  // the "Bloodtide and Red Draw" group. Bloodtide's own healing-cap clause
-  // ("cannot be healed above 70 % max HP by any source") is not: it would
-  // need a cap threaded into every heal source (lifesteal, every
-  // BoonSystem regen/shield call), and whether a heal-to-full Boon should
-  // respect it too is a design question the card's text does not answer.
-  // Tempered is the same gap at a different number (90 %) and stays
-  // pending for the same reason.
-  HeroBehaviour.thaneTempered,
+  // thaneFrenzy, thaneLongRed, thaneCrimsonDraw and thaneTempered are all
+  // implemented now — see the "Bloodtide and Red Draw" group. Bloodtide's
+  // own healing-cap clause ("cannot be healed above 70 % max HP by any
+  // source") is a single ceiling clamp run once per tick, after every heal
+  // source has already applied, rather than threaded into each one — see
+  // ADR 0081. Tempered is the same clamp at its own 90 % number.
 
   // nyxFirstBlood and nyxExecutionersEye are implemented — see the "First
   // Blood" group. nyxUmbralStep, nyxDeeperShadow, nyxShadowline,
@@ -5696,22 +5835,19 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
 
   // ashlinRekindle, ashlinRebirthNova, ashlinBrightRekindle,
   // ashlinTwiceKindled, ashlinEmberBody, ashlinPhoenixTrail and
-  // ashlinSupernova are all implemented — see the "Rekindle and Rebirth
-  // Nova" group. The revive itself is the hero-side counterpart to
-  // Guardian Angel/Phoenix Heart (same "refuse to die" spot in
-  // EnemyAttack.damagePlayer); Phoenix Trail reuses the same per-segment
+  // ashlinSupernova and ashlinEternal are all implemented now — see the
+  // "Rekindle and Rebirth Nova" group. The revive itself is the hero-side
+  // counterpart to Guardian Angel/Phoenix Heart (same "refuse to die" spot
+  // in EnemyAttack.damagePlayer); Phoenix Trail reuses the same per-segment
   // Windline tagging Nyx's own Shadowline needed, kept as its own field
   // rather than shared since the two hero's triggers and rates differ.
   // ADR 0011 covers the AoE nova's own radius, which docs/07 never states
   // for any of the three cards that need it.
   //
-  // Eternal (T5a, "Ultimate refresh has no cooldown") stays pending: the
-  // base Ultimate's own "refreshes Rekindle if already used" clause has no
-  // stated restriction anywhere for Eternal to remove, so implementing it
-  // would mean inventing a cooldown docs/07 never describes just to have
-  // something to lift — a bigger risk than a hero-local addition with a
-  // genuine anchor.
-  HeroBehaviour.ashlinEternal,
+  // Eternal (T5a, "Ultimate refresh has no cooldown") needed a real
+  // cooldown to actually remove: the base Ultimate's refresh is now gated
+  // to once per room (ADR 0081, an authored restriction docs/07 never
+  // states), and Eternal ignores that gate outright.
 
   // Mirelle's entire kit — Reflection, Hall of Mirrors and every ★1/★3/★5
   // variant of both — is implemented. See the "Reflection" and "Hall of
