@@ -326,4 +326,36 @@ final class EconomyError extends AppError {
           message: 'Spire node $nodeId is at gate L$currentBand; L$band '
               'must be unlocked in order.',
         );
+
+  const EconomyError.unknownResearch(String key)
+      : this(
+          code: 'economy_unknown_research',
+          message: 'No Research Lab item for key "$key".',
+        );
+
+  const EconomyError.researchLabLocked({required int requiredAccountLevel})
+      : this(
+          code: 'economy_research_lab_locked',
+          message: 'The Research Lab unlocks at account level '
+              '$requiredAccountLevel.',
+        );
+
+  const EconomyError.researchAlreadyCompleted(String key)
+      : this(
+          code: 'economy_research_already_completed',
+          message: 'Research "$key" is already completed.',
+        );
+
+  const EconomyError.loadoutCapReached(int cap)
+      : this(
+          code: 'economy_loadout_cap_reached',
+          message: 'At most $cap saved loadout(s) — research Second '
+              'Loadout to raise the cap.',
+        );
+
+  const EconomyError.unknownLoadout(String name)
+      : this(
+          code: 'economy_unknown_loadout',
+          message: 'No saved loadout named "$name".',
+        );
 }

@@ -507,6 +507,25 @@ void main() {
       expect(world.windlines.liveCount, 0);
     });
 
+    test('Windline Memory (docs/04 §4.6) keeps lines through a room clear',
+        () {
+      // Same effect as *Lingering* (#62, a Boon), from a different,
+      // account-level source. See ADR 0093.
+      final SimWorld world = SimWorld(seed: 5)
+        ..windlinesSurviveRoomTransition = true;
+      world.spawnPlayer(2.0, 4.5);
+      world.spawnAt(EntityKind.enemy, 14.0, 4.5, radius: 0.3, health: 1e9);
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int i = 0; i < 60; i++) {
+        world.tick(idle);
+      }
+      expect(world.windlines.liveCount, greaterThan(0));
+
+      world.clearRoom();
+      expect(world.windlines.liveCount, greaterThan(0));
+    });
+
     test('determinism holds with Confluence active', () {
       String run() {
         final SimWorld world = SimWorld(seed: 4242)

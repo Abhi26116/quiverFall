@@ -382,6 +382,15 @@ class SimWorld {
   /// 1-based global stage index. Set by the run coordinator.
   int globalStage = 1;
 
+  /// *Windline Memory* (docs/04 §4.6, Research Lab Branch B) — a permanent,
+  /// account-level unlock, not a per-run Boon, so it lives here rather than
+  /// in `BoonRuntime`. `clearRoom()` already carries Windlines through a
+  /// room transition for *Lingering* (#62); this is the identical effect
+  /// from a different source, read the same way. Set once by whoever builds
+  /// the world for a real run, from `save.research.completedIds` — see
+  /// `ResearchLoadoutResolver`.
+  bool windlinesSurviveRoomTransition = false;
+
   /// Contact-capable enemies allowed on screen at once. Lowered on Battery
   /// tier (docs/19 §19.4).
   int enemyCap = SimConfig.maxContactEnemies;
@@ -3640,9 +3649,12 @@ class SimWorld {
     playerDraw.reset();
     hollowWardenDraw.reset();
     lastWardenDraw.reset();
-    // *Lingering* (#62) — trails survive the door. Everything else about the
-    // room is torn down; this is the one thing the player carries through.
-    if (!boons.has(BoonBehaviour.lingering)) {
+    // *Lingering* (#62) and *Windline Memory* (docs/04 §4.6) both carry
+    // trails through the door — a run-scoped Boon and a permanent account
+    // unlock reaching the identical effect from two different sources.
+    // Everything else about the room is torn down regardless.
+    if (!boons.has(BoonBehaviour.lingering) &&
+        !windlinesSurviveRoomTransition) {
       windlines.clear();
       windlineIndex.clear();
     }

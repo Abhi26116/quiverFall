@@ -1,0 +1,144 @@
+{
+  "_comment": [
+    "The Research Lab's 12 items, docs/04-upgrades.md §4.6 Branches B and C,",
+    "authored verbatim from the doc's own table. Branch A ('Tier Gates') is",
+    "the Spire's own per-node L20/L40/L60 gates, already SpireWorkshop",
+    "'.unlockTierBand' - not a discrete item here.",
+    "",
+    "'implemented: false' items are real, purchasable content with no live",
+    "effect yet - each has its own specific, checked reason in",
+    "'balanceNote' and ADR 0093, not a placeholder."
+  ],
+  "items": [
+  {
+    "id": 1,
+    "archetype": "secondLoadout",
+    "key": "second_loadout",
+    "name": "Second Loadout",
+    "branch": "systemic",
+    "insightCost": 60,
+    "description": "Save/swap a full hero + arrow + Mark set.",
+    "implemented": true
+  },
+  {
+    "id": 2,
+    "archetype": "boonBanking",
+    "key": "boon_banking",
+    "name": "Boon Banking",
+    "branch": "systemic",
+    "insightCost": 120,
+    "description": "Carry 1 Boon from a failed run into the next.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Which Boon gets banked on a failed run is not specified (a player choice needs a UI this Part doesn't build; an automatic policy would be invented, not derived)."
+  },
+  {
+    "id": 3,
+    "archetype": "shrineLedger",
+    "key": "shrine_ledger",
+    "name": "Shrine Ledger",
+    "branch": "systemic",
+    "insightCost": 150,
+    "description": "See the next Boon set before buying a reroll.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Needs a reroll 'peek' that previews the next draw without consuming the RNG or the reroll charge unless confirmed - a new BoonPool/StageRunner API, not a flag."
+  },
+  {
+    "id": 4,
+    "archetype": "windlineMemory",
+    "key": "windline_memory",
+    "name": "Windline Memory",
+    "branch": "systemic",
+    "insightCost": 220,
+    "description": "Windlines persist through room transitions.",
+    "implemented": true
+  },
+  {
+    "id": 5,
+    "archetype": "doubleDraw",
+    "key": "double_draw",
+    "name": "Double Draw",
+    "branch": "systemic",
+    "insightCost": 400,
+    "description": "Tier III can overcharge into a one-off Tier IV shot.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. A whole new Draw tier - comparable in scope to a hero's own kit, not a flag on an existing one."
+  },
+  {
+    "id": 6,
+    "archetype": "elementalCodex",
+    "key": "elemental_codex",
+    "name": "Elemental Codex",
+    "branch": "systemic",
+    "insightCost": 300,
+    "description": "See exact reaction previews on the HUD.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Purely presentational - a HUD feature with no sim-side effect to wire at all."
+  },
+  {
+    "id": 7,
+    "archetype": "deepDescent",
+    "key": "deep_descent",
+    "name": "Deep Descent",
+    "branch": "systemic",
+    "insightCost": 500,
+    "description": "Unlock Endless Descent difficulty tiers 2-5.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Endless Descent itself exists in the sim, but no 'difficulty tier 1-5' selection concept exists anywhere to gate."
+  },
+  {
+    "id": 8,
+    "archetype": "autoClaimChests",
+    "key": "auto_claim_chests",
+    "name": "Auto-claim chests",
+    "branch": "qualityOfLife",
+    "insightCost": 30,
+    "description": "Automatically claims reward chests.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. No chest-claim UI exists yet to automate."
+  },
+  {
+    "id": 9,
+    "archetype": "skipRunIntro",
+    "key": "skip_run_intro",
+    "name": "Skip run intro",
+    "branch": "qualityOfLife",
+    "insightCost": 20,
+    "description": "Skips the run's own intro sequence.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Presentational - no run-intro sequence exists yet to skip."
+  },
+  {
+    "id": 10,
+    "archetype": "damageNumberToggle",
+    "key": "damage_number_toggle",
+    "name": "Damage-number toggle",
+    "branch": "qualityOfLife",
+    "insightCost": 0,
+    "description": "Toggles floating damage numbers.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Presentational - a HUD/settings toggle, no sim-side effect."
+  },
+  {
+    "id": 11,
+    "archetype": "extraVigorNotification",
+    "key": "extra_vigor_notification",
+    "name": "Extra Vigor notification",
+    "branch": "qualityOfLife",
+    "insightCost": 25,
+    "description": "Notifies when Vigor is full.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. No notification system exists yet."
+  },
+  {
+    "id": 12,
+    "archetype": "combatLog",
+    "key": "combat_log",
+    "name": "Combat log",
+    "branch": "qualityOfLife",
+    "insightCost": 40,
+    "description": "A readable log of a run's own combat events.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0093. Presentational - no combat-log UI exists yet."
+  }
+  ]
+}
