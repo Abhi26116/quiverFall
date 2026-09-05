@@ -3641,6 +3641,156 @@ void main() {
         expect(a.world.status.isFrozen(a.nearby[0]), isFalse);
       }
     });
+
+    /// A primary target at (8, 4.5), three "distractor" enemies at raw
+    /// distances 0.5/1.0/1.5 u — off both the horizontal firing line and
+    /// the vertical Windline below, so neither auto-fire's own trail nor
+    /// the explicit one ever reaches them — and a "far" enemy 4.3 u away,
+    /// reachable only by walking straight down the Windline running from
+    /// the primary's own position. A pure nearest-by-distance chain could
+    /// never select the far enemy over any of the three distractors; one
+    /// that travels along Windlines always finds it first.
+    ({
+      SimWorld world,
+      int primary,
+      List<int> distractors,
+      int far,
+    }) torvWindlineArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 101, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(2.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        torv,
+        HeroState(heroId: 'torv', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 8.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+
+      final List<int> distractors = <int>[];
+      for (final double d in <double>[0.5, 1.0, 1.5]) {
+        final int e = world.spawnEnemy(
+            EnemyArchetype.mote, 8.0 + d * 0.6, 4.5 + d * 0.8);
+        world.enemies.speedScale[e] = 0;
+        world.entities.maxHealth[e] = 1e9;
+        world.entities.health[e] = 1e9;
+        distractors.add(e);
+      }
+
+      world.windlines.add(
+        fromX: 8.0,
+        fromY: 4.5,
+        toX: 8.0,
+        toY: 0.2,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 999,
+      );
+      final int far = world.spawnEnemy(EnemyArchetype.mote, 8.0, 0.2);
+      world.enemies.speedScale[far] = 0;
+      world.entities.maxHealth[far] = 1e9;
+      world.entities.health[far] = 1e9;
+
+      return (world: world, primary: primary, distractors: distractors, far: far);
+    }
+
+    test(
+        'Arc chains reach farther via a live Windline than raw distance '
+        'ever would', () {
+      final ({
+        SimWorld world,
+        int primary,
+        List<int> distractors,
+        int far,
+      }) a = torvWindlineArena();
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+
+      expect(1e9 - a.world.entities.health[a.far], greaterThan(0),
+          reason: 'the far enemy is reachable only via the Windline');
+      expect(1e9 - a.world.entities.health[a.distractors[0]], greaterThan(0));
+      expect(1e9 - a.world.entities.health[a.distractors[1]], greaterThan(0));
+      expect(1e9 - a.world.entities.health[a.distractors[2]], 0,
+          reason: 'the far enemy displaced the farthest distractor by '
+              'chain slot, not the nearest ones');
+    });
+
+    test('without a live Windline nearby, chains fall back to nearest by '
+        'distance', () {
+      final ({
+        SimWorld world,
+        int primary,
+        List<int> distractors,
+        int far,
+      }) a = torvWindlineArena();
+      // Erase the one deliberately-placed Windline; only auto-fire's own
+      // trail (which never reaches any of these enemies — see the arena's
+      // own doc comment) remains.
+      a.world.windlines.clear();
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+      }
+
+      expect(1e9 - a.world.entities.health[a.distractors[0]], greaterThan(0));
+      expect(1e9 - a.world.entities.health[a.distractors[1]], greaterThan(0));
+      expect(1e9 - a.world.entities.health[a.distractors[2]], greaterThan(0));
+      expect(1e9 - a.world.entities.health[a.far], 0,
+          reason: 'nothing connects the far enemy once the Windline is gone');
+    });
+
+    test('Conductive Lines (★3a): chains along Windlines deal +80 %', () {
+      // Both sides fixed at ★3 so `heroAtk`'s own star scaling matches —
+      // the same reason every other star-comparison test in this file
+      // pins both sides to the same level.
+      final ({
+        SimWorld world,
+        int primary,
+        List<int> distractors,
+        int far,
+      }) base = torvWindlineArena(stars: 3);
+      final ({
+        SimWorld world,
+        int primary,
+        List<int> distractors,
+        int far,
+      }) conductive = torvWindlineArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      );
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        base.world.tick(idle);
+        conductive.world.tick(idle);
+      }
+
+      final double baseFarDamage = 1e9 - base.world.entities.health[base.far];
+      final double conductiveFarDamage =
+          1e9 - conductive.world.entities.health[conductive.far];
+      expect(baseFarDamage, greaterThan(0));
+      expect(conductiveFarDamage / baseFarDamage, closeTo(1.80, 0.05));
+
+      // A distractor reached only through the fallback scan, never the
+      // Windline, is untouched by the talent.
+      final double baseDistractorDamage =
+          1e9 - base.world.entities.health[base.distractors[0]];
+      final double conductiveDistractorDamage =
+          1e9 - conductive.world.entities.health[conductive.distractors[0]];
+      expect(baseDistractorDamage, greaterThan(0));
+      expect(conductiveDistractorDamage / baseDistractorDamage,
+          closeTo(1.0, 0.05));
+    });
   });
 
   group('Pull', () {
@@ -6169,12 +6319,14 @@ void main() {
       // a generic status-duration multiplier), Bram's whole kit (ADR 0083,
       // a new player-owned telegraphed volley primitive plus two small
       // splash riders), Sela's own Lingering Frost (ADR 0084, a slow
-      // genuinely independent of Windlines), and Oriel's own White Light
+      // genuinely independent of Windlines), Oriel's own White Light
       // (ADR 0085 — Reactions, docs/08's own deepest idea, actually fire in
-      // real gameplay for the first time).
+      // real gameplay for the first time), and Torv's own Conductive Lines
+      // (ADR 0086 — chains genuinely walk the player's own live Windline
+      // network, the passive's own headline promise made real).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(2),
+        lessThanOrEqualTo(1),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -6271,12 +6423,16 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // Marked and Halden's Sentence already read (only one hero equipped at a
   // time, so a third reader is unambiguous); Thunderhead reuses
   // `StatusStore.frozenRemaining`, the same hard-stop Rook's own Anchor
-  // already borrows from Frost. Chains still hit the nearest enemies by
-  // distance rather than genuinely travelling along Windlines, which
-  // nothing in the sim indexes (see `_applyTorvChain`'s own doc comment) —
-  // Conductive Lines specifically rewards the Windline-travel case and
-  // stays pending until that relationship exists to reward.
-  HeroBehaviour.torvConductiveLines,
+  // already borrows from Frost. torvConductiveLines is implemented now too
+  // (ADR 0086): chains genuinely walk the player's own live Windline
+  // network outward from the hit point (`SegmentHash`, the same spatial
+  // index Confluence's own sweep already uses — safe to query again by
+  // the time a hit resolves, since Confluence's own use of it this same
+  // arrow's tick has already fully returned), falling back to the
+  // previous nearest-by-distance scan once the network runs dry. Torv is
+  // the fifteenth hero (after Sable, Kade, Corvin, Lira, Halden, Zea,
+  // Mirelle, Ovrin, Wren, Rook, Iris, Bram, Sela, Oriel) with nothing
+  // deferred.
 
   // sableToxin is implemented — see the "three innate elements" group.
   // sableMiasma, sableVirulence, sableFastActing, sableContagion,

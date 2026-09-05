@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/sim/arena.dart';
@@ -15,6 +16,7 @@ import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/projectile_store.dart';
 import 'package:quiverfall/game/sim/segment_hash.dart';
+import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/spatial_hash.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
@@ -197,6 +199,7 @@ abstract final class ProjectileSystem {
         enemies: enemies,
         status: status,
         lines: lines,
+        lineIndex: lineIndex,
         now: now,
         windlineDuration: windlineDuration,
         slot: i,
@@ -588,6 +591,7 @@ abstract final class ProjectileSystem {
     required EnemyStore? enemies,
     required StatusStore? status,
     required WindlineStore lines,
+    required SegmentHash lineIndex,
     required double now,
     required double windlineDuration,
     required int slot,
@@ -632,6 +636,8 @@ abstract final class ProjectileSystem {
         events: events,
         enemies: enemies,
         status: status,
+        lines: lines,
+        lineIndex: lineIndex,
         slot: slot,
         target: target,
         targetId: targetId,
@@ -741,6 +747,8 @@ abstract final class ProjectileSystem {
     required SimEventBuffer events,
     required EnemyStore? enemies,
     required StatusStore? status,
+    required WindlineStore lines,
+    required SegmentHash lineIndex,
     required int slot,
     required int target,
     required int targetId,
@@ -1258,16 +1266,16 @@ abstract final class ProjectileSystem {
       );
     }
 
-    // *Arc* / *Tempest Nock* — "chains travel along live Windlines" is read
-    // as the visual presentation (the render layer draws the chain along
-    // nearby trail geometry), not a constraint on which enemies are
-    // reachable: querying "which enemies sit near a live Windline segment"
-    // is a relationship nothing in the sim currently indexes, and docs/07
-    // gives no distance/tolerance for it either. Chains hit whichever
-    // enemies are nearest instead — the same linear-scan approach Heavy
-    // Ordnance's splash already uses, and for the identical reason: this
-    // runs inside `_resolveHits`'s own candidate loop, so a nested
-    // `SpatialHash` query here would corrupt it.
+    // *Arc* / *Tempest Nock* — "chains travel along live Windlines, which
+    // can extend the chain range enormously." `_applyTorvChain` now walks
+    // the player's own live Windline network outward from the hit point
+    // (`lineIndex`, the same `SegmentHash` Confluence's own sweep already
+    // uses — safe to query again here since `_resolveConfluence`'s own use
+    // of it, earlier this same arrow's tick, has already fully returned;
+    // the constraint that rules out a nested query is `SpatialHash`'s
+    // shared buffer, still mid-iteration in `_resolveHits`, which this
+    // never touches), falling back to a plain nearest-N scan once the
+    // network runs out or an isolated hit has no Windline nearby at all.
     if (hero != null &&
         hero.has(HeroBehaviour.torvArc) &&
         enemies != null &&
@@ -1276,6 +1284,8 @@ abstract final class ProjectileSystem {
           hero.has(HeroBehaviour.torvWideArc) ? _torvWideArcTargets : _torvArcTargets;
       _applyTorvChain(
         store: store,
+        lines: lines,
+        lineIndex: lineIndex,
         primaryTarget: target,
         x: store.posX[target],
         y: store.posY[target],
@@ -1294,6 +1304,12 @@ abstract final class ProjectileSystem {
                 hero.has(HeroBehaviour.torvThunderhead))
             ? _torvThunderheadStunDuration
             : 0,
+        // *Conductive Lines* (T3a) — "chains along Windlines deal +80%."
+        // Only the links this chain actually found by walking the network
+        // get it; a link the fallback scan reached instead did not travel
+        // along anything.
+        conductiveLinesBonus:
+            hero.has(HeroBehaviour.torvConductiveLines) ? _torvConductiveLinesBonus : 0,
       );
     }
 
@@ -1428,10 +1444,19 @@ abstract final class ProjectileSystem {
 
   static const double _irisWeaveAoeRadius = 2.0;
 
-  /// Damages the [chainCount] nearest other living enemies to ([x], [y]).
-  /// Linear scan, same reasoning and same cost profile as
-  /// [_applyBramSplash] — bounded by how often a chain-eligible hit lands,
-  /// not paid every tick.
+  /// Damages up to [chainCount] other living enemies reachable from
+  /// ([x], [y]) — first by walking the player's own live Windline network
+  /// outward from the hit point (docs/07 §7.1: "chains travel along live
+  /// Windlines, which can extend the chain range enormously"), then, only
+  /// if that network runs dry before [chainCount] targets are found,
+  /// filling the rest with a plain nearest-by-distance scan — the previous
+  /// behaviour, and the only option left for a hit with no Windline nearby
+  /// at all. Bounded by how often a chain-eligible hit lands, not paid
+  /// every tick, the same cost profile [_applyBramSplash] already accepts.
+  ///
+  /// [conductiveLinesBonus] (T3a, "chains along Windlines deal +80%")
+  /// applies only to the targets the network actually found — a link the
+  /// fallback scan reached did not travel along anything.
   ///
   /// [markDuration] above zero also marks every chained target (Torv's own
   /// *Overload*, T3b) — reusing `EnemyStore.markedRemaining`, the same
@@ -1443,6 +1468,8 @@ abstract final class ProjectileSystem {
   /// guarded the identical "never shortens an active effect" way.
   static void _applyTorvChain({
     required EntityStore store,
+    required WindlineStore lines,
+    required SegmentHash lineIndex,
     required int primaryTarget,
     required double x,
     required double y,
@@ -1452,35 +1479,40 @@ abstract final class ProjectileSystem {
     double markDuration = 0,
     StatusStore? status,
     double stunDuration = 0,
+    double conductiveLinesBonus = 0,
   }) {
-    // Small, fixed-size "nearest N" via insertion — chainCount never
-    // exceeds 5, so this beats allocating and sorting a list.
-    final List<int> nearest = List<int>.filled(chainCount, -1);
-    final List<double> nearestDistSq =
-        List<double>.filled(chainCount, double.infinity);
+    final List<int> targets = <int>[];
+    final Set<int> excluded = <int>{primaryTarget};
 
-    for (int i = 0; i < store.highWater; i++) {
-      if (i == primaryTarget) continue;
-      if (store.alive[i] == 0) continue;
-      if (store.kind[i] != EntityKind.enemy.index) continue;
-      final double dx = store.posX[i] - x;
-      final double dy = store.posY[i] - y;
-      final double distSq = dx * dx + dy * dy;
+    _collectTorvChainAlongWindlines(
+      store: store,
+      lines: lines,
+      lineIndex: lineIndex,
+      x: x,
+      y: y,
+      chainCount: chainCount,
+      excluded: excluded,
+      targets: targets,
+    );
+    final int foundAlongWindlines = targets.length;
 
-      if (distSq >= nearestDistSq[chainCount - 1]) continue;
-      int slot = chainCount - 1;
-      while (slot > 0 && nearestDistSq[slot - 1] > distSq) {
-        nearestDistSq[slot] = nearestDistSq[slot - 1];
-        nearest[slot] = nearest[slot - 1];
-        slot--;
-      }
-      nearestDistSq[slot] = distSq;
-      nearest[slot] = i;
+    if (targets.length < chainCount) {
+      _fillTorvChainNearest(
+        store: store,
+        x: x,
+        y: y,
+        chainCount: chainCount,
+        excluded: excluded,
+        targets: targets,
+      );
     }
 
-    for (final int target in nearest) {
-      if (target < 0) continue;
-      store.health[target] -= chainDamage;
+    for (int i = 0; i < targets.length; i++) {
+      final int target = targets[i];
+      final double damage = i < foundAlongWindlines
+          ? chainDamage * (1.0 + conductiveLinesBonus)
+          : chainDamage;
+      store.health[target] -= damage;
       if (markDuration > 0 && enemies != null) {
         enemies.markedRemaining[target] = markDuration;
       }
@@ -1492,6 +1524,171 @@ abstract final class ProjectileSystem {
     }
   }
 
+  /// Breadth-first over Windline segment endpoints, starting from
+  /// ([x], [y]): every live segment found within [SimConfig.windlineHitWidth]
+  /// of the current frontier is visited once, every living enemy within its
+  /// own radius plus that same tolerance of the segment is collected, and
+  /// both of the segment's endpoints join the next frontier — so the chain
+  /// reaches along a trail exactly as far as it is drawn, through a
+  /// crossing onto a second trail, a third, and so on. Reads only the
+  /// player's own lines — an enemy trail must never extend the chain, the
+  /// identical rule Confluence already enforces for its own crossings.
+  ///
+  /// Segments visited are capped at [_torvChainMaxSegmentsVisited]
+  /// regardless of how sprawling the player's own lattice is, so an
+  /// unbounded Windline budget (*The Loom*, Boon 75) can never turn one
+  /// chain trigger into an unbounded scan — [chainCount] is small (3-5),
+  /// so ordinary play returns long before that cap is ever felt.
+  ///
+  /// Safe to query [lineIndex] here: `_resolveConfluence`'s own use of it,
+  /// earlier this same arrow's tick, has already fully returned by the time
+  /// a hit resolves. The constraint that rules out a nested query inside
+  /// hit resolution is `SpatialHash`'s shared buffer, still mid-iteration
+  /// in `_resolveHits` — a completely separate index this never touches.
+  static void _collectTorvChainAlongWindlines({
+    required EntityStore store,
+    required WindlineStore lines,
+    required SegmentHash lineIndex,
+    required double x,
+    required double y,
+    required int chainCount,
+    required Set<int> excluded,
+    required List<int> targets,
+  }) {
+    final List<double> frontierX = <double>[x];
+    final List<double> frontierY = <double>[y];
+    final Set<int> visitedSegments = <int>{};
+
+    int frontierCursor = 0;
+    while (frontierCursor < frontierX.length &&
+        targets.length < chainCount &&
+        visitedSegments.length < _torvChainMaxSegmentsVisited) {
+      final double px = frontierX[frontierCursor];
+      final double py = frontierY[frontierCursor];
+      frontierCursor++;
+
+      final int found = lineIndex.querySegment(
+          px, py, px, py, SimConfig.windlineHitWidth, _torvChainScratch);
+      for (int k = 0; k < found; k++) {
+        final int seg = _torvChainScratch[k];
+        if (!lines.isAlive(seg)) continue;
+        if (lines.ownerAt(seg) != _playerOwner) continue;
+        if (!visitedSegments.add(seg)) continue;
+
+        final double sx0 = lines.x0(seg);
+        final double sy0 = lines.y0(seg);
+        final double sx1 = lines.x1(seg);
+        final double sy1 = lines.y1(seg);
+
+        for (int i = 0; i < store.highWater; i++) {
+          if (excluded.contains(i)) continue;
+          if (store.alive[i] == 0) continue;
+          if (store.kind[i] != EntityKind.enemy.index) continue;
+          final double reach = store.radius[i] + SimConfig.windlineHitWidth;
+          if (_distPointToSegmentSq(
+                  store.posX[i], store.posY[i], sx0, sy0, sx1, sy1) >
+              reach * reach) {
+            continue;
+          }
+          excluded.add(i);
+          targets.add(i);
+          if (targets.length >= chainCount) return;
+        }
+
+        frontierX.add(sx0);
+        frontierY.add(sy0);
+        frontierX.add(sx1);
+        frontierY.add(sy1);
+
+        if (visitedSegments.length >= _torvChainMaxSegmentsVisited) break;
+      }
+    }
+  }
+
+  /// The previous, purely-geometric behaviour: the [chainCount] - already-
+  /// found nearest other living enemies to ([x], [y]), excluding anything
+  /// [_collectTorvChainAlongWindlines] already claimed. Small, fixed-size
+  /// "nearest N" via insertion — chainCount never exceeds 5, so this beats
+  /// allocating and sorting a list.
+  static void _fillTorvChainNearest({
+    required EntityStore store,
+    required double x,
+    required double y,
+    required int chainCount,
+    required Set<int> excluded,
+    required List<int> targets,
+  }) {
+    final int remaining = chainCount - targets.length;
+    if (remaining <= 0) return;
+
+    final List<int> nearest = List<int>.filled(remaining, -1);
+    final List<double> nearestDistSq =
+        List<double>.filled(remaining, double.infinity);
+
+    for (int i = 0; i < store.highWater; i++) {
+      if (excluded.contains(i)) continue;
+      if (store.alive[i] == 0) continue;
+      if (store.kind[i] != EntityKind.enemy.index) continue;
+      final double dx = store.posX[i] - x;
+      final double dy = store.posY[i] - y;
+      final double distSq = dx * dx + dy * dy;
+
+      if (distSq >= nearestDistSq[remaining - 1]) continue;
+      int slot = remaining - 1;
+      while (slot > 0 && nearestDistSq[slot - 1] > distSq) {
+        nearestDistSq[slot] = nearestDistSq[slot - 1];
+        nearest[slot] = nearest[slot - 1];
+        slot--;
+      }
+      nearestDistSq[slot] = distSq;
+      nearest[slot] = i;
+    }
+
+    for (final int target in nearest) {
+      if (target >= 0) targets.add(target);
+    }
+  }
+
+  /// Squared distance from a point to the closest point on a segment —
+  /// [ConfluenceSystem._pointSegmentDistSq]'s own maths, duplicated rather
+  /// than shared across the two private classes for one small helper.
+  static double _distPointToSegmentSq(
+    double px,
+    double py,
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+  ) {
+    final double dx = x1 - x0;
+    final double dy = y1 - y0;
+    final double lenSq = dx * dx + dy * dy;
+
+    double t;
+    if (lenSq <= 1e-12) {
+      t = 0;
+    } else {
+      t = ((px - x0) * dx + (py - y0) * dy) / lenSq;
+      if (t < 0) t = 0;
+      if (t > 1) t = 1;
+    }
+
+    final double gx = px - (x0 + dx * t);
+    final double gy = py - (y0 + dy * t);
+    return gx * gx + gy * gy;
+  }
+
+  /// Reused candidate buffer for [_collectTorvChainAlongWindlines]'s own
+  /// point queries — static and pre-allocated for the identical reason
+  /// [ConfluenceSystem._candidates] is.
+  static final Int32List _torvChainScratch =
+      Int32List(SimConfig.maxWindlineSegments);
+
+  /// However sprawling the player's own lattice, one chain trigger visits
+  /// at most this many segments — [chainCount] itself (3-5) ends the walk
+  /// far sooner in ordinary play; this only bounds the pathological case.
+  static const int _torvChainMaxSegmentsVisited = 24;
+
   static const double _torvArcDamageShare = 0.60;
   static const int _torvArcTargets = 3;
   static const double _torvOverloadBonus = 0.20;
@@ -1499,6 +1696,9 @@ abstract final class ProjectileSystem {
   static const double _torvThunderheadStunDuration = 0.5;
   static const int _torvWideArcTargets = 5;
   static const int _torvTempestNockTargets = 5;
+
+  /// *Conductive Lines* (T3a) — docs/07's own stated number.
+  static const double _torvConductiveLinesBonus = 0.80;
 
   /// docs/07 §7.1: "every 4th arrow applies a 3 s bleed" — the duration is
   /// the one number the card actually states; the %/s it deals lives on
