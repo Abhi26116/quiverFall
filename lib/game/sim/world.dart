@@ -1001,8 +1001,91 @@ class SimWorld {
       hero.caromsRemaining = hero.has(HeroBehaviour.corvinEndlessCarom)
           ? _corvinEndlessCaromDuration
           : HeroRuntime.caromsDuration;
+    } else if (hero.has(HeroBehaviour.zeaFalconry)) {
+      _fireZeaFalconry();
     }
   }
+
+  /// *Falconry* — "summons 4 hawks for 12 s" (docs/07 §7.3). Temporary
+  /// companions, the same primitive Zea's own passive Skyhawk already
+  /// uses (`CompanionSystem`, ADR 0071) — these simply carry a finite
+  /// `lifetimeSeconds` instead of the passive's own permanent one, so
+  /// `HeroLoadoutResolver`'s own despawn-and-resync sweep (ADR 0072) never
+  /// touches them.
+  ///
+  /// *Sharper Talons*/*Swift Hawk*/*Bonded* all read as blanket "your
+  /// hawks are better" rules (ADR 0072's own reasoning), so they apply to
+  /// these summoned hawks too. *Skydarken* (★5a) and *Great Hawk* (★5b)
+  /// are this Ultimate's own two branches, never both active. Great
+  /// Hawk's own "taunts" is not built — nothing in this roster has ever
+  /// redirected enemy targeting away from the player (ADR 0071's own
+  /// flagged gap); its stat half (1 hawk, 250 % ATK, 20 s) is real.
+  void _fireZeaFalconry() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double x = entities.posX[p];
+    final double y = entities.posY[p];
+
+    final bool bonded = hero.has(HeroBehaviour.zeaBonded);
+    final double fireRate = hero.has(HeroBehaviour.zeaSwiftHawk)
+        ? _zeaSwiftHawkFireRate
+        : _zeaBaseFireRate;
+
+    if (hero.has(HeroBehaviour.zeaGreatHawk)) {
+      spawnCompanion(
+        x,
+        y,
+        damageShare: _zeaGreatHawkShare,
+        fireRate: fireRate,
+        lifetimeSeconds: _zeaGreatHawkDuration,
+        alwaysCrit: bonded,
+      );
+      return;
+    }
+
+    final double damageShare = hero.has(HeroBehaviour.zeaSharperTalons)
+        ? _zeaSharperTalonsShare
+        : _zeaBaseDamageShare;
+    final int count = hero.has(HeroBehaviour.zeaSkydarken)
+        ? _zeaSkydarkenHawkCount
+        : _zeaFalconryHawkCount;
+
+    for (int i = 0; i < count; i++) {
+      final double angle = 2 * math.pi * i / count;
+      final double offsetX = math.cos(angle) * _zeaFalconrySpreadRadius;
+      final double offsetY = math.sin(angle) * _zeaFalconrySpreadRadius;
+      spawnCompanion(
+        x + offsetX,
+        y + offsetY,
+        damageShare: damageShare,
+        fireRate: fireRate,
+        lifetimeSeconds: _zeaFalconryDuration,
+        alwaysCrit: bonded,
+        followOffsetX: offsetX,
+        followOffsetY: offsetY,
+      );
+    }
+  }
+
+  /// docs/07's own stated numbers — mirrors `HeroLoadoutResolver`'s own
+  /// identical constants (small, independent copies rather than a shared
+  /// public surface for four plain doubles, the same posture this
+  /// roster's own parametric-math duplicates already take, ADR 0057).
+  static const double _zeaBaseDamageShare = 0.35;
+  static const double _zeaSharperTalonsShare = 0.50;
+  static const double _zeaBaseFireRate = 1.5;
+  static const double _zeaSwiftHawkFireRate = 2.4;
+  static const int _zeaFalconryHawkCount = 4;
+  static const int _zeaSkydarkenHawkCount = 8;
+  static const double _zeaFalconryDuration = 12.0;
+  static const double _zeaGreatHawkShare = 2.50;
+  static const double _zeaGreatHawkDuration = 20.0;
+
+  /// Authored — docs/07 states no formation radius for Falconry's own
+  /// flock, so the summoned hawks spread evenly around the player rather
+  /// than stacking on one point, the same reasoning the passive Skyhawk's
+  /// own follow offset already uses.
+  static const double _zeaFalconrySpreadRadius = 1.2;
 
   static const double _corvinEndlessCaromDuration = 10.0;
 
