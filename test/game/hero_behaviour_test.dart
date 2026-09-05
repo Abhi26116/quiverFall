@@ -20,6 +20,7 @@ import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
+import 'package:quiverfall/game/sim/sim_config.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:test/test.dart';
@@ -476,6 +477,115 @@ void main() {
         // Tier III's own bonusPierce (2) plus Focused Fan's +3.
         expect(a.world.projectiles.pierceRemaining[slot], 5);
       }
+    });
+  });
+
+  group("Warden's Lattice and Warden's Fury", () {
+    /// The maximum "seconds left" seen on any live Windline segment across
+    /// [ticks] — the closest a poll ever gets to a segment's own duration
+    /// at the moment it was laid, since [WindlineStore.expiryAt] only
+    /// counts down afterward.
+    double maxWindlineSecondsRemaining(SimWorld world, int ticks) {
+      double maxRemaining = 0;
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < ticks; t++) {
+        world.tick(idle);
+        for (int s = 0; s < world.windlines.capacity; s++) {
+          if (!world.windlines.isAlive(s)) continue;
+          final double remaining =
+              world.windlines.expiryAt(s) - world.elapsedSeconds;
+          if (remaining > maxRemaining) maxRemaining = remaining;
+        }
+      }
+      return maxRemaining;
+    }
+
+    test("Warden's Lattice (★5a): the Ultimate's own Windlines last 4 s",
+        () {
+      final ({SimWorld world, int target}) a = arena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(maxWindlineSecondsRemaining(a.world, 120), closeTo(4.0, 0.1));
+    });
+
+    test(
+        "without Warden's Lattice, the Ultimate's own Windlines use the "
+        'ordinary duration', () {
+      final ({SimWorld world, int target}) a = arena();
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(maxWindlineSecondsRemaining(a.world, 120),
+          closeTo(SimConfig.windlineDuration, 0.1));
+    });
+
+    /// Fires the Ultimate at a one-hit-kill target and returns the
+    /// Ultimate's own charge once the kill has actually landed — [fury]
+    /// toggles Warden's Fury so the two runs differ only in whether its
+    /// own +30 % refund applied to that one kill.
+    double chargeAfterUltimateKill({required bool fury}) {
+      // Both runs stay at ★5 (with or without the branch actually picked) —
+      // comparing against a ★0 baseline would silently mix Curves.heroStat's
+      // own star scaling into the difference, the same trap an earlier
+      // Halden test hit.
+      final ({SimWorld world, int target}) a = arena(
+        stars: 5,
+        talentChoices: fury ? <String, String>{'5': 'b'} : const <String, String>{},
+      );
+      a.world.autoFire = false;
+      a.world.entities.maxHealth[a.target] = 1;
+      a.world.entities.health[a.target] = 1;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120 && a.world.entities.alive[a.target] == 1; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.entities.alive[a.target], 0,
+          reason: 'the one-hit-kill target was never actually killed');
+      return a.world.hero.ultimateCharge;
+    }
+
+    test(
+        "Warden's Fury (★5b): a kill from the Ultimate's own arrow refunds "
+        '+30 % more charge than the same kill without it', () {
+      final double withoutFury = chargeAfterUltimateKill(fury: false);
+      final double withFury = chargeAfterUltimateKill(fury: true);
+      expect(withFury - withoutFury, closeTo(0.30, 1e-6));
+    });
+
+    test("Warden's Fury adds nothing to a kill made by an ordinary arrow",
+        () {
+      double chargeAfterOrdinaryKill({required bool fury}) {
+        // Same ★5-on-both-sides reasoning as chargeAfterUltimateKill above.
+        final ({SimWorld world, int target}) a = arena(
+          stars: 5,
+          talentChoices:
+              fury ? <String, String>{'5': 'b'} : const <String, String>{},
+        );
+        a.world.entities.maxHealth[a.target] = 1;
+        a.world.entities.health[a.target] = 1;
+        final InputSnapshot idle = InputSnapshot();
+        for (int t = 0;
+            t < 120 && a.world.entities.alive[a.target] == 1;
+            t++) {
+          a.world.tick(idle);
+        }
+        expect(a.world.entities.alive[a.target], 0,
+            reason: 'the one-hit-kill target was never actually killed');
+        return a.world.hero.ultimateCharge;
+      }
+
+      final double withoutFury = chargeAfterOrdinaryKill(fury: false);
+      final double withFury = chargeAfterOrdinaryKill(fury: true);
+      expect(withFury, closeTo(withoutFury, 1e-6));
     });
   });
 
@@ -3286,6 +3396,131 @@ void main() {
     });
   });
 
+  group('Singularity', () {
+    test('fires at the nearest target and pulls a nearby enemy toward it',
+        () {
+      final ({SimWorld world, int primary, List<int> grouped}) a =
+          rookArena(groupedCount: 1, groupedSpacing: 2.0);
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      // `_tickRookSingularity` runs later in the same tick that fires the
+      // Ultimate, so one dt of decay has already elapsed by the time this
+      // reads — the same same-tick-decay slack every other timed window in
+      // this file already needs right after casting.
+      expect(a.world.hero.singularityRemaining, closeTo(4.0, 0.02));
+      expect(a.world.hero.singularityX, closeTo(12.0, 1e-6));
+      expect(a.world.hero.singularityY, closeTo(4.5, 1e-6));
+
+      final int pulled = a.grouped[0];
+      final double before =
+          (a.world.entities.posX[pulled] - a.world.hero.singularityX).abs();
+      a.world.tick(InputSnapshot());
+      final double after =
+          (a.world.entities.posX[pulled] - a.world.hero.singularityX).abs();
+      expect(after, lessThan(before));
+    });
+
+    test('detonates for 400 % of playerAttack once the 4 s window ends', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a =
+          rookArena();
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final double before = a.world.entities.health[a.primary];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 5 * 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.singularityRemaining, 0);
+      final double dealt = before - a.world.entities.health[a.primary];
+      expect(dealt, closeTo(a.world.playerAttack * 4.00, 1e-3));
+    });
+
+    test('an enemy outside the 6 u radius is never pulled or hit', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a =
+          rookArena();
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      // Confirms the well locked onto the primary (the only enemy that
+      // existed at cast time) before the bystander below is even spawned —
+      // spawning it first would risk it being closer to the player than
+      // the primary is and becoming the well's own target instead.
+      expect(a.world.hero.singularityX, closeTo(12.0, 1e-6));
+
+      // ~10.6 u from the well (12.0/4.5) — safely outside the 6 u radius
+      // while staying inside the 16x9 arena, which a point 6+ u further
+      // east of the primary alone could not.
+      final int far = a.world.spawnEnemy(EnemyArchetype.mote, 2.0, 8.0);
+      a.world.enemies.speedScale[far] = 0;
+      a.world.entities.maxHealth[far] = 1e9;
+      a.world.entities.health[far] = 1e9;
+
+      final double startX = a.world.entities.posX[far];
+      final double startHealth = a.world.entities.health[far];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 5 * 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.entities.posX[far], closeTo(startX, 1e-6));
+      expect(a.world.entities.health[far], closeTo(startHealth, 1e-6));
+    });
+
+    test('Twin Singularity (★5a): a second well forms at the second-nearest '
+        'enemy', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+        groupedCount: 1,
+        groupedSpacing: 2.0,
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.singularityRemaining, closeTo(4.0, 0.02));
+      expect(a.world.hero.singularityX, closeTo(12.0, 1e-6));
+      expect(a.world.hero.singularity2Remaining, closeTo(4.0, 0.02));
+      expect(a.world.hero.singularity2X, closeTo(14.0, 1e-6));
+    });
+
+    test('without Twin Singularity, only one well ever forms', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        groupedCount: 1,
+        groupedSpacing: 2.0,
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.singularity2Remaining, 0);
+    });
+
+    test('Collapsing Singularity (★5b): one well, 6 s, 900 % detonation', () {
+      final ({SimWorld world, int primary, List<int> grouped}) a = rookArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.singularityRemaining, closeTo(6.0, 0.02));
+      expect(a.world.hero.singularity2Remaining, 0);
+
+      final double before = a.world.entities.health[a.primary];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 7 * 60; t++) {
+        a.world.tick(idle);
+      }
+      final double dealt = before - a.world.entities.health[a.primary];
+      expect(dealt, closeTo(a.world.playerAttack * 9.00, 1e-3));
+    });
+  });
+
   group('Chill and Glacier Nail', () {
     /// A primary target 8 u east of the player (always the nearest enemy, so
     /// it is always what Glacier Nail's own target-selection locks onto),
@@ -5077,10 +5312,13 @@ void main() {
       // long-dead Thorns Boon), Sela's Shatter (ADR 0076, an on-kill AoE
       // hook centred on the kill rather than the player), and Torv's
       // Overload/Thunderhead (ADR 0077, both reusing existing per-enemy
-      // timers built for other heroes).
+      // timers built for other heroes), Wren's own ★5 pair (ADR 0078, a
+      // new per-arrow "fired by the Ultimate" tag), and Rook's Singularity
+      // trio (ADR 0079, a sustained fixed-zone Ultimate — the same shape
+      // Miasma/Pyre Line already established, not a new primitive).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(21),
+        lessThanOrEqualTo(16),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -5097,12 +5335,15 @@ void main() {
 /// only one of them is currently true for these. Each one moves out of this
 /// list when its implementation and its own test land together.
 const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
-  // Wren's own ★5 pair needs per-ultimate-arrow tracking (a custom Windline
-  // duration for Warden's Lattice, a kill-source tag for Warden's Fury) that
-  // nothing before Phase 10 built — the same "real work for whoever needs it
-  // first" call ADR-adjacent to BoonBehaviour.stormfoot's own ledger entry.
-  HeroBehaviour.wrenWardensLattice,
-  HeroBehaviour.wrenWardensFury,
+  // Wren's own ★5 pair — wrenWardensLattice and wrenWardensFury — are both
+  // implemented now, in the "Warden's Lattice and Warden's Fury" group (ADR
+  // 0078). Lattice bakes an extended Windline duration into each Ultimate
+  // arrow at spawn (`ProjectileStore.windlineDurationOverride`), read at
+  // both lay sites instead of the ambient `windlineDuration`. Fury tags
+  // whichever kind of arrow struck an enemy last
+  // (`ProjectileStore.isUltimateArrow` copied onto
+  // `EnemyStore.lastHitWasUltimate` on every hit), read at `AiSystem`'s own
+  // death pass.
 
   // bramHeavyOrdnance, bramWiderBlast and bramDenserBlast are implemented —
   // see the "Heavy Ordnance" group.
@@ -5275,14 +5516,14 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // rookAnchor is implemented too, also in the "Pull" group — a per-enemy
   // root/stun timer already existed under Frost's own name
   // (`StatusStore.frozenRemaining`), found by looking closer rather than
-  // building a second one; see ADR 0070. The Ultimate (Singularity) and
-  // its own two ★5 variants stay pending: a multi-tick "pull everything
-  // toward a point, then detonate" well needs a sustained field effect
-  // nothing before now has asked of Ultimates (every other one so far
-  // resolves in a single tick).
-  HeroBehaviour.rookSingularity,
-  HeroBehaviour.rookTwinSingularity,
-  HeroBehaviour.rookCollapsingSingularity,
+  // building a second one; see ADR 0070. rookSingularity,
+  // rookTwinSingularity and rookCollapsingSingularity are all implemented
+  // now too — see the "Singularity" group (ADR 0079). Rook is the ninth
+  // hero (after Sable, Kade, Corvin, Lira, Halden, Zea, Mirelle, Ovrin)
+  // with nothing deferred. The well is the same fixed-zone shape Miasma's
+  // cloud and Pyre Line's own wall already established — pinned at cast
+  // time, ticked every frame, no new primitive needed to make a sustained
+  // multi-tick Ultimate real.
 
   // haldenVerdict, haldenJudgmentSpear, haldenFinalVerdict, haldenTwinSpear,
   // haldenZealot, haldenWarded, haldenSentence and haldenSwiftJudgment are

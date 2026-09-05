@@ -118,6 +118,24 @@ class ProjectileStore {
   /// marked, not whichever target happened to be selected at fire time.
   final Uint8List willMarkBoss = Uint8List(SimConfig.maxEntities);
 
+  /// Set at spawn only for an arrow fired by the hero's own Ultimate — so
+  /// far only Wren's *Volley Fan*. Two talents read it: *Warden's Lattice*
+  /// (T5a) via [windlineDurationOverride] below, and *Warden's Fury* (T5b,
+  /// "refunds 30 % charge on kill") via `EnemyStore.lastHitWasUltimate`,
+  /// written wherever this arrow's own hit resolves and read at
+  /// `AiSystem`'s own death pass — a kill needs to know which arrow struck
+  /// last, not merely that one of this shape existed somewhere in flight.
+  final Uint8List isUltimateArrow = Uint8List(SimConfig.maxEntities);
+
+  /// Above zero, replaces the ambient `windlineDuration` for every segment
+  /// this specific arrow lays — *Warden's Lattice* (Wren, T5a, "Ultimate
+  /// Windlines last 4 s"). Baked in once at spawn rather than read from
+  /// [isUltimateArrow] plus a live hero check at each lay site: a segment
+  /// can be laid many ticks after the arrow was fired, and this way
+  /// neither lay site needs a `HeroRuntime` reference just to ask "was
+  /// Lattice active when this arrow left the bow."
+  final Float64List windlineDurationOverride = Float64List(SimConfig.maxEntities);
+
   /// Skimmer: bounces left off a wall or an enemy, shared between the two —
   /// docs/08 says "ricochets 2x", not "2x each". Set to 2 at spawn only for
   /// a Skimmer arrow; every other arrow leaves this at 0 and is retired on
@@ -176,6 +194,8 @@ class ProjectileStore {
     ricochetsLeft[slot] = 0;
     hasRicocheted[slot] = 0;
     willMarkBoss[slot] = 0;
+    isUltimateArrow[slot] = 0;
+    windlineDurationOverride[slot] = 0;
   }
 
   bool hasCrossed(int slot, int serial) {

@@ -227,6 +227,22 @@ class HeroRuntime {
   double pyreLine2X1 = 0;
   double pyreLine2Y1 = 0;
 
+  /// Seconds left on Rook's own *Singularity* well. Zero means inactive.
+  /// The same fixed-zone shape Miasma's own cloud and Pyre Line's own wall
+  /// already use — pinned at cast time, ticked every frame to pull whoever
+  /// stands within range, then detonates once this reaches zero.
+  double singularityRemaining = 0;
+  double singularityX = 0;
+  double singularityY = 0;
+
+  /// *Twin Singularity* (T5a)'s second well — only ever non-zero alongside
+  /// [singularityRemaining], and only when that talent is held. The same
+  /// "second independent instance of the same fixed zone" shape
+  /// [pyreLine2X0] already established for Kade's own Twin Pyre.
+  double singularity2Remaining = 0;
+  double singularity2X = 0;
+  double singularity2Y = 0;
+
   // ── Once-per-run counters ─────────────────────────────────────────────────
   // Counted per run rather than per room, same as BoonRuntime.arrowsFired —
   // a counter that silently reset at every door would make the card read as
@@ -328,6 +344,12 @@ class HeroRuntime {
     pyreLine2Y0 = 0;
     pyreLine2X1 = 0;
     pyreLine2Y1 = 0;
+    singularityRemaining = 0;
+    singularityX = 0;
+    singularityY = 0;
+    singularity2Remaining = 0;
+    singularity2X = 0;
+    singularity2Y = 0;
     arrowsFired = 0;
     rekindlesUsed = 0;
     rekindleNovaPending = false;
@@ -359,5 +381,7 @@ class HeroRuntime {
     pyreLineRemaining = 0;
     ashlinInvulnRemaining = 0;
     aegisPinRemaining = 0;
+    singularityRemaining = 0;
+    singularity2Remaining = 0;
   }
 }

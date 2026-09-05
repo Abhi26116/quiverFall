@@ -578,6 +578,7 @@ class SimWorld {
     _tickSableMiasma(dt);
     _tickKadePyreLine(dt);
     _tickRookCrush(dt);
+    _tickRookSingularity(dt);
 
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
@@ -1025,6 +1026,8 @@ class SimWorld {
       _fireMirelleHallOfMirrors();
     } else if (hero.has(HeroBehaviour.ovrinAegisPin)) {
       _fireOvrinAegisPin();
+    } else if (hero.has(HeroBehaviour.rookSingularity)) {
+      _fireRookSingularity();
     }
   }
 
@@ -1445,6 +1448,168 @@ class SimWorld {
   /// `ProjectileSystem` carries the identical constant for Pull's own
   /// per-hit damage bonus.
   static const double _rookGroupingRadius = 1.6;
+
+  /// *Singularity* — "a 4 s well pulling everything in 6 u to a point, then
+  /// detonating for 400 %" (docs/07 §7.3). The same fixed-zone shape
+  /// Miasma's own cloud and Pyre Line's own wall already use: pinned at
+  /// cast time on [HeroRuntime], ticked every frame from
+  /// [_tickRookSingularity] rather than resolved once here. Centred on the
+  /// current target, the same `FiringSystem.selectTarget` every other
+  /// targeted Ultimate (Glacier Nail, Pyre Line) already reads, falling
+  /// back to the player's own position with nothing in range.
+  ///
+  /// *Twin Singularity* (T5a) casts a second, independent well at the
+  /// *second*-nearest enemy — the same "second independent instance of the
+  /// same fixed zone" shape Kade's own Twin Pyre already establishes for
+  /// [HeroRuntime.pyreLine2X0] — rather than at the same point as the
+  /// first, which would just be one well with a redundant name. *Collapsing
+  /// Singularity* (T5b) trades the second well for one that lasts longer
+  /// and hits far harder; the two are this Ultimate's own mutually
+  /// exclusive ★5 branches, never both active.
+  void _fireRookSingularity() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double fromX = entities.posX[p];
+    final double fromY = entities.posY[p];
+
+    final bool collapsing = hero.has(HeroBehaviour.rookCollapsingSingularity);
+    final double duration =
+        collapsing ? _rookCollapsingSingularityDuration : _rookSingularityDuration;
+
+    final int target = FiringSystem.selectTarget(
+      entities,
+      spatial,
+      fromX,
+      fromY,
+      enemies: enemies,
+    );
+    hero.singularityRemaining = duration;
+    hero.singularityX = target >= 0 ? entities.posX[target] : fromX;
+    hero.singularityY = target >= 0 ? entities.posY[target] : fromY;
+
+    if (hero.has(HeroBehaviour.rookTwinSingularity)) {
+      final int second = _nearestEnemyExcluding(fromX, fromY, target);
+      hero.singularity2Remaining = duration;
+      hero.singularity2X = second >= 0 ? entities.posX[second] : fromX;
+      hero.singularity2Y = second >= 0 ? entities.posY[second] : fromY;
+    } else {
+      hero.singularity2Remaining = 0;
+    }
+  }
+
+  /// The nearest living, targetable enemy to ([fromX], [fromY]) other than
+  /// [exclude] — [_furthestEnemy]'s own reasoning applies equally here:
+  /// unbounded by `FiringSystem.acquireRange`, since summoning a second
+  /// well is not an aimed shot either. A linear scan, run once per
+  /// Ultimate press.
+  int _nearestEnemyExcluding(double fromX, double fromY, int exclude) {
+    int nearest = -1;
+    double nearestDistSq = double.infinity;
+    for (int i = 0; i < entities.highWater; i++) {
+      if (i == exclude) continue;
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      if (enemies.isUntargetable(i)) continue;
+      final double dx = entities.posX[i] - fromX;
+      final double dy = entities.posY[i] - fromY;
+      final double distSq = dx * dx + dy * dy;
+      if (distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearest = i;
+      }
+    }
+    return nearest;
+  }
+
+  static const double _rookSingularityDuration = 4.0;
+  static const double _rookCollapsingSingularityDuration = 6.0;
+  static const double _rookSingularityRadius = 6.0;
+  static const double _rookSingularityDetonationShare = 4.00;
+  static const double _rookCollapsingSingularityDetonationShare = 9.00;
+
+  /// Units per second an enemy is dragged toward a well's own centre.
+  /// Docs/07 states no speed for the pull itself — fast enough that
+  /// anything caught at the full 6 u radius still reaches the centre well
+  /// before even the base 4 s window ends, so "pulling everything... to a
+  /// point" is a promise the well actually keeps rather than a slow drift
+  /// that only starts to matter once Collapsing Singularity's own longer
+  /// window is picked.
+  static const double _rookSingularityPullSpeed = 5.0;
+
+  /// Advances both of Rook's own wells (if either is active) — the pull
+  /// each tick it is live, then exactly one detonation the instant its own
+  /// timer reaches zero, never resolved twice.
+  void _tickRookSingularity(double dt) {
+    if (hero.singularityRemaining > 0) {
+      _pullTowardWell(hero.singularityX, hero.singularityY, dt);
+      hero.singularityRemaining -= dt;
+      if (hero.singularityRemaining <= 0) {
+        hero.singularityRemaining = 0;
+        _detonateAt(
+          hero.singularityX,
+          hero.singularityY,
+          _rookSingularityRadius,
+          hero.has(HeroBehaviour.rookCollapsingSingularity)
+              ? _rookCollapsingSingularityDetonationShare
+              : _rookSingularityDetonationShare,
+        );
+      }
+    }
+    if (hero.singularity2Remaining > 0) {
+      _pullTowardWell(hero.singularity2X, hero.singularity2Y, dt);
+      hero.singularity2Remaining -= dt;
+      if (hero.singularity2Remaining <= 0) {
+        hero.singularity2Remaining = 0;
+        _detonateAt(hero.singularity2X, hero.singularity2Y,
+            _rookSingularityRadius, _rookSingularityDetonationShare);
+      }
+    }
+  }
+
+  /// Drags every living enemy within [_rookSingularityRadius] of ([cx],
+  /// [cy]) toward that point by [_rookSingularityPullSpeed] this tick,
+  /// clamped so a close enemy is placed exactly at the centre rather than
+  /// overshooting past it. A linear scan, the same shape
+  /// [_tickRookCrush]/[_tickSableMiasma] already use for their own
+  /// once-or-twice-a-tick zone effects.
+  void _pullTowardWell(double cx, double cy, double dt) {
+    const double radiusSq = _rookSingularityRadius * _rookSingularityRadius;
+    final double step = _rookSingularityPullSpeed * dt;
+    for (int i = 0; i < entities.highWater; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      final double dx = cx - entities.posX[i];
+      final double dy = cy - entities.posY[i];
+      final double distSq = dx * dx + dy * dy;
+      if (distSq > radiusSq || distSq <= 1e-9) continue;
+      final double dist = math.sqrt(distSq);
+      final double move = step < dist ? step : dist;
+      entities.posX[i] += dx / dist * move;
+      entities.posY[i] += dy / dist * move;
+    }
+  }
+
+  /// Flat AoE damage centred on an arbitrary point at an arbitrary radius —
+  /// Rook's own Singularity detonation needs both to differ from
+  /// [_applyPlayerCenteredNova]'s own fixed player-centred radius (a well
+  /// can sit anywhere, and 6 u is Rook's own stated number, not
+  /// Ashlin/Ovrin's shared 3.5 u), so this is its own small helper rather
+  /// than forcing a second radius parameter onto a nova named for always
+  /// using one.
+  void _detonateAt(double cx, double cy, double radius, double damageMultiplier) {
+    final double damage = playerAttack * damageMultiplier;
+    final double radiusSq = radius * radius;
+    final int found = spatial.queryRadius(cx, cy, radius);
+    for (int i = 0; i < found; i++) {
+      final int e = spatial.resultAt(i);
+      if (entities.alive[e] == 0) continue;
+      if (entities.kind[e] != EntityKind.enemy.index) continue;
+      final double dx = entities.posX[e] - cx;
+      final double dy = entities.posY[e] - cy;
+      if (dx * dx + dy * dy > radiusSq) continue;
+      entities.health[e] -= damage;
+    }
+  }
 
   /// *Pyre Line* — a straight burning wall along the aim vector, the same
   /// direction [FiringSystem.aimAngle] computes for every other targeted
@@ -1875,8 +2040,9 @@ class SimWorld {
 
     final double step = count > 1 ? _wrenVolleyArcRadians / (count - 1) : 0;
     final double start = baseAngle - _wrenVolleyArcRadians * 0.5;
+    final bool wardensLattice = hero.has(HeroBehaviour.wrenWardensLattice);
     for (int i = 0; i < count; i++) {
-      _spawnArrow(
+      final int slot = _spawnArrow(
         fromX,
         fromY,
         start + step * i,
@@ -1884,6 +2050,17 @@ class SimWorld {
         share,
         extraPierce: extraPierce,
       );
+      if (slot < 0) continue;
+      // *Warden's Fury* (T5b) reads this at the target's own death, well
+      // after this arrow may have landed — tagged unconditionally, the
+      // same "every Ultimate arrow, not just when a talent needs it"
+      // posture `willMarkBoss`/`willChain` already take for their own
+      // per-shot tags.
+      projectiles.isUltimateArrow[slot] = 1;
+      // *Warden's Lattice* (T5a) — "Ultimate Windlines last 4 s."
+      if (wardensLattice) {
+        projectiles.windlineDurationOverride[slot] = _wrenWardensLatticeDuration;
+      }
     }
   }
 
@@ -1894,6 +2071,7 @@ class SimWorld {
   static const int _wrenFocusedFanArrows = 3;
   static const double _wrenFocusedFanDamageShare = 2.20;
   static const int _wrenFocusedFanPierce = 3;
+  static const double _wrenWardensLatticeDuration = 4.0;
 
   /// 90°, in radians — the arc every Volley Fan variant fans across.
   static const double _wrenVolleyArcRadians = math.pi / 2;

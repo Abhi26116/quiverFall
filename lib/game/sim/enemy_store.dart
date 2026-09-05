@@ -100,7 +100,8 @@ class EnemyStore {
         bossActiveChildIndex = Uint8List(capacity),
         bossSweepAngle = Float64List(capacity),
         bossParent = Int32List(capacity),
-        bossLastHitAgo = Float64List(capacity);
+        bossLastHitAgo = Float64List(capacity),
+        lastHitWasUltimate = Uint8List(capacity);
 
   final int _capacity;
 
@@ -349,6 +350,17 @@ class EnemyStore {
   /// See ADR 0022.
   final Float64List bossLastHitAgo;
 
+  /// Whether the most recent hit to actually reach this enemy's health was
+  /// fired by the hero's own Ultimate — `ProjectileStore.isUltimateArrow`
+  /// copied over wherever a hit resolves, unconditionally (so a later,
+  /// ordinary hit correctly clears it rather than leaving an earlier
+  /// Ultimate hit's tag stuck on a target that survived it). Read only by
+  /// Wren's own *Warden's Fury* (T5b, "refunds 30 % charge on kill") at
+  /// `AiSystem`'s own death pass — a kill needs to know which arrow struck
+  /// last, not merely that an Ultimate arrow existed somewhere earlier in
+  /// the fight.
+  final Uint8List lastHitWasUltimate;
+
   final Uint8List variant;
 
   final Int32List telegraphSlot;
@@ -463,6 +475,7 @@ class EnemyStore {
     bossSweepAngle[slot] = 0;
     bossParent[slot] = -1;
     bossLastHitAgo[slot] = 0;
+    lastHitWasUltimate[slot] = 0;
     untargetable[slot] = 0;
     variant[slot] = EnemyVariant.none.index;
     telegraphSlot[slot] = -1;

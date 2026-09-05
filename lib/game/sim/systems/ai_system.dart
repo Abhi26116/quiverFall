@@ -531,6 +531,19 @@ abstract final class AiSystem {
       }
     }
 
+    // *Warden's Fury* (Wren, T5b) — "Ultimate refunds 30 % charge on
+    // kill." Reads `EnemyStore.lastHitWasUltimate`, set wherever a hit
+    // actually resolves against this target (`ProjectileSystem`'s own
+    // primary-hit path) — a kill credits whichever arrow struck last, not
+    // merely "one of the Ultimate's own arrows existed somewhere in this
+    // fight." Read before `ctx.enemies.reset(slot)` below clears it.
+    if (hero != null &&
+        hero.has(HeroBehaviour.wrenWardensFury) &&
+        ctx.enemies.lastHitWasUltimate[slot] == 1) {
+      final double next = hero.ultimateCharge + _wrenWardensFuryChargeRefund;
+      hero.ultimateCharge = next > 1.0 ? 1.0 : next;
+    }
+
     // *Shatter* (Sela, T3a) — "killing a frozen enemy deals 250 % in 2 u."
     // Read before `clearSlot` below erases the frozen status, the same
     // "read before the reset" ordering Contagion/Wildfire above already
@@ -589,6 +602,7 @@ abstract final class AiSystem {
 
   static const double _selaShatterRadius = 2.0;
   static const double _selaShatterDamageShare = 2.50;
+  static const double _wrenWardensFuryChargeRefund = 0.30;
 
   static const double _kadeWildfireRadius = 2.0;
   static const int _kadeSlowBurnMaxStacks = 3;

@@ -248,7 +248,8 @@ abstract final class ProjectileSystem {
       fromY: y - uy * back,
       toX: x,
       toY: y,
-      expiresAt: now + windlineDuration,
+      expiresAt: now +
+          _effectiveWindlineDuration(projectiles, slot, windlineDuration),
       ownerIndex: _playerOwner,
       trailId: projectiles.trailId[slot],
       elementIndex: projectiles.element[slot],
@@ -927,6 +928,15 @@ abstract final class ProjectileSystem {
       // pool with independently-*pressured* children is the whole mechanic,
       // the same split `linkedHealthSlot` already draws for armour.
       if (toHealth > 0) enemies.bossLastHitAgo[target] = 0;
+
+      // *Warden's Fury* (Wren, T5b) — tags the target with whichever kind
+      // of arrow struck it last, read at `AiSystem`'s own death pass.
+      // Unconditional, not only when true: a later, ordinary hit must
+      // correctly clear an earlier Ultimate hit's own tag on a target that
+      // survived it, the same "reflects the most recent hit, not any past
+      // one" shape `bossLastHitAgo` resets to zero above rather than
+      // merely counting down toward it.
+      enemies.lastHitWasUltimate[target] = projectiles.isUltimateArrow[slot];
     }
 
     store.health[healthSlot] -= toHealth;
@@ -1597,11 +1607,27 @@ abstract final class ProjectileSystem {
       fromY: endY - dirY / len * back,
       toX: endX,
       toY: endY,
-      expiresAt: now + windlineDuration,
+      expiresAt: now +
+          _effectiveWindlineDuration(projectiles, slot, windlineDuration),
       ownerIndex: _playerOwner,
       trailId: projectiles.trailId[slot],
       elementIndex: projectiles.element[slot],
     );
+  }
+
+  /// *Warden's Lattice* (Wren, T5a) — "Ultimate Windlines last 4 s." Baked
+  /// into the arrow itself at spawn time
+  /// (`ProjectileStore.windlineDurationOverride`), rather than read live
+  /// from a hero check here: a segment can be laid many ticks after the
+  /// arrow left the bow, and this way neither lay site needs a
+  /// `HeroRuntime` reference at all.
+  static double _effectiveWindlineDuration(
+    ProjectileStore projectiles,
+    int slot,
+    double ambientDuration,
+  ) {
+    final double override = projectiles.windlineDurationOverride[slot];
+    return override > 0 ? override : ambientDuration;
   }
 
   /// Closest-approach test between a swept segment and a circle.
