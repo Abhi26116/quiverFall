@@ -1149,6 +1149,83 @@ void main() {
       expect(SimElement.toxin.index, 3);
     });
 
+    test(
+        'without Faster Cycle, every arrow in one Tier III multishot '
+        'shares one element', () {
+      final ({SimWorld world, int target}) a = orielArena();
+      a.world.extraArrows = 2; // one shot now fires 3 arrows at once
+
+      final List<int> elements = firstArrowElements(a.world, 6);
+      expect(elements, hasLength(6));
+      // The first shot's 3 arrows all share one element; the second shot's
+      // 3 share the next one in the cycle — the cycle itself only advanced
+      // twice, once per shot, not six times.
+      expect(elements.sublist(0, 3), <int>[0, 0, 0]);
+      expect(elements.sublist(3, 6), <int>[1, 1, 1]);
+    });
+
+    test(
+        'Faster Cycle (★1a) cycles every arrow, even within one Tier III '
+        'multishot', () {
+      final ({SimWorld world, int target}) a = orielArena();
+      HeroLoadoutResolver.apply(
+        a.world,
+        oriel,
+        const HeroState(
+          heroId: 'oriel',
+          stars: 1,
+          talentChoices: <String, String>{'1': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      a.world.extraArrows = 2; // one shot now fires 3 arrows at once
+
+      final List<int> elements = firstArrowElements(a.world, 6);
+      expect(elements, hasLength(6));
+      for (int i = 0; i < 6; i++) {
+        expect(elements[i], i % 4, reason: 'arrow $i');
+      }
+    });
+
+    test('Saturation (★3b): elements persist 2x longer on enemies', () {
+      final ({SimWorld world, int target}) a = orielArena();
+      HeroLoadoutResolver.apply(
+        a.world,
+        oriel,
+        const HeroState(
+          heroId: 'oriel',
+          stars: 3,
+          talentChoices: <String, String>{'3': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      // Force the very next arrow to be Ember (index 0 in the cycle) rather
+      // than waiting on however many shots the cycle happens to need.
+      a.world.hero.cycleIndex = 0;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600 && a.world.status.burnStacks[a.target] == 0; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.burnStacks[a.target], greaterThan(0));
+      expect(a.world.status.burnRemaining[a.target], closeTo(8.0, 0.1),
+          reason: 'the ordinary 4 s Burn duration, doubled');
+    });
+
+    test('without Saturation, Burn lasts the ordinary 4 s', () {
+      final ({SimWorld world, int target}) a = orielArena();
+      a.world.hero.cycleIndex = 0;
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600 && a.world.status.burnStacks[a.target] == 0; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.burnStacks[a.target], greaterThan(0));
+      expect(a.world.status.burnRemaining[a.target], closeTo(4.0, 0.1));
+    });
+
     test('Prism carries all four elements at once for its window', () {
       final ({SimWorld world, int target}) a = orielArena();
       a.world.hero.ultimateCharge = 1.0;
@@ -5617,10 +5694,12 @@ void main() {
       // override layered on top of the organic sweep, not inside it), and
       // Thane's Tempered and Ashlin's Eternal (ADR 0081, a heal-ceiling
       // clamp and a once-per-room refresh gate — two small, unrelated gaps
-      // bundled into one ADR).
+      // bundled into one ADR), and Oriel's own Faster Cycle and Saturation
+      // (ADR 0082, a real once-per-shot grouping for the element cycle and
+      // a generic status-duration multiplier).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(11),
+        lessThanOrEqualTo(9),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -5853,10 +5932,16 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // variant of both — is implemented. See the "Reflection" and "Hall of
   // Mirrors" groups.
 
-  // orielSpectrum, orielPrism and orielEndlessPrism are implemented — see
-  // the "Spectrum and Prism" group.
-  HeroBehaviour.orielFasterCycle,
-  HeroBehaviour.orielSaturation,
+  // orielSpectrum, orielPrism, orielEndlessPrism, orielFasterCycle and
+  // orielSaturation are all implemented now — see the "Spectrum and Prism"
+  // group (ADR 0082). Faster Cycle needed the base passive's own per-shot
+  // grouping made real first — every arrow in one release (Split Shot/Twin
+  // Nock's extra arrows, Rain of Nocks' own fan) now shares a single
+  // element rolled once per shot, and Faster Cycle is what turns that back
+  // into a per-arrow cycle. Saturation reads a duration multiplier now
+  // threaded through `StatusStore.apply` — the same, generic parameter any
+  // future 2x/0.5x duration talent could reuse, not an Oriel-specific
+  // branch.
   // orielWhiteLight: the 6 s duration is free, but "reactions deal x3"
   // needs Reaction/elementalBonus damage wiring that does not exist yet —
   // projectiles.elementalBonus is set and never read anywhere. Shipping the

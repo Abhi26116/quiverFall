@@ -82,6 +82,20 @@ void main() {
       expect(store.alive[e], 0);
       expect(events.countOf(SimEventType.entityDied), 1);
     });
+
+    test('durationMultiplier extends how long Burn lasts (Oriel\'s own '
+        'Saturation)', () {
+      final int e = spawnEnemy(health: 1000);
+      status.apply(e, SimElement.ember, durationMultiplier: 2.0);
+
+      // Still burning past the ordinary 4 s duration...
+      run((ElementTuning.burnDuration * 60).ceil() + 2);
+      expect(status.burnStacks[e], greaterThan(0));
+
+      // ...but gone by twice it.
+      run((ElementTuning.burnDuration * 60).ceil());
+      expect(status.burnStacks[e], 0);
+    });
   });
 
   group('Frost', () {
@@ -143,6 +157,27 @@ void main() {
       run((ElementTuning.freezeDuration * 60).ceil() + 2);
       expect(status.isFrozen(e), isFalse);
     });
+
+    test('durationMultiplier extends the freeze itself, not the '
+        'accumulation toward it (Oriel\'s own Saturation)', () {
+      final int e = spawnEnemy(health: 1000);
+      final int hitsNeeded =
+          (ElementTuning.chillToFreeze / ElementTuning.chillPerHit).ceil();
+      // The multiplier only matters once discharged into a freeze, so
+      // reaching the threshold itself takes no more hits than usual.
+      for (int i = 0; i < hitsNeeded; i++) {
+        status.apply(e, SimElement.frost, durationMultiplier: 2.0);
+      }
+      expect(status.isFrozen(e), isTrue);
+
+      // Still frozen past the ordinary freeze duration...
+      run((ElementTuning.freezeDuration * 60).ceil() + 2);
+      expect(status.isFrozen(e), isTrue);
+
+      // ...but thawed by twice it.
+      run((ElementTuning.freezeDuration * 60).ceil());
+      expect(status.isFrozen(e), isFalse);
+    });
   });
 
   group('Toxin', () {
@@ -188,6 +223,14 @@ void main() {
       status.apply(e, SimElement.toxin);
       run(600);
       expect(status.toxinStacks[e], 1);
+    });
+
+    test('durationMultiplier does nothing — Toxin has no duration to '
+        'extend (Oriel\'s own Saturation)', () {
+      final int e = spawnEnemy(health: 1000);
+      status.apply(e, SimElement.toxin, durationMultiplier: 2.0);
+      run(600);
+      expect(status.toxinStacks[e], 1, reason: 'stacks, does not expire');
     });
   });
 

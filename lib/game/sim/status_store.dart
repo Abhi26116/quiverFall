@@ -85,6 +85,14 @@ class StatusStore {
   ///
   /// [burnMaxStacksOverride]/[burnDurationOverride] do the same for Kade's
   /// Slow Burn (3 stacks, 8 s instead of the base 2/4 s).
+  ///
+  /// [durationMultiplier] is Oriel's own Saturation (T3b) — "elements
+  /// persist 2x longer on enemies" — scaling whatever duration this call
+  /// would otherwise have landed on (an override included), rather than a
+  /// second override slot of its own. It touches Burn's own duration and
+  /// Frost's own freeze once discharged; Toxin has no duration to extend
+  /// (stacks persist until cleared, not on a timer) and Storm resolves
+  /// instantly, so neither reads it at all.
   SimElement? apply(
     int slot,
     SimElement element, {
@@ -93,6 +101,7 @@ class StatusStore {
     int? toxinMaxStacksOverride,
     int? burnMaxStacksOverride,
     double? burnDurationOverride,
+    double durationMultiplier = 1.0,
   }) {
     final SimElement? existing = dominantElement(slot);
 
@@ -103,13 +112,15 @@ class StatusStore {
         if (burnStacks[slot] < maxBurnStacks) {
           burnStacks[slot]++;
         }
-        burnRemaining[slot] = burnDurationOverride ?? ElementTuning.burnDuration;
+        burnRemaining[slot] =
+            (burnDurationOverride ?? ElementTuning.burnDuration) *
+                durationMultiplier;
 
       case SimElement.frost:
         chill[slot] += chillPerHitOverride ?? ElementTuning.chillPerHit;
         if (chill[slot] >= ElementTuning.chillToFreeze) {
           chill[slot] = 0;
-          frozenRemaining[slot] = ElementTuning.freezeDuration;
+          frozenRemaining[slot] = ElementTuning.freezeDuration * durationMultiplier;
         }
 
       case SimElement.storm:

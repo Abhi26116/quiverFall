@@ -2198,8 +2198,30 @@ class SimWorld {
   /// is centred on the aim angle so the middle arrow still goes where the
   /// player is looking — an off-centre fan makes auto-aim feel broken even
   /// though it is aiming correctly.
+  ///
+  /// Oriel's own *Faster Cycle* (T1a, "cycle every shot even at Tier III
+  /// multishot") only means something if the base passive does *not* do
+  /// that: without it, every arrow this one call produces — the base fan,
+  /// Split Shot/Twin Nock's extra arrows, Rain of Nocks' own separate fan,
+  /// all one release of one shot — shares a single element rolled once here,
+  /// so `hero.cycleIndex` advances once per shot rather than once per arrow.
+  /// Faster Cycle removes that sharing entirely, falling back to
+  /// [_applyOrielElementCycle]'s own per-arrow advance. Prism always wins
+  /// regardless, since it never reads `cycleIndex` at all.
   void _spawnVolley(double x, double y, double angle, DrawTier tier) {
     final int extra = extraArrows;
+
+    final bool orielCycling = hero.has(HeroBehaviour.orielSpectrum) ||
+        hero.hasArrow(ArrowBehaviour.prismshaftCycle);
+    final bool orielPrismOverriding =
+        hero.prismRemaining > 0 && hero.has(HeroBehaviour.orielPrism);
+    int? sharedElement;
+    if (orielCycling &&
+        !orielPrismOverriding &&
+        !hero.has(HeroBehaviour.orielFasterCycle)) {
+      sharedElement = hero.cycleIndex;
+      hero.cycleIndex = (hero.cycleIndex + 1) % SimElement.values.length;
+    }
 
     // *Rain of Nocks* (#22) adds a wide, weaker fan on Tier III only. It is a
     // separate release rather than more arrows in the main fan, because its
@@ -2216,17 +2238,20 @@ class SimWorld {
           start + step * i,
           tier,
           volleyDamageMultiplier * BoonRuntime.rainDamageShare,
+          orielElementOverride: sharedElement,
         );
       }
     }
 
     if (hero.hasArrow(ArrowBehaviour.twinfangConverging)) {
-      _fireTwinfangConverging(x, y, angle, tier);
+      _fireTwinfangConverging(x, y, angle, tier,
+          orielElementOverride: sharedElement);
       return;
     }
 
     if (extra <= 0) {
-      _spawnArrow(x, y, angle, tier, volleyDamageMultiplier);
+      _spawnArrow(x, y, angle, tier, volleyDamageMultiplier,
+          orielElementOverride: sharedElement);
       return;
     }
 
@@ -2236,7 +2261,8 @@ class SimWorld {
     final double start = angle - spread * 0.5;
 
     for (int i = 0; i < total; i++) {
-      _spawnArrow(x, y, start + step * i, tier, volleyDamageMultiplier);
+      _spawnArrow(x, y, start + step * i, tier, volleyDamageMultiplier,
+          orielElementOverride: sharedElement);
     }
   }
 
@@ -2253,7 +2279,13 @@ class SimWorld {
   /// exactly one stack's own +40 % (`ConfluenceTuning.bonusFor(1)`), granted
   /// unconditionally rather than left contingent on an enemy standing
   /// precisely on the crossing point.
-  void _fireTwinfangConverging(double x, double y, double angle, DrawTier tier) {
+  void _fireTwinfangConverging(
+    double x,
+    double y,
+    double angle,
+    DrawTier tier, {
+    int? orielElementOverride,
+  }) {
     final double crossX = x + math.cos(angle) * _twinfangCrossDistance;
     final double crossY = y + math.sin(angle) * _twinfangCrossDistance;
     final double perpX = -math.sin(angle);
@@ -2270,6 +2302,7 @@ class SimWorld {
         arrowAngle,
         tier,
         volleyDamageMultiplier,
+        orielElementOverride: orielElementOverride,
       );
       if (i >= 0) {
         projectiles.confluenceStacks[i] = _twinfangGuaranteedStacks;
@@ -2316,6 +2349,7 @@ class SimWorld {
     int mirelleDuplicateDepth = 0,
     bool isEcho = false,
     bool marksBoss = false,
+    int? orielElementOverride,
   }) {
     final EntityId id = entities.spawn(EntityKind.projectile);
     if (id.isNone) return -1;
@@ -2352,7 +2386,7 @@ class SimWorld {
     }
     if (ricochets > 0) projectiles.ricochetsLeft[i] = ricochets;
     if (marksBoss) projectiles.willMarkBoss[i] = 1;
-    _applyOrielElementCycle(i);
+    _applyOrielElementCycle(i, forcedElementIndex: orielElementOverride);
     _applyTorvArc(i);
     _applyKestrelBleed(i);
 
@@ -2550,13 +2584,22 @@ class SimWorld {
   /// live, which is every tick it runs — Spectrum is Oriel's passive, always
   /// on, and Prism is layered on top of it rather than instead of it.
   ///
+  /// [forcedElementIndex] is [_spawnVolley]'s own once-per-shot roll (see its
+  /// doc comment on *Faster Cycle*) — set, it wins over Spectrum's per-arrow
+  /// advance but never over Prism, the same priority Spectrum itself already
+  /// loses to.
+  ///
   /// Prismshaft cycles the identical rotation independent of Spectrum — "the
   /// same idea as Oriel's Spectrum passive" per [ArrowBehaviour]'s own doc
   /// comment — so it reads `hero.cycleIndex` through the same call rather
   /// than a second implementation of one rotation.
-  void _applyOrielElementCycle(int i) {
+  void _applyOrielElementCycle(int i, {int? forcedElementIndex}) {
     if (hero.prismRemaining > 0 && hero.has(HeroBehaviour.orielPrism)) {
       projectiles.elementMask[i] = _allElements;
+      return;
+    }
+    if (forcedElementIndex != null) {
+      projectiles.element[i] = forcedElementIndex;
       return;
     }
     if (hero.has(HeroBehaviour.orielSpectrum) ||

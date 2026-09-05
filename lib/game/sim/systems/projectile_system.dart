@@ -1054,6 +1054,7 @@ abstract final class ProjectileSystem {
       target: target,
       x: store.posX[target],
       y: store.posY[target],
+      hero: hero,
     );
 
     _applyHeroInnateElements(
@@ -1432,8 +1433,21 @@ abstract final class ProjectileSystem {
     required int target,
     required double x,
     required double y,
+    HeroRuntime? hero,
   }) {
     if (status == null) return;
+
+    // *Saturation* (Oriel, T3b) — "elements persist 2x longer on enemies."
+    // Read once here rather than per-element below, since exactly one hero
+    // is ever equipped. Every arrow this passes through carries whichever
+    // element Spectrum/Prism cycled onto it, so this is the one path that
+    // needs the multiplier — Kade's Kindling, Sela's Chill and Sable's
+    // Toxin apply through `_applyHeroInnateElements` instead, gated on
+    // their own hero, which Oriel never also is.
+    final double durationMultiplier =
+        hero != null && hero.has(HeroBehaviour.orielSaturation)
+            ? _orielSaturationDurationMultiplier
+            : 1.0;
 
     // Almost every arrow carries one element or none. The mask is for the four
     // Boons that carry several — and it is what beats the Nullborn, whose
@@ -1442,8 +1456,8 @@ abstract final class ProjectileSystem {
     if (mask != 0) {
       for (final SimElement element in SimElement.values) {
         if (mask & (1 << element.index) == 0) continue;
-        _applyOneElement(
-            enemies, status, events, slot, target, element, x, y);
+        _applyOneElement(enemies, status, events, slot, target, element, x, y,
+            durationMultiplier: durationMultiplier);
       }
       return;
     }
@@ -1451,8 +1465,12 @@ abstract final class ProjectileSystem {
     final int index = projectiles.element[slot];
     if (index < 0) return;
     _applyOneElement(enemies, status, events, slot, target,
-        SimElement.values[index], x, y);
+        SimElement.values[index], x, y,
+        durationMultiplier: durationMultiplier);
   }
+
+  /// *Saturation* (Oriel, T3b) — see [_applyElement]'s own doc comment.
+  static const double _orielSaturationDurationMultiplier = 2.0;
 
   /// Kade's Kindling, Sela's Chill and Sable's Toxin: each grants their own
   /// element "without needing an [Ember/Frost/Toxin] arrow" (their own card
@@ -1563,6 +1581,7 @@ abstract final class ProjectileSystem {
     int? toxinMaxStacksOverride,
     int? burnMaxStacksOverride,
     double? burnDurationOverride,
+    double durationMultiplier = 1.0,
   }) {
     if (enemies != null && enemies.resistsElement(target, element)) return;
 
@@ -1574,6 +1593,7 @@ abstract final class ProjectileSystem {
       toxinMaxStacksOverride: toxinMaxStacksOverride,
       burnMaxStacksOverride: burnMaxStacksOverride,
       burnDurationOverride: burnDurationOverride,
+      durationMultiplier: durationMultiplier,
     );
     events.emit(
       SimEventType.elementApplied,
