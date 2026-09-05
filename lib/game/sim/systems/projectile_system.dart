@@ -417,6 +417,28 @@ abstract final class ProjectileSystem {
 
   static const double _haldenVerdictEliteBonus = 0.40;
 
+  /// docs/07: "+40 % damage to bosses and elites" — the boss half, reached
+  /// now that `EnemyStore.isBoss` exists (Phase 11). *Zealot* (T1a) raises
+  /// only this number, never the elite one, per its own card text ("+55 %
+  /// boss damage").
+  static const double _haldenVerdictBossBonus = 0.40;
+  static const double _haldenZealotBossBonus = 0.55;
+
+  /// *Sentence* (T3a): "the Ultimate marks the boss: +20 % damage taken
+  /// 10 s" — reuses `EnemyStore.markedRemaining`, the same field Vane's own
+  /// *Marked* already uses, since only one hero is ever equipped and the
+  /// two triggers (a long-range hit; a landed Judgment Spear) never
+  /// coexist. The bonus amount is read hero-conditionally at the same spot
+  /// [_vaneMarkedBonus] already is.
+  static const double _haldenSentenceBonus = 0.20;
+  static const double _haldenSentenceMarkDuration = 10.0;
+
+  /// *Swift Judgment* (T3b): "the Ultimate charges 40 % faster on bosses" —
+  /// a multiplier on the damage fed into `HeroRuntime.chargeFromDamage`,
+  /// since that is already the one function docs/07 §7.0's own charge
+  /// formula runs through.
+  static const double _haldenSwiftJudgmentChargeMultiplier = 1.40;
+
   // ── Lira: Lifebound ────────────────────────────────────────────────────────
 
   static const double _liraLifeboundTierThreeBonus = 0.02;
@@ -742,24 +764,30 @@ abstract final class ProjectileSystem {
       boonSum += _vaneCloseRangePenalty;
     }
 
-    // *Marked* (T3a) — reads whatever mark this target is already carrying
-    // from an earlier hit; the hit that lands the mark itself (below, after
-    // damage resolves) does not get its own bonus retroactively, the same
-    // "applies to what comes after, not what caused it" shape Kindling's
-    // own Burn already has.
+    // *Marked* (T3a, Vane) / *Sentence* (T3a, Halden) — reads whatever mark
+    // this target is already carrying from an earlier hit; the hit that
+    // lands the mark itself (below, after damage resolves) does not get its
+    // own bonus retroactively, the same "applies to what comes after, not
+    // what caused it" shape Kindling's own Burn already has. Both heroes
+    // share `markedRemaining` — only one hero is ever equipped, so reading
+    // Halden's own bonus whenever he holds Sentence is unambiguous.
     if (enemies != null && enemies.markedRemaining[target] > 0) {
-      boonSum += _vaneMarkedBonus;
+      boonSum += (hero != null && hero.has(HeroBehaviour.haldenSentence))
+          ? _haldenSentenceBonus
+          : _vaneMarkedBonus;
     }
 
-    // *Verdict* — only the elite half is reachable before Phase 11 builds
-    // bosses. "+40 % to bosses and elites" and "boss attacks deal -15 %"
-    // both need an `isBoss` check that does not exist on EnemyStore yet;
-    // the elite half needs nothing new, since `isElite` already does.
-    if (hero != null &&
-        hero.has(HeroBehaviour.haldenVerdict) &&
-        enemies != null &&
-        enemies.isElite(target)) {
-      boonSum += _haldenVerdictEliteBonus;
+    // *Verdict* — "+40 % to bosses and elites." *Zealot* (T1a) raises only
+    // the boss half to +55 %, never the elite one (docs/07's own wording).
+    if (hero != null && hero.has(HeroBehaviour.haldenVerdict) && enemies != null) {
+      if (enemies.isElite(target)) {
+        boonSum += _haldenVerdictEliteBonus;
+      }
+      if (enemies.isBoss(target)) {
+        boonSum += hero.has(HeroBehaviour.haldenZealot)
+            ? _haldenZealotBossBonus
+            : _haldenVerdictBossBonus;
+      }
     }
 
     // *Verdant Bloom* / *Blood Bloom* — a live window read here rather than
@@ -838,6 +866,16 @@ abstract final class ProjectileSystem {
         enemies != null &&
         projectiles.distanceFlown[slot] > _vaneMarkedThreshold) {
       enemies.markedRemaining[target] = _vaneMarkedDuration;
+    }
+
+    // *Sentence* — the arrow itself decided at release whether it is the
+    // Judgment Spear's own shot (`willMarkBoss`); only a boss actually
+    // struck by it gets marked, an ordinary target hit by some other arrow
+    // never does.
+    if (enemies != null &&
+        projectiles.willMarkBoss[slot] == 1 &&
+        enemies.isBoss(target)) {
+      enemies.markedRemaining[target] = _haldenSentenceMarkDuration;
     }
 
     // Streak and last-target are updated after the hit is resolved, so
@@ -926,7 +964,19 @@ abstract final class ProjectileSystem {
 
     // docs/07 §7.0's Ultimate charge formula reads on the damage a hit
     // actually dealt, the same number the event above just reported.
-    hero?.chargeFromDamage(toHealth);
+    //
+    // *Swift Judgment* (T3b) — "the Ultimate charges 40 % faster on
+    // bosses": scales the damage fed into the formula rather than the
+    // charge gained directly, so it composes correctly with everything
+    // else the formula already accounts for (armour, pierce falloff, every
+    // Boon term already folded into `toHealth`).
+    final double chargeDamage = (hero != null &&
+            hero.has(HeroBehaviour.haldenSwiftJudgment) &&
+            enemies != null &&
+            enemies.isBoss(target))
+        ? toHealth * _haldenSwiftJudgmentChargeMultiplier
+        : toHealth;
+    hero?.chargeFromDamage(chargeDamage);
 
     // Lifesteal — `lifesteal` is the room-composed fraction any source
     // (currently only Lira's Lifebound) contributes; her own +2 % at Tier

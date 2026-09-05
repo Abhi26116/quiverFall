@@ -5,6 +5,7 @@ import 'package:quiverfall/data/models/inventory.dart';
 import 'package:quiverfall/data/models/progression.dart';
 import 'package:quiverfall/game/arrows/arrow_catalogue.dart';
 import 'package:quiverfall/game/arrows/arrow_definition.dart';
+import 'package:quiverfall/game/content/boss_definition.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/heroes/hero_catalogue.dart';
@@ -24,6 +25,7 @@ import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:test/test.dart';
 
 import 'arrow_test_support.dart';
+import 'boss_test_support.dart';
 import 'enemy_test_support.dart';
 import 'hero_test_support.dart';
 
@@ -34,6 +36,13 @@ void main() {
   final HeroCatalogue heroes = loadHeroes();
   final ArrowCatalogue arrows = loadArrows();
   final ContentLibrary content = loadEnemies();
+
+  /// Only for Halden's own boss-half tests: `content` above has no boss
+  /// catalogue (`loadEnemies`), and every boss system's own per-tick scan
+  /// unconditionally indexes `content.bosses.all[bossIndex]` before
+  /// checking archetype — setting `bossIndex` against an empty catalogue
+  /// crashes the very next tick, not just whichever system might care.
+  final ContentLibrary bossContent = loadContentWithBosses();
 
   final HeroDefinition wren = heroes.byArchetype(HeroArchetype.wren)!;
   final HeroDefinition kestrel = heroes.byArchetype(HeroArchetype.kestrel)!;
@@ -1399,9 +1408,13 @@ void main() {
   });
 
   group('Verdict and Judgment Spear', () {
-    ({SimWorld world, int target}) haldenArena({bool elite = false}) {
-      final SimWorld world = SimWorld(seed: 51, content: content)
-        ..autoFire = true;
+    ({SimWorld world, int target}) haldenArena({
+      bool elite = false,
+      ContentLibrary? contentOverride,
+    }) {
+      final SimWorld world =
+          SimWorld(seed: 51, content: contentOverride ?? content)
+            ..autoFire = true;
       world.spawnPlayer(4.0, 4.5);
       HeroLoadoutResolver.apply(
         world,
@@ -1536,6 +1549,252 @@ void main() {
           closeTo(a.world.playerAttack * 6.0, 1e-9),
         );
       }
+    });
+
+    // ── Verdict's boss half, plus Zealot/Warded/Sentence/Swift Judgment ──
+    // (docs/07 §7.3). Reachable now that `EnemyStore.isBoss` exists
+    // (Phase 11) — see ADR 0069. `bossIndex` is set directly on an
+    // ordinary mote, using `bossContent` (which, unlike `content` above,
+    // carries a real boss catalogue — every boss system's own per-tick
+    // scan indexes `content.bosses.all[bossIndex]` unconditionally, which
+    // crashes against an empty catalogue). Umbral Twin's own real
+    // catalogue index is used deliberately: its own system (`UmbralTwin
+    // System.update`, ADR 0066) is a confirmed no-op, so nothing else
+    // reacts to this mote suddenly looking like a boss's own primary.
+    final int fakeBossIndex =
+        bossContent.bosses.indexOfArchetype(BossArchetype.umbralTwin);
+
+    test('Verdict: +40 % damage to a boss target too', () {
+      final ({SimWorld world, int target}) common = haldenArena();
+      final ({SimWorld world, int target}) boss =
+          haldenArena(contentOverride: bossContent);
+      boss.world.enemies.bossIndex[boss.target] = fakeBossIndex;
+
+      final double? commonDamage = firstDamageDealt(common.world);
+      final double? bossDamage = firstDamageDealt(boss.world);
+      expect(commonDamage, isNotNull);
+      expect(bossDamage, isNotNull);
+      expect(bossDamage! / commonDamage!, closeTo(1.40, 0.01));
+    });
+
+    test('Zealot (★1a): raises the boss bonus to +55 %, leaves the elite '
+        'bonus at +40 %', () {
+      final ({SimWorld world, int target}) common = haldenArena();
+      final ({SimWorld world, int target}) boss =
+          haldenArena(contentOverride: bossContent);
+      boss.world.enemies.bossIndex[boss.target] = fakeBossIndex;
+      final ({SimWorld world, int target}) elite = haldenArena(elite: true);
+
+      // `Curves.heroStat` scales with `stars`, so `common` is levelled to
+      // the identical star 1 too — with no talent chosen for node 1 — to
+      // isolate Zealot's own effect from the stat growth that would
+      // otherwise contaminate every ratio below.
+      HeroLoadoutResolver.apply(
+        common.world,
+        halden,
+        const HeroState(heroId: 'halden', stars: 1),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      for (final ({SimWorld world, int target}) a in <({SimWorld world, int target})>[
+        boss,
+        elite,
+      ]) {
+        HeroLoadoutResolver.apply(
+          a.world,
+          halden,
+          const HeroState(
+            heroId: 'halden',
+            stars: 1,
+            talentChoices: <String, String>{'1': 'a'},
+          ),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+      }
+
+      final double? commonDamage = firstDamageDealt(common.world);
+      final double? bossDamage = firstDamageDealt(boss.world);
+      final double? eliteDamage = firstDamageDealt(elite.world);
+      expect(bossDamage! / commonDamage!, closeTo(1.55, 0.01));
+      expect(eliteDamage! / commonDamage, closeTo(1.40, 0.01));
+    });
+
+    test('Verdict: boss attacks deal -15 % to Halden', () {
+      final ({SimWorld world, int target}) a =
+          haldenArena(contentOverride: bossContent);
+      a.world.enemies.bossIndex[a.target] = fakeBossIndex;
+      final int p = a.world.player.index;
+      a.world.tick(InputSnapshot());
+
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.20, source: a.target);
+
+      expect(dealt, closeTo(a.world.entities.maxHealth[p] * 0.20 * 0.85, 1e-6));
+    });
+
+    test('Warded (★1b): raises the boss damage-taken reduction to -28 %',
+        () {
+      final ({SimWorld world, int target}) a =
+          haldenArena(contentOverride: bossContent);
+      a.world.enemies.bossIndex[a.target] = fakeBossIndex;
+      HeroLoadoutResolver.apply(
+        a.world,
+        halden,
+        const HeroState(
+          heroId: 'halden',
+          stars: 1,
+          talentChoices: <String, String>{'1': 'b'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int p = a.world.player.index;
+      a.world.tick(InputSnapshot());
+
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.20, source: a.target);
+
+      expect(dealt, closeTo(a.world.entities.maxHealth[p] * 0.20 * 0.72, 1e-6));
+    });
+
+    test('Verdict\'s boss damage-taken reduction does not apply to a '
+        'common enemy\'s attack', () {
+      final ({SimWorld world, int target}) a = haldenArena();
+      // `a.target` is left an ordinary mote — no `bossIndex` set.
+      final int p = a.world.player.index;
+      a.world.tick(InputSnapshot());
+
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.20, source: a.target);
+
+      expect(dealt, closeTo(a.world.entities.maxHealth[p] * 0.20, 1e-6));
+    });
+
+    test('Sentence (★3a): Judgment Spear marks the boss it strikes for '
+        '10 s', () {
+      final ({SimWorld world, int target}) a =
+          haldenArena(contentOverride: bossContent)..world.autoFire = false;
+      a.world.enemies.bossIndex[a.target] = fakeBossIndex;
+      // A real boss-sized pool — the Spear's own multi-thousand-percent
+      // share would otherwise kill this 1000-HP mote outright, wiping the
+      // mark this test means to observe along with the rest of its state.
+      a.world.entities.maxHealth[a.target] = 1.0e7;
+      a.world.entities.health[a.target] = 1.0e7;
+      HeroLoadoutResolver.apply(
+        a.world,
+        halden,
+        const HeroState(
+          heroId: 'halden',
+          stars: 3,
+          talentChoices: <String, String>{'3': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      // `autoFire` never turns on in this test — the only arrow that ever
+      // flies is the Spear's own, so whichever hit lands is unambiguously
+      // its own.
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      final double? spearDamage = firstDamageDealt(a.world);
+
+      expect(spearDamage, isNotNull);
+      // One tick's worth of decay already elapsed within the same tick the
+      // mark was set, the identical "set mid-tick, decremented later that
+      // same tick" shape every other timed field in this pipeline has.
+      expect(a.world.enemies.markedRemaining[a.target], closeTo(10.0, 0.02));
+    });
+
+    test('Sentence\'s own +20 % mark stacks additively on Verdict\'s own '
+        '+40 % boss bonus', () {
+      final ({SimWorld world, int target}) baseline =
+          haldenArena(contentOverride: bossContent);
+      baseline.world.enemies.bossIndex[baseline.target] = fakeBossIndex;
+
+      final ({SimWorld world, int target}) marked =
+          haldenArena(contentOverride: bossContent);
+      marked.world.enemies.bossIndex[marked.target] = fakeBossIndex;
+      // Set directly rather than by firing the Ultimate — this test is
+      // about what the mark itself is worth, not the Spear's own travel;
+      // the Spear landing the mark is already covered above.
+      marked.world.enemies.markedRemaining[marked.target] = 10.0;
+
+      for (final ({SimWorld world, int target}) a in <({SimWorld world, int target})>[
+        baseline,
+        marked,
+      ]) {
+        HeroLoadoutResolver.apply(
+          a.world,
+          halden,
+          const HeroState(
+            heroId: 'halden',
+            stars: 3,
+            talentChoices: <String, String>{'3': 'a'},
+          ),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+      }
+
+      final double? baselineDamage = firstDamageDealt(baseline.world);
+      final double? markedDamage = firstDamageDealt(marked.world);
+      expect(markedDamage! / baselineDamage!, closeTo(1.60 / 1.40, 0.02));
+    });
+
+    test('Sentence never marks a common target the Spear happens to hit',
+        () {
+      final ({SimWorld world, int target}) a = haldenArena()
+        ..world.autoFire = false;
+      // `a.target` is left an ordinary mote.
+      HeroLoadoutResolver.apply(
+        a.world,
+        halden,
+        const HeroState(
+          heroId: 'halden',
+          stars: 3,
+          talentChoices: <String, String>{'3': 'a'},
+        ),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.enemies.markedRemaining[a.target], 0);
+    });
+
+    test('Swift Judgment (★3b): the Ultimate charges 40 % faster from a '
+        'boss hit', () {
+      final ({SimWorld world, int target}) common = haldenArena();
+      final ({SimWorld world, int target}) boss =
+          haldenArena(contentOverride: bossContent);
+      boss.world.enemies.bossIndex[boss.target] = fakeBossIndex;
+
+      for (final ({SimWorld world, int target}) a in <({SimWorld world, int target})>[
+        common,
+        boss,
+      ]) {
+        HeroLoadoutResolver.apply(
+          a.world,
+          halden,
+          const HeroState(
+            heroId: 'halden',
+            stars: 3,
+            talentChoices: <String, String>{'3': 'b'},
+          ),
+          ashShaft,
+          const ArrowInstance(arrowId: 'ash_shaft'),
+        );
+        // Let a real hit land — a single tick's own arrow is still in
+        // flight, and no charge accrues until it actually connects.
+        firstDamageDealt(a.world);
+      }
+
+      expect(boss.world.hero.ultimateCharge,
+          closeTo(common.world.hero.ultimateCharge * 1.40, 0.02));
     });
   });
 
@@ -4049,11 +4308,12 @@ void main() {
       // Rekindle/Rebirth Nova/Bright Rekindle/Twice Kindled/Ember
       // Body/Phoenix Trail/Supernova, Vane's Marked, Corvin's whole kit
       // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
-      // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush, and Lira's
-      // Overheal.
+      // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush, Lira's
+      // Overheal, and Halden's own boss half — Zealot/Warded/Sentence/
+      // Swift Judgment (ADR 0069, unblocked by Phase 11's own `isBoss`).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(44),
+        lessThanOrEqualTo(40),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4244,15 +4504,15 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.rookTwinSingularity,
   HeroBehaviour.rookCollapsingSingularity,
 
-  // haldenVerdict, haldenJudgmentSpear, haldenFinalVerdict and
-  // haldenTwinSpear are implemented — see the "Verdict and Judgment Spear"
-  // group. Verdict itself only reaches its elite half: the boss half of
-  // both its clauses, plus every one of these four talents, needs an
-  // `isBoss` check EnemyStore does not have before Phase 11.
-  HeroBehaviour.haldenZealot,
-  HeroBehaviour.haldenWarded,
-  HeroBehaviour.haldenSentence,
-  HeroBehaviour.haldenSwiftJudgment,
+  // haldenVerdict, haldenJudgmentSpear, haldenFinalVerdict, haldenTwinSpear,
+  // haldenZealot, haldenWarded, haldenSentence and haldenSwiftJudgment are
+  // all implemented now — see the "Verdict and Judgment Spear" group.
+  // Verdict's own boss half (and every one of these four talents) was
+  // blocked on an `isBoss` check `EnemyStore` did not have before Phase 11;
+  // `EnemyStore.isBoss` (`bossIndex >= 0`) exists now that Phase 11's own
+  // boss roster is built, so this was the first ledger entry Phase 11's
+  // own completion actually unblocked. Halden is the fifth hero (after
+  // Sable, Kade, Corvin, Lira) with nothing deferred. See ADR 0069.
 
   // ashlinRekindle, ashlinRebirthNova, ashlinBrightRekindle,
   // ashlinTwiceKindled, ashlinEmberBody, ashlinPhoenixTrail and

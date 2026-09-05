@@ -112,6 +112,12 @@ class ProjectileStore {
   /// to resolve first.
   final Uint8List willBleed = Uint8List(SimConfig.maxEntities);
 
+  /// Halden's *Sentence* (T3a): set at release only for the Judgment
+  /// Spear's own arrow(s), the exact "decided once at the bow" shape
+  /// [willChain]/[willBleed] already use — the boss actually struck gets
+  /// marked, not whichever target happened to be selected at fire time.
+  final Uint8List willMarkBoss = Uint8List(SimConfig.maxEntities);
+
   /// Skimmer: bounces left off a wall or an enemy, shared between the two —
   /// docs/08 says "ricochets 2x", not "2x each". Set to 2 at spawn only for
   /// a Skimmer arrow; every other arrow leaves this at 0 and is retired on
@@ -169,6 +175,7 @@ class ProjectileStore {
     crossedCount[slot] = 0;
     ricochetsLeft[slot] = 0;
     hasRicocheted[slot] = 0;
+    willMarkBoss[slot] = 0;
   }
 
   bool hasCrossed(int slot, int serial) {

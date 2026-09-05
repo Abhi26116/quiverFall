@@ -1620,11 +1620,16 @@ class SimWorld {
             entities.facing[p], aimAssist, projectileSpeed)
         : entities.facing[p];
 
+    // *Sentence* (T3a) — "marks the boss": read once here, since Twin Spear
+    // and the base shot are the only two shapes this Ultimate ever fires as,
+    // and both should carry the mark when the talent is held.
+    final bool marksBoss = hero.has(HeroBehaviour.haldenSentence);
+
     if (hero.has(HeroBehaviour.haldenTwinSpear)) {
       _spawnArrow(fromX, fromY, baseAngle - _haldenTwinSpearHalfSpread,
-          DrawTier.three, _haldenTwinSpearDamageShare);
+          DrawTier.three, _haldenTwinSpearDamageShare, marksBoss: marksBoss);
       _spawnArrow(fromX, fromY, baseAngle + _haldenTwinSpearHalfSpread,
-          DrawTier.three, _haldenTwinSpearDamageShare);
+          DrawTier.three, _haldenTwinSpearDamageShare, marksBoss: marksBoss);
       return;
     }
 
@@ -1640,7 +1645,8 @@ class SimWorld {
         share = _haldenJudgmentSpearBaseDamageShare * 2.0;
       }
     }
-    _spawnArrow(fromX, fromY, baseAngle, DrawTier.three, share);
+    _spawnArrow(fromX, fromY, baseAngle, DrawTier.three, share,
+        marksBoss: marksBoss);
   }
 
   static const double _haldenJudgmentSpearBaseDamageShare = 9.00;
@@ -1872,6 +1878,7 @@ class SimWorld {
     int extraPierce = 0,
     int mirelleDuplicateDepth = 0,
     bool isEcho = false,
+    bool marksBoss = false,
   }) {
     final EntityId id = entities.spawn(EntityKind.projectile);
     if (id.isNone) return -1;
@@ -1907,6 +1914,7 @@ class SimWorld {
       if (corvinRicochets > ricochets) ricochets = corvinRicochets;
     }
     if (ricochets > 0) projectiles.ricochetsLeft[i] = ricochets;
+    if (marksBoss) projectiles.willMarkBoss[i] = 1;
     _applyOrielElementCycle(i);
     _applyTorvArc(i);
     _applyKestrelBleed(i);

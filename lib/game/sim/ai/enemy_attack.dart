@@ -76,7 +76,24 @@ abstract final class EnemyAttack {
     // Momentum is mitigation, so moving is a *defensive* option as well as an
     // offensive one — the other half of the trade the Draw sets up.
     final double reduction = ctx.playerDraw?.damageReduction ?? 0;
-    double dealt = DamageResolver.applyDamageReduction2(raw, reduction, 0);
+
+    // *Verdict* (Halden) — "boss attacks deal -15 % to Halden," raised to
+    // -28 % by *Warded* (T1b). `applyDamageReduction2`'s own second
+    // parameter existed for exactly this — a second, independent reduction
+    // source composed multiplicatively with Momentum's — and had no real
+    // caller until now.
+    double haldenBossReduction = 0;
+    if (source >= 0 &&
+        ctx.hero != null &&
+        ctx.hero!.has(HeroBehaviour.haldenVerdict) &&
+        ctx.enemies.isBoss(source)) {
+      haldenBossReduction = ctx.hero!.has(HeroBehaviour.haldenWarded)
+          ? _haldenWardedBossDamageTakenReduction
+          : _haldenVerdictBossDamageTakenReduction;
+    }
+
+    double dealt = DamageResolver.applyDamageReduction2(
+        raw, reduction, haldenBossReduction);
 
     // The build's own mitigation, already combined multiplicatively and capped
     // by LoadoutResolver. Applied as one factor so no source reaches the total
@@ -193,6 +210,9 @@ abstract final class EnemyAttack {
     }
     return dealt;
   }
+
+  static const double _haldenVerdictBossDamageTakenReduction = 0.15;
+  static const double _haldenWardedBossDamageTakenReduction = 0.28;
 
   static const int _ashlinRekindleCharges = 1;
   static const int _ashlinTwiceKindledCharges = 2;
