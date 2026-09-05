@@ -3347,6 +3347,73 @@ void main() {
       expect(a.world.status.isFrozen(a.nearby[2]), isTrue);
       expect(a.world.status.isFrozen(a.nearby[3]), isFalse);
     });
+
+    /// Kills [target] with one real arrow (`maxHealth` set to 1 so whatever
+    /// lands overkills it outright), stopping the instant it is reaped —
+    /// autoFire would otherwise retarget onto the bystander the moment
+    /// [target] is gone, contaminating a "the bystander took no damage"
+    /// measurement with ordinary, unrelated arrow hits.
+    void killWithOneHit(SimWorld world, int target) {
+      world.entities.maxHealth[target] = 1;
+      world.entities.health[target] = 1;
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 120 && world.entities.alive[target] == 1; t++) {
+        world.tick(idle);
+      }
+    }
+
+    test('Shatter (★3a): killing a frozen enemy deals 250 % in 2 u', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+        nearbyOffsets: <double>[1.0], // 1 u from primary, inside the 2 u burst
+      );
+      a.world.status.frozenRemaining[a.primary] = 10.0;
+      final double before = a.world.entities.health[a.nearby[0]];
+
+      killWithOneHit(a.world, a.primary);
+
+      final double dealt = before - a.world.entities.health[a.nearby[0]];
+      expect(dealt, closeTo(a.world.playerAttack * 2.50, 1e-6));
+    });
+
+    test('killing an un-frozen enemy does not trigger Shatter', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+        nearbyOffsets: <double>[1.0],
+      );
+      final double before = a.world.entities.health[a.nearby[0]];
+
+      killWithOneHit(a.world, a.primary);
+
+      expect(a.world.entities.health[a.nearby[0]], closeTo(before, 1e-6));
+    });
+
+    test('without Shatter, killing a frozen enemy does nothing extra', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a =
+          selaArena(nearbyOffsets: <double>[1.0]);
+      a.world.status.frozenRemaining[a.primary] = 10.0;
+      final double before = a.world.entities.health[a.nearby[0]];
+
+      killWithOneHit(a.world, a.primary);
+
+      expect(a.world.entities.health[a.nearby[0]], closeTo(before, 1e-6));
+    });
+
+    test('Shatter does not reach a bystander outside the 2 u burst', () {
+      final ({SimWorld world, int primary, List<int> nearby}) a = selaArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+        nearbyOffsets: <double>[3.0], // outside the 2 u radius
+      );
+      a.world.status.frozenRemaining[a.primary] = 10.0;
+      final double before = a.world.entities.health[a.nearby[0]];
+
+      killWithOneHit(a.world, a.primary);
+
+      expect(a.world.entities.health[a.nearby[0]], closeTo(before, 1e-6));
+    });
   });
 
   group('Toxin and Miasma', () {
@@ -4924,10 +4991,11 @@ void main() {
       // primitive plus a new guaranteed-duplication timer), and Ovrin's
       // Aegis Pin/Riposte/Long Wall/Mirror Wall (ADR 0075, a new
       // reflect-damage-to-attacker primitive that also fixed the
-      // long-dead Thorns Boon).
+      // long-dead Thorns Boon), and Sela's Shatter (ADR 0076, an on-kill
+      // AoE hook centred on the kill rather than the player).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(24),
+        lessThanOrEqualTo(23),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4996,19 +5064,20 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // until the "Chill and Glacier Nail" group landed (status.isFrozen was
   // only ever read for a Boon's own targetAfflicted condition before then).
   // selaGlacierNail, selaDeeperChill, selaBrittle, selaAbsoluteZero and
-  // selaCascadingNail are implemented — see that same group. Shatter needs
-  // an on-kill AoE hook nothing before now has asked of a hero passive (every
-  // existing per-kill hook, Nyx's First Blood included, only sets timed
-  // state on the killer's own runtime — none of them deal damage to a third
-  // party), and Lingering Frost needs a real "timed slow zone independent of
-  // Windlines" primitive: the sim's only existing slow mechanism
-  // (`EnemyStore.slowRemaining`/`windlineSlowFactor`) is Windline- and
-  // Boon-specific by construction (`BoonSystem`'s own pass only reads the
-  // *player's* live trail and a Boon's own `slow` stat), so faking a zone by
-  // dropping a zero-length Windline segment would silently depend on
-  // whatever slow-related Boon the player happens to hold, not on Sela at
-  // all.
-  HeroBehaviour.selaShatter,
+  // selaCascadingNail are implemented — see that same group. Shatter is
+  // implemented too, in the same group: an on-kill AoE hook, built inside
+  // `AiSystem._reap` right where Contagion/Wildfire already read a
+  // corpse's own status before `clearSlot` erases it — centred on the
+  // kill's own position rather than the player, the one thing every
+  // existing player AoE (Ashlin's nova, Ovrin's Riposte) never needed
+  // (ADR 0076). Lingering Frost stays pending: it needs a real "timed slow
+  // zone independent of Windlines" primitive — the sim's only existing
+  // slow mechanism (`EnemyStore.slowRemaining`/`windlineSlowFactor`) is
+  // Windline- and Boon-specific by construction (`BoonSystem`'s own pass
+  // only reads the *player's* live trail and a Boon's own `slow` stat), so
+  // faking a zone by dropping a zero-length Windline segment would
+  // silently depend on whatever slow-related Boon the player happens to
+  // hold, not on Sela at all.
   HeroBehaviour.selaLingeringFrost,
 
   // torvArc, torvTempestNock, torvFrequentArc, torvWideArc and

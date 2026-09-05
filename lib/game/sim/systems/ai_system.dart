@@ -531,10 +531,64 @@ abstract final class AiSystem {
       }
     }
 
+    // *Shatter* (Sela, T3a) — "killing a frozen enemy deals 250 % in 2 u."
+    // Read before `clearSlot` below erases the frozen status, the same
+    // "read before the reset" ordering Contagion/Wildfire above already
+    // use. Centred on the kill itself, not the player — the one existing
+    // player-sourced AoE (`SimWorld._applyPlayerCenteredNova`, Ashlin's
+    // Rebirth Nova and Ovrin's Riposte) is always player-centred and lives
+    // in `SimWorld` for that reason; this one needs the corpse's own
+    // position, which only exists here, so it gets its own small helper
+    // rather than forcing a location parameter onto a nova named for
+    // always being centred on the player.
+    if (hero != null &&
+        hero.has(HeroBehaviour.selaShatter) &&
+        ctx.status.isFrozen(slot)) {
+      _applyRadiusDamage(
+        ctx,
+        ctx.entities.posX[slot],
+        ctx.entities.posY[slot],
+        _selaShatterRadius,
+        ctx.playerAttack * _selaShatterDamageShare,
+        excludeSlot: slot,
+      );
+    }
+
     ctx.status.clearSlot(slot);
     ctx.enemies.reset(slot);
     ctx.entities.despawn(ctx.entities.idAt(slot));
   }
+
+  /// AoE damage from the player centred on an arbitrary point. Mirrors
+  /// `SimWorld._applyPlayerCenteredNova`'s own math exactly (a
+  /// `spatial.queryRadius` scan, flat `health -=`, no absorb/plate
+  /// handling — that nova does not use them either), the one difference
+  /// being the centre: every existing player AoE is anchored on the
+  /// player, but Sela's own *Shatter* needs the kill's own location.
+  static void _applyRadiusDamage(
+    AiContext ctx,
+    double x,
+    double y,
+    double radius,
+    double damage, {
+    int excludeSlot = -1,
+  }) {
+    final double radiusSq = radius * radius;
+    final int found = ctx.spatial.queryRadius(x, y, radius);
+    for (int i = 0; i < found; i++) {
+      final int e = ctx.spatial.resultAt(i);
+      if (e == excludeSlot) continue;
+      if (ctx.entities.alive[e] == 0) continue;
+      if (ctx.entities.kind[e] != EntityKind.enemy.index) continue;
+      final double dx = ctx.entities.posX[e] - x;
+      final double dy = ctx.entities.posY[e] - y;
+      if (dx * dx + dy * dy > radiusSq) continue;
+      ctx.entities.health[e] -= damage;
+    }
+  }
+
+  static const double _selaShatterRadius = 2.0;
+  static const double _selaShatterDamageShare = 2.50;
 
   static const double _kadeWildfireRadius = 2.0;
   static const int _kadeSlowBurnMaxStacks = 3;
