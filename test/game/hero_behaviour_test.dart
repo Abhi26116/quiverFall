@@ -62,6 +62,7 @@ void main() {
   final HeroDefinition iris = heroes.byArchetype(HeroArchetype.iris)!;
   final HeroDefinition ashlin = heroes.byArchetype(HeroArchetype.ashlin)!;
   final HeroDefinition corvin = heroes.byArchetype(HeroArchetype.corvin)!;
+  final HeroDefinition zea = heroes.byArchetype(HeroArchetype.zea)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -4336,6 +4337,149 @@ void main() {
     });
   });
 
+  group('Skyhawk', () {
+    ({SimWorld world, int primary}) zeaArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 91, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        zea,
+        HeroState(heroId: 'zea', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int primary = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[primary] = 0;
+      world.entities.maxHealth[primary] = 1e9;
+      world.entities.health[primary] = 1e9;
+      return (world: world, primary: primary);
+    }
+
+    List<int> hawksOf(SimWorld world) {
+      final List<int> found = <int>[];
+      for (int i = 0; i < world.entities.highWater; i++) {
+        if (world.entities.alive[i] == 1 &&
+            world.entities.kindOf(i) == EntityKind.companion) {
+          found.add(i);
+        }
+      }
+      return found;
+    }
+
+    test('the passive grants exactly one permanent companion', () {
+      final ({SimWorld world, int primary}) a = zeaArena();
+      final List<int> hawks = hawksOf(a.world);
+      expect(hawks, hasLength(1));
+      expect(a.world.companions.remaining[hawks.single], double.infinity);
+    });
+
+    test('a hero with no Skyhawk grants no companion at all', () {
+      final SimWorld world = SimWorld(seed: 91, content: content);
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        corvin,
+        const HeroState(heroId: 'corvin'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      expect(hawksOf(world), isEmpty);
+    });
+
+    test('the hawk deals 35 % of hero ATK at 1.5/s, independently of the '
+        'player\'s own arrows', () {
+      final ({SimWorld world, int primary}) a = zeaArena();
+      final double share = a.world.companions.damageShare[hawksOf(a.world).single];
+      final double interval =
+          a.world.companions.fireIntervalSeconds[hawksOf(a.world).single];
+      expect(share, closeTo(0.35, 1e-9));
+      expect(interval, closeTo(1.0 / 1.5, 1e-9));
+
+      final double before = a.world.entities.health[a.primary];
+      for (int t = 0; t < 90; t++) {
+        a.world.tick(InputSnapshot());
+      }
+      expect(a.world.entities.health[a.primary], lessThan(before));
+    });
+
+    test('Sharper Talons (★1a): the hawk\'s damage share rises to 50 %',
+        () {
+      final ({SimWorld world, int primary}) a = zeaArena(
+        stars: 1,
+        talentChoices: const <String, String>{'1': 'a'},
+      );
+      expect(a.world.companions.damageShare[hawksOf(a.world).single],
+          closeTo(0.50, 1e-9));
+    });
+
+    test('Swift Hawk (★1b): the hawk fires at 2.4/s instead of 1.5/s', () {
+      final ({SimWorld world, int primary}) a = zeaArena(
+        stars: 1,
+        talentChoices: const <String, String>{'1': 'b'},
+      );
+      expect(a.world.companions.fireIntervalSeconds[hawksOf(a.world).single],
+          closeTo(1.0 / 2.4, 1e-9));
+    });
+
+    test('Flock (★3b): replaces the single 35 % hawk with two permanent '
+        'hawks at 25 % each', () {
+      final ({SimWorld world, int primary}) a = zeaArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+      final List<int> hawks = hawksOf(a.world);
+      expect(hawks, hasLength(2));
+      for (final int hawk in hawks) {
+        expect(a.world.companions.damageShare[hawk], closeTo(0.25, 1e-9));
+        expect(a.world.companions.remaining[hawk], double.infinity);
+      }
+    });
+
+    test('Bonded (★3a): the hawk crits only while the player is at Tier '
+        'III', () {
+      final ({SimWorld world, int primary}) a = zeaArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'a'},
+      );
+      expect(a.world.companions.alwaysCrit[hawksOf(a.world).single], 1);
+    });
+
+    test('re-applying the loadout (a level-up mid-run) replaces the hawk '
+        'rather than accumulating a second one', () {
+      final ({SimWorld world, int primary}) a = zeaArena();
+      expect(hawksOf(a.world), hasLength(1));
+
+      HeroLoadoutResolver.apply(
+        a.world,
+        zea,
+        const HeroState(heroId: 'zea', level: 5),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      expect(hawksOf(a.world), hasLength(1));
+    });
+
+    test('re-applying with a different hero entirely removes the hawk', () {
+      final ({SimWorld world, int primary}) a = zeaArena();
+      expect(hawksOf(a.world), hasLength(1));
+
+      HeroLoadoutResolver.apply(
+        a.world,
+        corvin,
+        const HeroState(heroId: 'corvin'),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+
+      expect(hawksOf(a.world), isEmpty);
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // Layer 3 — the ledger
   // ────────────────────────────────────────────────────────────────────────
@@ -4382,12 +4526,14 @@ void main() {
       // Body/Phoenix Trail/Supernova, Vane's Marked, Corvin's whole kit
       // (Bounce/Caroms/True Bounce/Hard Bounce/Double Bounce/Endless
       // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush and Anchor,
-      // Lira's Overheal, and Halden's own boss half — Zealot/Warded/
+      // Lira's Overheal, Halden's own boss half — Zealot/Warded/
       // Sentence/Swift Judgment (ADR 0069, unblocked by Phase 11's own
-      // `isBoss`).
+      // `isBoss`) — and Zea's own Skyhawk passive plus Sharper Talons/
+      // Swift Hawk/Bonded/Flock (ADR 0071/0072, the new companion-entity
+      // primitive).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(39),
+        lessThanOrEqualTo(34),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4554,12 +4700,14 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   HeroBehaviour.irisGrandLattice,
   HeroBehaviour.irisLivingLattice,
 
-  HeroBehaviour.zeaSkyhawk,
+  // zeaSkyhawk, zeaSharperTalons, zeaSwiftHawk, zeaBonded and zeaFlock are
+  // implemented — see the "Skyhawk" group; ADR 0071/0072 cover the new
+  // companion-entity primitive this needed and how the passive is kept
+  // in sync with the loadout. Falconry (the Ultimate) and its own ★5
+  // pair stay pending: both summon *temporary* companions on demand,
+  // the same "fire the Ultimate" dispatch every other hero's own
+  // Ultimate already uses — real work, not yet attempted.
   HeroBehaviour.zeaFalconry,
-  HeroBehaviour.zeaSharperTalons,
-  HeroBehaviour.zeaSwiftHawk,
-  HeroBehaviour.zeaBonded,
-  HeroBehaviour.zeaFlock,
   HeroBehaviour.zeaSkydarken,
   HeroBehaviour.zeaGreatHawk,
 

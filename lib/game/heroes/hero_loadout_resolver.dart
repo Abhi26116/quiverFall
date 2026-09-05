@@ -14,6 +14,7 @@ import 'package:quiverfall/game/sim/effects/boon_stats.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
+import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/world.dart';
 
 /// Turns an equipped hero and arrow into the same [SimWorld] fields
@@ -151,7 +152,82 @@ abstract final class HeroLoadoutResolver {
       // damage, so it multiplies in here rather than being read from combat.
       ..chargePerDamage = combined.multiplierFor(StatChannel.ultimateChargeRate) /
           (HeroRuntime.ultimateChargeDivisor * heroAtk * heroFireRate);
+
+    _syncZeaSkyhawk(world, heroActive);
   }
+
+  /// Zea's own *Skyhawk* passive (docs/07 §7.3) — a permanent companion,
+  /// re-synced every time a build change calls [apply], the same "on
+  /// build change, not per tick" contract this whole function already
+  /// documents. Idempotent by construction: any permanent companion
+  /// (`CompanionStore.remaining == double.infinity`) a previous call
+  /// granted is despawned first, so a level-up or a star-up mid-run
+  /// replaces the hawk(s) with fresh numbers rather than accumulating
+  /// duplicates — a temporary Falconry/Hall of Mirrors summon, whose own
+  /// `remaining` is always finite, is never touched by this sweep.
+  ///
+  /// *Falconry* (the Ultimate) and its own ★5 pair (Skydarken, Great
+  /// Hawk) are not built here — those summon *temporary* companions on
+  /// demand, the same "fire the Ultimate" dispatch every other hero's own
+  /// Ultimate already uses, a separate piece of work. *Sharper Talons*
+  /// (★1a), *Swift Hawk* (★1b) and *Bonded* (★3a) all read as blanket
+  /// "your hawks are better" rules rather than Falconry-specific ones, so
+  /// they apply here too; *Flock* (★3b) explicitly names "2 *permanent*
+  /// hawks," so it belongs here and only here. See ADR 0072.
+  static void _syncZeaSkyhawk(SimWorld world, List<bool> heroActive) {
+    final EntityStore store = world.entities;
+
+    for (int i = 0; i < store.highWater; i++) {
+      if (store.alive[i] == 0) continue;
+      if (store.kind[i] != EntityKind.companion.index) continue;
+      if (world.companions.remaining[i] == double.infinity) {
+        store.despawn(store.idAt(i));
+      }
+    }
+
+    if (!heroActive[HeroBehaviour.zeaSkyhawk.index]) return;
+    if (world.player.isNone || !store.isAlive(world.player)) return;
+
+    final double x = store.posX[world.player.index];
+    final double y = store.posY[world.player.index];
+    final double fireRate = heroActive[HeroBehaviour.zeaSwiftHawk.index]
+        ? _zeaSwiftHawkFireRate
+        : _zeaBaseFireRate;
+    final bool bonded = heroActive[HeroBehaviour.zeaBonded.index];
+
+    if (heroActive[HeroBehaviour.zeaFlock.index]) {
+      world.spawnCompanion(x, y,
+          damageShare: _zeaFlockShare,
+          fireRate: fireRate,
+          alwaysCrit: bonded,
+          followOffsetX: -0.8,
+          followOffsetY: -0.6);
+      world.spawnCompanion(x, y,
+          damageShare: _zeaFlockShare,
+          fireRate: fireRate,
+          alwaysCrit: bonded,
+          followOffsetX: 0.8,
+          followOffsetY: -0.6);
+      return;
+    }
+
+    final double damageShare = heroActive[HeroBehaviour.zeaSharperTalons.index]
+        ? _zeaSharperTalonsShare
+        : _zeaBaseDamageShare;
+    world.spawnCompanion(x, y,
+        damageShare: damageShare,
+        fireRate: fireRate,
+        alwaysCrit: bonded,
+        followOffsetX: 0.7,
+        followOffsetY: -0.6);
+  }
+
+  /// docs/07's own stated numbers.
+  static const double _zeaBaseDamageShare = 0.35;
+  static const double _zeaSharperTalonsShare = 0.50;
+  static const double _zeaFlockShare = 0.25;
+  static const double _zeaBaseFireRate = 1.5;
+  static const double _zeaSwiftHawkFireRate = 2.4;
 
   /// The same add-or-multiply rule [BoonInventory] applies to every
   /// [BoonModifier], reused verbatim so a hero's "+12 % crit damage" and a
