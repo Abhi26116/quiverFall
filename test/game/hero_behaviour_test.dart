@@ -21,6 +21,7 @@ import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/events.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
+import 'package:quiverfall/game/sim/telegraph.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:quiverfall/game/spawn/room_composer.dart';
 import 'package:test/test.dart';
@@ -2283,6 +2284,7 @@ void main() {
       double offset = 1.0,
       Map<String, String> talentChoices = const <String, String>{},
       int stars = 0,
+      EnemyArchetype nearbyArchetype = EnemyArchetype.mote,
     }) {
       final SimWorld world = SimWorld(seed: 71, content: content)
         ..autoFire = true;
@@ -2300,7 +2302,7 @@ void main() {
       world.entities.health[primary] = 1e9;
 
       final int nearby =
-          world.spawnEnemy(EnemyArchetype.mote, 12.0 + offset, 4.5);
+          world.spawnEnemy(nearbyArchetype, 12.0 + offset, 4.5);
       world.enemies.speedScale[nearby] = 0;
       world.entities.maxHealth[nearby] = 1e9;
       world.entities.health[nearby] = 1e9;
@@ -2387,6 +2389,230 @@ void main() {
           damageFromFirstHit(far.world, far.primary, far.nearby);
       expect(beyond, isNotNull);
       expect(beyond!.nearbyDamage, 0);
+    });
+
+    test('Concussion (★3a): splash staggers Rush enemies', () {
+      final ({SimWorld world, int primary, int nearby}) a = bramArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+        nearbyArchetype: EnemyArchetype.lancer,
+      );
+      final ({double primaryDamage, double nearbyDamage})? result =
+          damageFromFirstHit(a.world, a.primary, a.nearby);
+      expect(result, isNotNull);
+      expect(result!.nearbyDamage, greaterThan(0));
+      expect(a.world.status.frozenRemaining[a.nearby], greaterThan(0));
+    });
+
+    test('without Concussion, splash never staggers a Rush enemy', () {
+      final ({SimWorld world, int primary, int nearby}) a =
+          bramArena(nearbyArchetype: EnemyArchetype.lancer);
+      final ({double primaryDamage, double nearbyDamage})? result =
+          damageFromFirstHit(a.world, a.primary, a.nearby);
+      expect(result, isNotNull);
+      expect(a.world.status.frozenRemaining[a.nearby], 0);
+    });
+
+    test('Concussion never staggers a non-Rush enemy caught in the same '
+        'splash', () {
+      final ({SimWorld world, int primary, int nearby}) a = bramArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'a'},
+      ); // default nearby is a Mote — Drift, not Rush.
+      damageFromFirstHit(a.world, a.primary, a.nearby);
+      expect(a.world.status.frozenRemaining[a.nearby], 0);
+    });
+
+    test('Incendiary (★3b): splash applies Burn at 40 %', () {
+      final ({SimWorld world, int primary, int nearby}) a = bramArena(
+        stars: 3,
+        talentChoices: <String, String>{'3': 'b'},
+      );
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0;
+          t < 600 && a.world.status.burnStacks[a.nearby] == 0;
+          t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.burnStacks[a.nearby], greaterThan(0));
+    });
+
+    test('without Incendiary, splash never applies Burn', () {
+      final ({SimWorld world, int primary, int nearby}) a = bramArena();
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 600; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.status.burnStacks[a.nearby], 0);
+    });
+  });
+
+  group('Mortar Rain', () {
+    ({SimWorld world}) bramMortarArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      ContentLibrary? contentOverride,
+    }) {
+      final SimWorld world =
+          SimWorld(seed: 91, content: contentOverride ?? content)
+            ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        bram,
+        HeroState(heroId: 'bram', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      return (world: world);
+    }
+
+    int spawnTargetAt(SimWorld world, double x, double y) {
+      final int target = world.spawnEnemy(EnemyArchetype.mote, x, y);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+      return target;
+    }
+
+    /// A bit past the full 3 s cast window, so every shell has resolved.
+    void runOutShells(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 200; t++) {
+        world.tick(idle);
+      }
+    }
+
+    test('casts 12 shells, each with its own warning telegraph', () {
+      final SimWorld world = bramMortarArena().world;
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(world.hero.bramShellCount, 12);
+      for (int i = 0; i < 12; i++) {
+        final int slot = world.hero.bramShellTelegraphSlot[i];
+        expect(world.telegraphs.isAlive(slot), isTrue, reason: 'shell $i');
+        expect(world.telegraphs.shapeAt(slot), TelegraphShape.circle);
+        expect(world.telegraphs.severityAt(slot), TelegraphSeverity.warning);
+        expect(world.telegraphs.ownerAt(slot), world.player.index);
+      }
+    });
+
+    test(
+        'each shell detonates for 130 % of playerAttack within its own '
+        'radius', () {
+      final SimWorld world = bramMortarArena().world;
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      // Isolate shell 0 — the other 11 already scattered randomly and
+      // could otherwise overlap the same target by chance.
+      world.hero.bramShellCount = 1;
+
+      final int target = spawnTargetAt(
+          world, world.hero.bramShellX[0], world.hero.bramShellY[0]);
+      final double before = world.entities.health[target];
+
+      runOutShells(world);
+
+      final double damage = before - world.entities.health[target];
+      expect(damage,
+          closeTo(world.playerAttack * 1.30, world.playerAttack * 0.02));
+    });
+
+    test("a target outside a shell's own radius takes no damage from it",
+        () {
+      final SimWorld world = bramMortarArena().world;
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      world.hero.bramShellCount = 1;
+
+      final int target = spawnTargetAt(
+          world, world.hero.bramShellX[0] + 2.0, world.hero.bramShellY[0]);
+      final double before = world.entities.health[target];
+
+      runOutShells(world);
+
+      expect(world.entities.health[target], before);
+    });
+
+    test('every shell resolves and releases its telegraph within the 3 s '
+        'window', () {
+      final SimWorld world = bramMortarArena().world;
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      final List<int> slots = List<int>.generate(
+          12, (int i) => world.hero.bramShellTelegraphSlot[i]);
+
+      runOutShells(world);
+
+      for (final int slot in slots) {
+        expect(world.telegraphs.isAlive(slot), isFalse);
+      }
+      for (int i = 0; i < 12; i++) {
+        expect(world.hero.bramShellRemaining[i], 0);
+      }
+    });
+
+    test('Saturation (★5a): 20 shells instead of 12', () {
+      final SimWorld world = bramMortarArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      ).world;
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(world.hero.bramShellCount, 20);
+    });
+
+    test('Precision Strike (★5b): 4 shells at 500 %, all aimed at the boss',
+        () {
+      final SimWorld world = bramMortarArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+        contentOverride: bossContent,
+      ).world;
+      final int boss = world.spawnEnemy(EnemyArchetype.mote, 14.0, 8.0);
+      world.enemies.bossIndex[boss] =
+          bossContent.bosses.indexOfArchetype(BossArchetype.umbralTwin);
+      world.enemies.speedScale[boss] = 0;
+      world.entities.maxHealth[boss] = 1e9;
+      world.entities.health[boss] = 1e9;
+
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(world.hero.bramShellCount, 4);
+      for (int i = 0; i < 4; i++) {
+        expect(world.hero.bramShellX[i], closeTo(14.0, 1e-6));
+        expect(world.hero.bramShellY[i], closeTo(8.0, 1e-6));
+      }
+
+      final double before = world.entities.health[boss];
+      runOutShells(world);
+      final double damage = before - world.entities.health[boss];
+      // 4 shells at 500 % each, all landing on the boss's own position.
+      expect(
+        damage,
+        closeTo(world.playerAttack * 5.00 * 4, world.playerAttack * 0.1),
+      );
+    });
+
+    test(
+        'Precision Strike falls back to the nearest enemy with no boss '
+        'present', () {
+      final SimWorld world = bramMortarArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      ).world;
+      final int nearby = world.spawnEnemy(EnemyArchetype.mote, 6.0, 4.5);
+      world.entities.maxHealth[nearby] = 1e9;
+      world.entities.health[nearby] = 1e9;
+
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(world.hero.bramShellX[0], closeTo(6.0, 1e-6));
+      expect(world.hero.bramShellY[0], closeTo(4.5, 1e-6));
     });
   });
 
@@ -5694,12 +5920,14 @@ void main() {
       // override layered on top of the organic sweep, not inside it), and
       // Thane's Tempered and Ashlin's Eternal (ADR 0081, a heal-ceiling
       // clamp and a once-per-room refresh gate — two small, unrelated gaps
-      // bundled into one ADR), and Oriel's own Faster Cycle and Saturation
+      // bundled into one ADR), Oriel's own Faster Cycle and Saturation
       // (ADR 0082, a real once-per-shot grouping for the element cycle and
-      // a generic status-duration multiplier).
+      // a generic status-duration multiplier), and Bram's whole kit (ADR
+      // 0083, a new player-owned telegraphed volley primitive plus two
+      // small splash riders).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(9),
+        lessThanOrEqualTo(4),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -5726,18 +5954,20 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // `EnemyStore.lastHitWasUltimate` on every hit), read at `AiSystem`'s own
   // death pass.
 
-  // bramHeavyOrdnance, bramWiderBlast and bramDenserBlast are implemented —
-  // see the "Heavy Ordnance" group.
-  HeroBehaviour.bramMortarRain,
-  // Concussion needs a stagger effect Rush-family enemies do not have a
-  // hook for yet, and Incendiary needs a chance roll on top of splash —
-  // both plausible, neither built. Mortar Rain and its two ★5 variants need
-  // the hazard/telegraph system extended to a player-triggered volley,
-  // which nothing before now has asked of it.
-  HeroBehaviour.bramConcussion,
-  HeroBehaviour.bramIncendiary,
-  HeroBehaviour.bramSaturation,
-  HeroBehaviour.bramPrecisionStrike,
+  // Bram's entire kit is implemented now (ADR 0083): bramHeavyOrdnance,
+  // bramWiderBlast and bramDenserBlast in the "Heavy Ordnance" group;
+  // bramConcussion (a stagger reusing Rook's own Anchor duration, gated
+  // on the new `EnemyStore.isRush`, denormalised from the content table
+  // at spawn the same way `isElite` already is) and bramIncendiary (a
+  // 40 % chance rolled once per arrow, the same "decided at the bow"
+  // shape Torv's Arc mark and Kestrel's Bleed already use) alongside
+  // Heavy Ordnance's own splash; bramMortarRain, bramSaturation and
+  // bramPrecisionStrike in the new "Mortar Rain" group — the first
+  // player-owned entry into `TelegraphStore`, each shell an independent
+  // countdown resolved through `_detonateAt`, the same flat-AoE-at-a-
+  // point primitive Rook's Singularity already established. Bram is the
+  // twelfth hero (after Sable, Kade, Corvin, Lira, Halden, Zea, Mirelle,
+  // Ovrin, Wren, Rook, Iris) with nothing deferred.
 
   // kestrelFlurry, its two ★5 variants, and kestrelSharperNock are
   // implemented — see hero_behaviour_test.dart's Flurry group. kestrelBleed

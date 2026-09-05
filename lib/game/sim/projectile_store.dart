@@ -118,6 +118,14 @@ class ProjectileStore {
   /// marked, not whichever target happened to be selected at fire time.
   final Uint8List willMarkBoss = Uint8List(SimConfig.maxEntities);
 
+  /// Bram's *Incendiary* (T3b): "splash applies Burn at 40%," rolled once
+  /// at release — the same "decided once at the bow" shape [willChain]/
+  /// [willBleed] already use, and for the identical reason: this arrow's
+  /// splash either ignites every enemy it catches or none of them, decided
+  /// before flight rather than re-rolled per enemy inside the splash's own
+  /// hit loop.
+  final Uint8List willIgniteSplash = Uint8List(SimConfig.maxEntities);
+
   /// Set at spawn only for an arrow fired by the hero's own Ultimate — so
   /// far only Wren's *Volley Fan*. Two talents read it: *Warden's Lattice*
   /// (T5a) via [windlineDurationOverride] below, and *Warden's Fury* (T5b,
@@ -194,6 +202,7 @@ class ProjectileStore {
     ricochetsLeft[slot] = 0;
     hasRicocheted[slot] = 0;
     willMarkBoss[slot] = 0;
+    willIgniteSplash[slot] = 0;
     isUltimateArrow[slot] = 0;
     windlineDurationOverride[slot] = 0;
   }

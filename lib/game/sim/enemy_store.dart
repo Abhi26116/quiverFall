@@ -69,6 +69,7 @@ class EnemyStore {
         shield = Float64List(capacity),
         armourShred = Float64List(capacity),
         elite = Uint8List(capacity),
+        rush = Uint8List(capacity),
         windlineSlowFactor = Float64List(capacity),
         blindRemaining = Float64List(capacity),
         shieldedBy = Int32List(capacity),
@@ -182,6 +183,13 @@ class EnemyStore {
   /// system to answer it would drag content lookups onto the hottest path in
   /// the game.
   final Uint8List elite;
+
+  /// Whether this enemy is Rush family (Lancer, Stalker, Bounder, Ripper,
+  /// Thresher). Denormalised the same way and for the same reason [elite]
+  /// is — Bram's own *Concussion* ("splash staggers Rush enemies") asks this
+  /// from inside the splash hit loop, the same hot path [elite] already
+  /// keeps content-lookup-free.
+  final Uint8List rush;
 
   /// Entity slot of the Weaver maintaining [shield], or -1. Kept so a Weaver
   /// does not double-shield and so the tether can be drawn — the tether is a
@@ -376,6 +384,8 @@ class EnemyStore {
 
   bool isElite(int slot) => elite[slot] == 1;
 
+  bool isRush(int slot) => rush[slot] == 1;
+
   bool isBoss(int slot) => bossIndex[slot] >= 0;
 
   bool isUntargetable(int slot) => untargetable[slot] == 1;
@@ -434,6 +444,7 @@ class EnemyStore {
   void reset(int slot) {
     armourShred[slot] = 0;
     elite[slot] = 0;
+    rush[slot] = 0;
     windlineSlowFactor[slot] = 1.0;
     blindRemaining[slot] = 0;
     state[slot] = AiState.idle.index;

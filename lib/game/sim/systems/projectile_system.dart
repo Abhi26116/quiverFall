@@ -1118,15 +1118,17 @@ abstract final class ProjectileSystem {
       }
     }
 
-    // *Heavy Ordnance* — splash never applies elements, which is why this
-    // reads `toHealth` and stops there rather than calling back into
-    // `_applyElement`. Deliberately a linear scan over `store.highWater`
-    // rather than a `SpatialHash.queryRadius` call: this runs from inside
-    // `_resolveHits`'s own candidate loop, which is still reading results
-    // out of `SpatialHash`'s single shared query buffer — a nested query
-    // here would silently corrupt that iteration. The scan only runs on a
-    // confirmed hit, not every tick, so its cost is bounded by how often
-    // Bram's arrows actually land.
+    // *Heavy Ordnance* — splash never applies elements on its own, which is
+    // why the damage half below reads `toHealth` and stops there rather
+    // than calling back into `_applyElement`. *Incendiary* (T3b) is the
+    // one deliberate exception, threaded through as its own flag rather
+    // than lifting that restriction outright. Deliberately a linear scan
+    // over `store.highWater` rather than a `SpatialHash.queryRadius` call:
+    // this runs from inside `_resolveHits`'s own candidate loop, which is
+    // still reading results out of `SpatialHash`'s single shared query
+    // buffer — a nested query here would silently corrupt that iteration.
+    // The scan only runs on a confirmed hit, not every tick, so its cost is
+    // bounded by how often Bram's arrows actually land.
     if (hero != null && hero.has(HeroBehaviour.bramHeavyOrdnance) && enemies != null) {
       final bool denser = hero.has(HeroBehaviour.bramDenserBlast);
       final double radius = denser
@@ -1143,6 +1145,14 @@ abstract final class ProjectileSystem {
         y: store.posY[target],
         radius: radius,
         splashDamage: toHealth * fraction,
+        enemies: enemies,
+        status: status,
+        events: events,
+        staggerRush: hero.has(HeroBehaviour.bramConcussion),
+        igniteSourceSlot: hero.has(HeroBehaviour.bramIncendiary) &&
+                projectiles.willIgniteSplash[slot] == 1
+            ? slot
+            : null,
       );
     }
 
@@ -1278,8 +1288,12 @@ abstract final class ProjectileSystem {
   }
 
   /// Raw damage to every other living enemy within [radius] of ([x], [y]).
-  /// No armour, shield or element interaction — a splash is a flat number,
-  /// not a second arrow.
+  /// No armour or shield interaction — a splash is a flat number, not a
+  /// second arrow.
+  ///
+  /// [staggerRush] and [igniteSourceSlot] are Bram's own *Concussion*
+  /// (T3a) and *Incendiary* (T3b) — both optional, both no-ops for Iris's
+  /// *Weave* call into this same function, which passes neither.
   static void _applyBramSplash({
     required EntityStore store,
     required int primaryTarget,
@@ -1287,6 +1301,11 @@ abstract final class ProjectileSystem {
     required double y,
     required double radius,
     required double splashDamage,
+    EnemyStore? enemies,
+    StatusStore? status,
+    SimEventBuffer? events,
+    bool staggerRush = false,
+    int? igniteSourceSlot,
   }) {
     final double radiusSq = radius * radius;
     for (int i = 0; i < store.highWater; i++) {
@@ -1297,6 +1316,28 @@ abstract final class ProjectileSystem {
       final double dy = store.posY[i] - y;
       if (dx * dx + dy * dy > radiusSq) continue;
       store.health[i] -= splashDamage;
+
+      // *Concussion* (T3a) — "splash staggers Rush enemies." Reuses Rook's
+      // own Anchor duration (`_rookAnchorDuration`) for the same short,
+      // already-balanced root — the same `frozenRemaining` hard-stop every
+      // other non-elemental CC in this file already borrows from Frost —
+      // and, like Anchor, never shortens a longer freeze already running.
+      if (staggerRush &&
+          enemies != null &&
+          enemies.isRush(i) &&
+          status != null &&
+          _rookAnchorDuration > status.frozenRemaining[i]) {
+        status.frozenRemaining[i] = _rookAnchorDuration;
+      }
+
+      // *Incendiary* (T3b) — "splash applies Burn at 40%," the chance
+      // already rolled once for this whole arrow at release (see
+      // `ProjectileStore.willIgniteSplash`'s own doc comment): every enemy
+      // one incendiary splash catches burns together.
+      if (igniteSourceSlot != null && status != null && events != null) {
+        _applyOneElement(enemies, status, events, igniteSourceSlot, i,
+            SimElement.ember, store.posX[i], store.posY[i]);
+      }
     }
   }
 

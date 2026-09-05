@@ -53,6 +53,7 @@ abstract final class EnemySpawner {
     // content lookup — *Cull* (#20) asks on every hit.
     ctx.enemies.elite[slot] =
         def.family == EnemyFamily.riftborn ? 1 : 0;
+    ctx.enemies.rush[slot] = def.family == EnemyFamily.rush ? 1 : 0;
     ctx.enemies.variant[slot] = variant.index;
     ctx.enemies.speedScale[slot] = 1.0 + variant.speedBonus;
     ctx.enemies.spawnerSlot[slot] = spawnerSlot;

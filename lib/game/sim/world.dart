@@ -434,6 +434,19 @@ class SimWorld {
 
   static const int _echoRngLabel = 0xEC40;
 
+  /// Bram's *Incendiary* (T3b) chance roll draws from its own stream, same
+  /// reasoning as every roll above.
+  late final Rng _bramIncendiaryRng = _rng.split(_bramIncendiaryRngLabel);
+
+  static const int _bramIncendiaryRngLabel = 0xB6A4;
+
+  /// *Mortar Rain*'s own shell-scatter positions draw from their own
+  /// stream too — the same "adding a hero's own rolls must not perturb
+  /// anything else's seeded sequence" reasoning as every stream above.
+  late final Rng _bramShellRng = _rng.split(_bramShellRngLabel);
+
+  static const int _bramShellRngLabel = 0xB6A5;
+
   /// Sub-generator access, so each subsystem draws from an independent stream.
   ///
   /// Without this, adding one extra Boon draw would shift every subsequent
@@ -580,6 +593,7 @@ class SimWorld {
     _tickRookCrush(dt);
     _tickRookSingularity(dt);
     _tickIrisLattice(dt);
+    _tickBramMortarRain(dt);
 
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
@@ -1052,6 +1066,8 @@ class SimWorld {
       _fireRookSingularity();
     } else if (hero.has(HeroBehaviour.irisTheLattice)) {
       _fireIrisTheLattice();
+    } else if (hero.has(HeroBehaviour.bramMortarRain)) {
+      _fireBramMortarRain();
     }
   }
 
@@ -1714,6 +1730,130 @@ class SimWorld {
       hero.latticeY = entities.posY[p];
     }
     _computeIrisLatticeLines();
+  }
+
+  /// *Mortar Rain* — "12 shells over 3 s across the arena, each 130 %,
+  /// amber-telegraphed" (docs/07 §2). Every shell's own warning telegraph
+  /// goes up here, at cast time, all at once — the player reads the whole
+  /// coming bombardment as one pattern rather than a series of surprises —
+  /// and [_tickBramMortarRain] resolves each one on its own schedule as
+  /// its own countdown reaches zero. The first player-owned entry into
+  /// [TelegraphStore] anywhere in this game; every telegraph before this
+  /// one belonged to an enemy or a boss.
+  ///
+  /// Shells scatter uniformly across the whole arena — docs/07 says only
+  /// "across the arena," nothing about targeting, so this is the literal
+  /// reading. *Precision Strike* (T5b) replaces that with genuinely aimed
+  /// shells instead: "boss-seeking" targets the boss if one is live,
+  /// falling back to the nearest enemy so the Ultimate never fizzles
+  /// entirely, the same concern `_fireWrenVolleyFan`'s own "no target
+  /// still fires" comment already reasons about for a different Ultimate.
+  /// *Saturation* (T5a) only changes the shell count, not the shape.
+  ///
+  /// A room boundary or a mid-run loadout swap simply zeroes
+  /// [HeroRuntime.bramShellCount] (see `HeroRuntime.beginRoom`/its own full
+  /// reset) without releasing any telegraph still live from an in-flight
+  /// cast — a stray warning ring outliving its own cancelled shell by at
+  /// most [_bramMortarRainDuration] is a cosmetic edge case far narrower
+  /// than building a cross-reset telegraph-release path for it, and
+  /// [TelegraphStore.expire] cleans it up on its own regardless.
+  void _fireBramMortarRain() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+
+    final bool precision = hero.has(HeroBehaviour.bramPrecisionStrike);
+    final bool saturation = hero.has(HeroBehaviour.bramSaturation);
+    final int count = precision
+        ? _bramPrecisionStrikeShells
+        : (saturation ? _bramSaturationShells : _bramMortarRainShells);
+    hero.bramShellCount = count;
+    hero.bramShellDamageShare = precision
+        ? _bramPrecisionStrikeDamageShare
+        : _bramMortarRainDamageShare;
+
+    double targetX = entities.posX[p];
+    double targetY = entities.posY[p];
+    if (precision) {
+      final int boss = _findLiveBoss();
+      final int seeking = boss >= 0
+          ? boss
+          : FiringSystem.selectTarget(entities, spatial, targetX, targetY,
+              enemies: enemies);
+      if (seeking >= 0) {
+        targetX = entities.posX[seeking];
+        targetY = entities.posY[seeking];
+      }
+    }
+
+    for (int i = 0; i < count; i++) {
+      final double delay = (i + 1) / count * _bramMortarRainDuration;
+      final double x = precision
+          ? targetX
+          : _bramShellRng.nextDouble() * arena.width;
+      final double y = precision
+          ? targetY
+          : _bramShellRng.nextDouble() * arena.height;
+      hero.bramShellRemaining[i] = delay;
+      hero.bramShellX[i] = x;
+      hero.bramShellY[i] = y;
+      final int slot = telegraphs.add(
+        shape: TelegraphShape.circle,
+        severity: TelegraphSeverity.warning,
+        owner: p,
+        x: x,
+        y: y,
+        startedAt: _elapsed,
+        resolvesAt: _elapsed + delay,
+        radius: _bramMortarShellRadius,
+      );
+      hero.bramShellTelegraphSlot[i] = slot;
+      hero.bramShellTelegraphSerial[i] = slot >= 0 ? telegraphs.serialAt(slot) : 0;
+    }
+  }
+
+  /// The first live boss found, or -1. A linear scan, run at most once per
+  /// Precision Strike cast — the same cost class `_nearestEnemyExcluding`
+  /// already accepts for its own once-per-Ultimate scan.
+  int _findLiveBoss() {
+    for (int i = 0; i < entities.highWater; i++) {
+      if (entities.alive[i] == 0) continue;
+      if (entities.kind[i] != EntityKind.enemy.index) continue;
+      if (enemies.isBoss(i)) return i;
+    }
+    return -1;
+  }
+
+  static const int _bramMortarRainShells = 12;
+  static const int _bramSaturationShells = 20;
+  static const int _bramPrecisionStrikeShells = 4;
+  static const double _bramMortarRainDamageShare = 1.30;
+  static const double _bramPrecisionStrikeDamageShare = 5.00;
+  static const double _bramMortarRainDuration = 3.0;
+
+  /// Reuses `ProjectileSystem._bramSplashRadius` (1.6 u) — Bram's own
+  /// already-established blast size — rather than inventing a second
+  /// number for the same idea. Unaffected by *Wider Blast*/*Denser Blast*,
+  /// which modify Heavy Ordnance's own splash, a different ability from
+  /// the Ultimate.
+  static const double _bramMortarShellRadius = 1.6;
+
+  /// Counts every live shell down and detonates it — [_detonateAt]'s own
+  /// flat AoE, the exact primitive Rook's Singularity already established
+  /// for "damage at an arbitrary point, an arbitrary radius" — the instant
+  /// its own timer reaches zero, releasing its telegraph the same tick, the
+  /// same "resolve exactly once, right when the timer expires" shape
+  /// [_tickRookSingularity] already uses for its own detonation.
+  void _tickBramMortarRain(double dt) {
+    for (int i = 0; i < hero.bramShellCount; i++) {
+      if (hero.bramShellRemaining[i] <= 0) continue;
+      hero.bramShellRemaining[i] -= dt;
+      if (hero.bramShellRemaining[i] > 0) continue;
+      hero.bramShellRemaining[i] = 0;
+      _detonateAt(hero.bramShellX[i], hero.bramShellY[i],
+          _bramMortarShellRadius, hero.bramShellDamageShare);
+      telegraphs.release(
+          hero.bramShellTelegraphSlot[i], hero.bramShellTelegraphSerial[i]);
+    }
   }
 
   /// *Pyre Line* — a straight burning wall along the aim vector, the same
@@ -2389,6 +2529,7 @@ class SimWorld {
     _applyOrielElementCycle(i, forcedElementIndex: orielElementOverride);
     _applyTorvArc(i);
     _applyKestrelBleed(i);
+    _applyBramIncendiary(i);
 
     _applyArrowBoons(i, tier);
 
@@ -2641,6 +2782,19 @@ class SimWorld {
   }
 
   static const int _kestrelBleedEvery = 4;
+
+  /// Bram: *Incendiary* (T3b) — "splash applies Burn at 40 %", rolled once
+  /// per arrow at release exactly like Crit above (`_applyArrowBoons`), and
+  /// for the identical reason: an RNG call belongs at the bow, never inside
+  /// the splash's own hit loop over every enemy it catches.
+  void _applyBramIncendiary(int i) {
+    if (!hero.has(HeroBehaviour.bramIncendiary)) return;
+    if (_bramIncendiaryRng.nextDouble() < _bramIncendiaryChance) {
+      projectiles.willIgniteSplash[i] = 1;
+    }
+  }
+
+  static const double _bramIncendiaryChance = 0.40;
 
   /// The element the next arrow carries.
   ///

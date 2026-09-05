@@ -265,6 +265,26 @@ class HeroRuntime {
   final Float64List latticeLines = Float64List(40);
   int latticeLineCount = 0;
 
+  /// Bram's own *Mortar Rain* — up to [bramMaxShells] independent falling
+  /// shells, each just a countdown to its own impact point, ticked by
+  /// `SimWorld._tickBramMortarRain`. Sized for the largest variant
+  /// (*Saturation*, T5a: 20); the base cast (12) and *Precision Strike*
+  /// (T5b: 4) simply leave the rest inert, tracked by [bramShellCount] —
+  /// the same "one array-shaped bundle, sized for the biggest branch"
+  /// shape [latticeLines] above already establishes.
+  /// [bramShellTelegraphSlot]/[bramShellTelegraphSerial] let each shell
+  /// release its own warning
+  /// telegraph the instant it detonates, the `(slot, serial)` pair every
+  /// other telegraph owner in this game already holds.
+  static const int bramMaxShells = 20;
+  final Float64List bramShellRemaining = Float64List(bramMaxShells);
+  final Float64List bramShellX = Float64List(bramMaxShells);
+  final Float64List bramShellY = Float64List(bramMaxShells);
+  final Int32List bramShellTelegraphSlot = Int32List(bramMaxShells);
+  final Int32List bramShellTelegraphSerial = Int32List(bramMaxShells);
+  int bramShellCount = 0;
+  double bramShellDamageShare = 0;
+
   // ── Once-per-run counters ─────────────────────────────────────────────────
   // Counted per run rather than per room, same as BoonRuntime.arrowsFired —
   // a counter that silently reset at every door would make the card read as
@@ -383,6 +403,7 @@ class HeroRuntime {
     latticeX = 0;
     latticeY = 0;
     latticeLineCount = 0;
+    bramShellCount = 0;
     arrowsFired = 0;
     rekindlesUsed = 0;
     rebirthNovaRefreshedThisRoom = false;
@@ -419,6 +440,7 @@ class HeroRuntime {
     singularity2Remaining = 0;
     latticeRemaining = 0;
     latticeLineCount = 0;
+    bramShellCount = 0;
     rebirthNovaRefreshedThisRoom = false;
   }
 }
