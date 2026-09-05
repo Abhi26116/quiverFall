@@ -272,4 +272,58 @@ final class EconomyError extends AppError {
           message: 'Hero "$heroId" is at its level cap ($cap) for the '
               'current campaign progress.',
         );
+
+  const EconomyError.insufficientInsight({required int need, required int have})
+      : this(
+          code: 'economy_insufficient_insight',
+          message: 'Needs $need Insight, have $have.',
+        );
+
+  const EconomyError.unknownSpireNode(int nodeId)
+      : this(
+          code: 'economy_unknown_spire_node',
+          message: 'No Spire node definition for id $nodeId.',
+        );
+
+  const EconomyError.spireWingLocked({
+    required int nodeId,
+    required int requiredAccountLevel,
+  }) : this(
+          code: 'economy_spire_wing_locked',
+          message: 'Node $nodeId\'s wing unlocks at account level '
+              '$requiredAccountLevel.',
+        );
+
+  const EconomyError.spireNodeMaxLevel(int nodeId)
+      : this(
+          code: 'economy_spire_node_max_level',
+          message: 'Spire node $nodeId is already at its level cap.',
+        );
+
+  const EconomyError.spireTierGateLocked({
+    required int nodeId,
+    required int requiredBand,
+  }) : this(
+          code: 'economy_spire_tier_gate_locked',
+          message: 'Spire node $nodeId needs its L$requiredBand gate '
+              'unlocked at the Research Lab before levelling further.',
+        );
+
+  const EconomyError.spireTierBandAlreadyUnlocked({
+    required int nodeId,
+    required int band,
+  }) : this(
+          code: 'economy_spire_tier_band_already_unlocked',
+          message: 'Spire node $nodeId\'s L$band gate is already unlocked.',
+        );
+
+  const EconomyError.spireTierBandOutOfOrder({
+    required int nodeId,
+    required int band,
+    required int currentBand,
+  }) : this(
+          code: 'economy_spire_tier_band_out_of_order',
+          message: 'Spire node $nodeId is at gate L$currentBand; L$band '
+              'must be unlocked in order.',
+        );
 }

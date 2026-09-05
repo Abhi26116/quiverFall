@@ -16,6 +16,8 @@ import 'package:quiverfall/game/sim/effects/hero_runtime.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/world.dart';
+import 'package:quiverfall/game/spire/spire_catalogue.dart';
+import 'package:quiverfall/game/spire/spire_definition.dart';
 
 /// Turns an equipped hero and arrow into the same [SimWorld] fields
 /// [LoadoutResolver] already writes for Boons.
@@ -30,8 +32,12 @@ import 'package:quiverfall/game/sim/world.dart';
 /// the identical [StatChannel] bucket a Boon would use, via the same
 /// `isMultiplicative ? multiplyBy : add` rule [BoonInventory] already applies
 /// to every [BoonModifier]. One accumulation space for "the build", not two
-/// parallel ones that would need their own composition rule the day Spire and
-/// Research join it.
+/// parallel ones that would need their own composition rule — the Spire's
+/// own thirteen non-attack nodes join it exactly this way (ADR 0092);
+/// Research will too, the day it exists. Warden's Might, the Spire's own
+/// attack node, is the one exception: docs/04 §4.1 names `spireMight` as
+/// ATK's own separate multiplicative term, so it folds into `baseAttack`
+/// directly instead.
 ///
 /// Talent branches below the hero's current star, or at a star with no
 /// choice made yet, contribute nothing — [HeroState.talentChoices] has no
@@ -65,6 +71,8 @@ abstract final class HeroLoadoutResolver {
     ArrowInstance arrowInstance, {
     BoonInventory? boons,
     AffixCatalogue? affixes,
+    SpireCatalogue? spire,
+    SpireState? spireState,
   }) {
     final double heroAtk =
         Curves.heroStat(hero.stats.atk, heroState.level, heroState.stars);
@@ -132,11 +140,27 @@ abstract final class HeroLoadoutResolver {
       }
     }
 
+    // The Spire — docs/04 §4.1's own ATK formula names `spireMight` as its
+    // own multiplicative term, so it multiplies into `baseAttack` directly
+    // rather than joining `combined`; every other node this build already
+    // wires composes into `combined` exactly like a hero talent or an
+    // arrow modifier does — see ADR 0092.
+    double spireMight = 0;
+    if (spire != null && spireState != null) {
+      for (final SpireNodeDefinition node in spire.all) {
+        final int level = spireState.levelOf(node.id);
+        if (level <= 0) continue;
+        spireMight += node.attackFractionAt(level);
+        final StatModifier? contribution = node.contributionAt(level);
+        if (contribution != null) _compose(combined, contribution);
+      }
+    }
+
     LoadoutResolver.apply(
       world,
       combined,
       inventory: boons,
-      baseAttack: heroAtk * arrowBaseMult,
+      baseAttack: heroAtk * arrowBaseMult * (1 + spireMight),
       // `DrawTier.one.fireRate` (2.2) is docs/07 §7.0's own reference fire
       // rate — the same 2.20 a level-1, star-0 hero's stat block is indexed
       // against. Dividing by it turns the hero's absolute fire-rate stat into
@@ -168,7 +192,7 @@ abstract final class HeroLoadoutResolver {
     _syncZeaSkyhawk(world, heroActive);
 
     return (
-      baseAttack: heroAtk * arrowBaseMult,
+      baseAttack: heroAtk * arrowBaseMult * (1 + spireMight),
       baseFireRateMultiplier: heroFireRate / DrawTier.one.fireRate,
       baseMaxHealth: heroHp,
       baseMoveSpeed: heroMoveSpeed,
