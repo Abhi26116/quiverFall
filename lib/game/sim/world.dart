@@ -552,6 +552,10 @@ class SimWorld {
       hero.ashlinInvulnRemaining -= dt;
       if (hero.ashlinInvulnRemaining < 0) hero.ashlinInvulnRemaining = 0;
     }
+    if (hero.aegisPinRemaining > 0) {
+      hero.aegisPinRemaining -= dt;
+      if (hero.aegisPinRemaining < 0) hero.aegisPinRemaining = 0;
+    }
 
     // ── collision (broad phase) ────────────────────────────────────────────
     // Rebuilt after movement so queries see this tick's positions, not last
@@ -692,7 +696,16 @@ class SimWorld {
     // point after the revive where all three are available together.
     if (hero.rekindleNovaPending) {
       hero.rekindleNovaPending = false;
-      _applyAshlinNova(_ashlinRekindleNovaMultiplier);
+      _applyPlayerCenteredNova(_ashlinRekindleNovaMultiplier);
+    }
+
+    // *Riposte* — the shield-break itself is detected inside
+    // EnemyAttack.damagePlayer's own shield-consumption block, which has
+    // the same missing playerAttack/spatial/entities trio; resolved here
+    // for the identical reason Rekindle's own nova is, right above.
+    if (hero.riposteNovaPending) {
+      hero.riposteNovaPending = false;
+      _applyPlayerCenteredNova(_ovrinRiposteMultiplier);
     }
 
     // ── hazards ────────────────────────────────────────────────────────────
@@ -787,6 +800,7 @@ class SimWorld {
       ..combat = combat
       ..hero = hero
       ..incomingDamageFactor = incomingDamageFactor
+      ..thornsReflect = thornsReflect
       ..now = _elapsed
       ..echoLineDuration = windlineDuration;
   }
@@ -1009,8 +1023,32 @@ class SimWorld {
       _fireZeaFalconry();
     } else if (hero.has(HeroBehaviour.mirelleHallOfMirrors)) {
       _fireMirelleHallOfMirrors();
+    } else if (hero.has(HeroBehaviour.ovrinAegisPin)) {
+      _fireOvrinAegisPin();
     }
   }
+
+  /// *Aegis Pin* — "plants a shield wall that blocks all enemy projectiles
+  /// for 6 s and reflects 30 % of blocked damage as Storm" (docs/07 §7.3).
+  /// The sim has no standalone enemy-projectile entity to intercept, so
+  /// this reads "blocks all enemy projectiles" as "blocks every hit that
+  /// would otherwise land" — the identical "ignore the hit outright" shape
+  /// already used for Umbral Step and Ashlin's own invulnerability — and
+  /// resolves entirely as a timed flag plus a reflect share, both read in
+  /// `EnemyAttack.damagePlayer`. *Long Wall* (T5a) and *Mirror Wall* (T5b)
+  /// are this Ultimate's own two mutually-exclusive ★5 branches.
+  void _fireOvrinAegisPin() {
+    hero.aegisPinRemaining = hero.has(HeroBehaviour.ovrinLongWall)
+        ? _ovrinLongWallDuration
+        : hero.has(HeroBehaviour.ovrinMirrorWall)
+            ? _ovrinMirrorWallDuration
+            : _ovrinAegisPinDuration;
+  }
+
+  static const double _ovrinAegisPinDuration = 6.0;
+  static const double _ovrinLongWallDuration = 10.0;
+  static const double _ovrinMirrorWallDuration = 3.0;
+  static const double _ovrinRiposteMultiplier = 2.00;
 
   /// *Falconry* — "summons 4 hawks for 12 s" (docs/07 §7.3). Temporary
   /// companions, the same primitive Zea's own passive Skyhawk already
@@ -1592,22 +1630,25 @@ class SimWorld {
     return furthest;
   }
 
-  /// Flat AoE damage centred on the player — Rekindle's own revive-nova and
-  /// Rebirth Nova's Ultimate cast both resolve here, sharing one radius
-  /// (ADR 0011 — docs/07 names a damage percentage for each but no radius
-  /// for any of them). A direct [spatial] query, not a linear scan: this
-  /// runs at most once per revive or Ultimate press, never inside
-  /// [ProjectileSystem]'s own hit-resolution loop, so the reentrancy hazard
-  /// that rules out `queryRadius` there does not apply here.
-  void _applyAshlinNova(double damageMultiplier) {
+  /// Flat AoE damage centred on the player — Rekindle's own revive-nova,
+  /// Rebirth Nova's Ultimate cast, and Ovrin's own Riposte (T3b, "breaking
+  /// a shield deals 200 % AoE") all resolve here, sharing one radius (ADR
+  /// 0011 — docs/07 names a damage percentage for each but a radius for
+  /// none of them). Named for what it does rather than who first needed
+  /// it, now that a second hero shares it. A direct [spatial] query, not a
+  /// linear scan: this runs at most once per revive, Ultimate press, or
+  /// shield break, never inside [ProjectileSystem]'s own hit-resolution
+  /// loop, so the reentrancy hazard that rules out `queryRadius` there
+  /// does not apply here.
+  void _applyPlayerCenteredNova(double damageMultiplier) {
     if (player.isNone || !entities.isAlive(player)) return;
     final int p = player.index;
     final double cx = entities.posX[p];
     final double cy = entities.posY[p];
     final double damage = playerAttack * damageMultiplier;
-    const double radiusSq = _ashlinNovaRadius * _ashlinNovaRadius;
+    const double radiusSq = _playerCenteredNovaRadius * _playerCenteredNovaRadius;
 
-    final int found = spatial.queryRadius(cx, cy, _ashlinNovaRadius);
+    final int found = spatial.queryRadius(cx, cy, _playerCenteredNovaRadius);
     for (int i = 0; i < found; i++) {
       final int e = spatial.resultAt(i);
       if (entities.alive[e] == 0) continue;
@@ -1619,7 +1660,7 @@ class SimWorld {
     }
   }
 
-  static const double _ashlinNovaRadius = 3.5; // ADR 0011
+  static const double _playerCenteredNovaRadius = 3.5; // ADR 0011
   static const double _ashlinRekindleNovaMultiplier = 3.50;
   static const double _ashlinRebirthNovaMultiplier = 5.00;
   static const double _ashlinSupernovaMultiplier = 12.00;
@@ -1634,7 +1675,7 @@ class SimWorld {
     final int p = player.index;
 
     final bool supernova = hero.has(HeroBehaviour.ashlinSupernova);
-    _applyAshlinNova(
+    _applyPlayerCenteredNova(
       supernova ? _ashlinSupernovaMultiplier : _ashlinRebirthNovaMultiplier,
     );
 

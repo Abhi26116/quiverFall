@@ -149,6 +149,12 @@ class AiContext {
   /// already combined and capped. 1.0 means unmodified.
   double incomingDamageFactor = 1.0;
 
+  /// *Thorns* (Boon #31) — reflects this fraction of a landed hit back at
+  /// its attacker. Zero means no Thorns picked. A plain `SimWorld` field
+  /// (`world.thornsReflect`), not part of [combat], copied in fresh each
+  /// tick the same way [incomingDamageFactor] is.
+  double thornsReflect = 0;
+
   /// How long an *Echo Thread* (#69) line lasts.
   double echoLineDuration = 1.0;
 

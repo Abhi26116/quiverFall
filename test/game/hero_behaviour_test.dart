@@ -63,6 +63,7 @@ void main() {
   final HeroDefinition ashlin = heroes.byArchetype(HeroArchetype.ashlin)!;
   final HeroDefinition corvin = heroes.byArchetype(HeroArchetype.corvin)!;
   final HeroDefinition zea = heroes.byArchetype(HeroArchetype.zea)!;
+  final HeroDefinition ovrin = heroes.byArchetype(HeroArchetype.ovrin)!;
   final ArrowDefinition ashShaft = arrows.byArchetype(ArrowArchetype.ashShaft)!;
 
   /// A live world carrying [hero] and Ash Shaft, with a stationary target due
@@ -2685,6 +2686,123 @@ void main() {
     });
   });
 
+  group('Aegis Pin and Riposte', () {
+    ({SimWorld world, int target}) ovrinArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 103, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        ovrin,
+        HeroState(heroId: 'ovrin', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    test(
+        'Aegis Pin blocks a hit entirely and reflects 30 % of it back at '
+        'the attacker', () {
+      final ({SimWorld world, int target}) a = ovrinArena();
+      a.world.tick(InputSnapshot());
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final int p = a.world.player.index;
+      final double raw = a.world.entities.maxHealth[p] * 0.20;
+      final double before = a.world.entities.health[a.target];
+
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.20, source: a.target);
+
+      expect(dealt, 0);
+      final double reflected = before - a.world.entities.health[a.target];
+      expect(reflected, closeTo(raw * 0.30, 1e-6));
+    });
+
+    test('without Aegis Pin active, the same hit lands normally', () {
+      final ({SimWorld world, int target}) a = ovrinArena();
+      a.world.tick(InputSnapshot());
+      final int p = a.world.player.index;
+      final double raw = a.world.entities.maxHealth[p] * 0.20;
+
+      final double dealt =
+          EnemyAttack.damagePlayer(a.world.ai, 0.20, source: a.target);
+
+      expect(dealt, closeTo(raw, 1e-6));
+    });
+
+    test('Long Wall (★5a): Aegis Pin lasts 10 s instead of 6', () {
+      final ({SimWorld world, int target}) a = ovrinArena(
+        stars: 5,
+        talentChoices: const <String, String>{'5': 'a'},
+      );
+      a.world.tick(InputSnapshot());
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.aegisPinRemaining, closeTo(10.0, 0.02));
+    });
+
+    test('Mirror Wall (★5b): reflects 100 % for a shorter 3 s', () {
+      final ({SimWorld world, int target}) a = ovrinArena(
+        stars: 5,
+        talentChoices: const <String, String>{'5': 'b'},
+      );
+      a.world.tick(InputSnapshot());
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.aegisPinRemaining, closeTo(3.0, 0.02));
+
+      final int p = a.world.player.index;
+      final double raw = a.world.entities.maxHealth[p] * 0.20;
+      final double before = a.world.entities.health[a.target];
+      EnemyAttack.damagePlayer(a.world.ai, 0.20, source: a.target);
+      final double reflected = before - a.world.entities.health[a.target];
+      expect(reflected, closeTo(raw, 1e-6));
+    });
+
+    test("Riposte (★3b): breaking Ovrin's own shield deals 200 % AoE", () {
+      final ({SimWorld world, int target}) a = ovrinArena(
+        stars: 3,
+        talentChoices: const <String, String>{'3': 'b'},
+      );
+      a.world.tick(InputSnapshot());
+      a.world.boons.shield = 5.0;
+
+      final int nearby = a.world.spawnEnemy(EnemyArchetype.mote, 4.0, 6.0);
+      a.world.enemies.speedScale[nearby] = 0;
+      a.world.entities.maxHealth[nearby] = 1e9;
+      a.world.entities.health[nearby] = 1e9;
+
+      // A big hit, guaranteed to exceed the 5.0 shield and break it.
+      EnemyAttack.damagePlayer(a.world.ai, 1.0, source: a.target);
+      expect(a.world.hero.riposteNovaPending, isTrue);
+
+      final double before = a.world.entities.health[nearby];
+      a.world.tick(InputSnapshot());
+      final double dealt = before - a.world.entities.health[nearby];
+      expect(dealt, closeTo(a.world.playerAttack * 2.00, 1e-6));
+    });
+
+    test('without Riposte, breaking the shield does nothing extra', () {
+      final ({SimWorld world, int target}) a = ovrinArena();
+      a.world.tick(InputSnapshot());
+      a.world.boons.shield = 5.0;
+
+      EnemyAttack.damagePlayer(a.world.ai, 1.0, source: a.target);
+      expect(a.world.hero.riposteNovaPending, isFalse);
+    });
+  });
+
   group('Arc and Tempest Nock', () {
     /// A primary target 8 u east of the player, plus four more enemies
     /// clustered around it at 0.3/0.4/0.5/0.8 u — all off the y = 4.5 firing
@@ -4801,12 +4919,15 @@ void main() {
       // Lira's Overheal, Halden's own boss half — Zealot/Warded/
       // Sentence/Swift Judgment (ADR 0069, unblocked by Phase 11's own
       // `isBoss`), Zea's whole kit (ADR 0071/0072/0073, the new
-      // companion-entity primitive), and Mirelle's Hall of
+      // companion-entity primitive), Mirelle's Hall of
       // Mirrors/Endless Hall/Twin Warden (ADR 0074, the same companion
-      // primitive plus a new guaranteed-duplication timer).
+      // primitive plus a new guaranteed-duplication timer), and Ovrin's
+      // Aegis Pin/Riposte/Long Wall/Mirror Wall (ADR 0075, a new
+      // reflect-damage-to-attacker primitive that also fixed the
+      // long-dead Thorns Boon).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(28),
+        lessThanOrEqualTo(24),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4851,10 +4972,18 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // which is deliberately elemental-only) and the two numbers docs/07 never
   // states for it.
 
-  HeroBehaviour.ovrinAegisPin,
-  HeroBehaviour.ovrinRiposte,
-  HeroBehaviour.ovrinLongWall,
-  HeroBehaviour.ovrinMirrorWall,
+  // ovrinAegisPin, ovrinRiposte, ovrinLongWall and ovrinMirrorWall are all
+  // implemented — see the "Aegis Pin and Riposte" group. Aegis Pin reads
+  // "blocks all enemy projectiles" as "blocks the hit outright," the sim
+  // having no standalone enemy-projectile entity to intercept — the same
+  // shape as Umbral Step/Ashlin's own invulnerability. Riposte needed a
+  // new "the shield broke this hit" detection inside the existing
+  // Shieldweave-spend block, resolved through the same pending-nova
+  // hand-off Ashlin's Rekindle already uses (only `SimWorld` has
+  // playerAttack/spatial/entities together). Building the "reflect damage
+  // at the attacker" primitive this needed also fixed *Thorns* (Boon #31),
+  // a card that had set `world.thornsReflect` since Phase 9 with no reader
+  // anywhere — see ADR 0075 and boon_effects_test.dart's own new test.
 
   // kadeKindling is implemented — see the "three innate elements" group.
   // kadePyreLine, kadeHotIron, kadeDeepBurn, kadeWildfire, kadeSlowBurn,

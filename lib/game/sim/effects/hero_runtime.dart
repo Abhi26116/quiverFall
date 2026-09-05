@@ -261,6 +261,22 @@ class HeroRuntime {
   /// `umbralStepRemaining` already is.
   double ashlinInvulnRemaining = 0;
 
+  /// Seconds left on Ovrin's *Aegis Pin* — while this reads above zero,
+  /// `EnemyAttack.damagePlayer` blocks the hit outright (the same "ignore
+  /// it entirely" shape as [umbralStepRemaining]/[ashlinInvulnRemaining]
+  /// above) and reflects a share of it back at the attacker as Storm
+  /// damage. Zero means inactive.
+  double aegisPinRemaining = 0;
+
+  /// Set the instant Ovrin's *Riposte* (T3b) triggers — his own shield
+  /// (Shieldweave's `BoonRuntime.shield` pool, which `shieldPerMomentum`
+  /// refills) hitting zero from a hit that found it above zero — inside
+  /// `EnemyAttack.damagePlayer`; read and cleared by `SimWorld.tick` right
+  /// after `AiSystem` runs, the identical hand-off [rekindleNovaPending]
+  /// above already uses for the same reason: only `SimWorld` has
+  /// `playerAttack`/`spatial`/`entities` together to resolve an AoE burst.
+  bool riposteNovaPending = false;
+
   // ── Per-arrow assignment ──────────────────────────────────────────────────
 
   /// Which element the equipped arrow currently fires, for arrows whose
@@ -316,6 +332,8 @@ class HeroRuntime {
     rekindlesUsed = 0;
     rekindleNovaPending = false;
     ashlinInvulnRemaining = 0;
+    aegisPinRemaining = 0;
+    riposteNovaPending = false;
     cycleIndex = 0;
   }
 
@@ -340,5 +358,6 @@ class HeroRuntime {
     miasmaRemaining = 0;
     pyreLineRemaining = 0;
     ashlinInvulnRemaining = 0;
+    aegisPinRemaining = 0;
   }
 }

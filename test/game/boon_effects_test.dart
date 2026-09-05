@@ -4,6 +4,7 @@ import 'package:quiverfall/game/boons/boon_inventory.dart';
 import 'package:quiverfall/game/boons/loadout_resolver.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
+import 'package:quiverfall/game/sim/ai/enemy_attack.dart';
 import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
@@ -478,6 +479,27 @@ void main() {
       expect(world.thornsReflect, closeTo(0.15, 1e-9));
       expect(world.regenWhileMoving, closeTo(0.008, 1e-9));
       expect(world.healOnRoomClear, closeTo(0.04, 1e-9));
+    });
+
+    test('#31 Thorns actually reflects 15 % of a landed hit at its attacker',
+        () {
+      // Composition alone (the test above) never proved this did anything —
+      // `world.thornsReflect` had no reader anywhere until Ovrin's own Aegis
+      // Pin needed a "deal damage back to the attacker" primitive and this
+      // was wired onto it too (ADR 0075).
+      final SimWorld world = build(<String>['thorns']).world;
+      final int attacker = world.spawnEnemy(EnemyArchetype.mote, 14.0, 4.5);
+      world.entities.maxHealth[attacker] = 1e9;
+      world.entities.health[attacker] = 1e9;
+      world.tick(InputSnapshot());
+
+      final double before = world.entities.health[attacker];
+      final double dealt =
+          EnemyAttack.damagePlayer(world.ai, 0.20, source: attacker);
+      final double reflected = before - world.entities.health[attacker];
+
+      expect(dealt, greaterThan(0));
+      expect(reflected, closeTo(dealt * 0.15, 1e-6));
     });
 
     test('#35 Absorption and #33 Shieldweave arrive', () {

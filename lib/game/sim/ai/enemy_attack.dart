@@ -53,6 +53,24 @@ abstract final class EnemyAttack {
     // shape as Umbral Step just above.
     if ((ctx.hero?.ashlinInvulnRemaining ?? 0) > 0) return 0;
 
+    // *Aegis Pin* (Ovrin) — the sim has no standalone enemy-projectile
+    // entity to intercept, so "blocks all enemy projectiles" reads as
+    // "blocks the hit outright," the same shape as the two checks just
+    // above. Unlike them, it also pays something back: a share of what it
+    // blocked, reflected at the attacker as Storm damage — flavour-only
+    // typing here, since Storm's own mechanical identity is chaining
+    // between targets (`ElementTuning.chainTargets`), which does not apply
+    // to a single non-chaining reflected hit, and no elemental *status*
+    // exists for Storm the way Chill/Toxin/Burn each have one. *Mirror
+    // Wall* (T5b) raises the share from 30 % to 100 %.
+    if ((ctx.hero?.aegisPinRemaining ?? 0) > 0) {
+      final double reflectShare = ctx.hero!.has(HeroBehaviour.ovrinMirrorWall)
+          ? _ovrinMirrorWallReflectShare
+          : _ovrinAegisPinReflectShare;
+      _reflectDamageToAttacker(ctx, source, raw * reflectShare);
+      return 0;
+    }
+
     // ── Ignore the hit entirely ────────────────────────────────────────────
     // Covenant's opening grace, Ghost Step's dash window, and Immortal Draw's
     // Tier III. Checked before mitigation, because "no damage" is not "very
@@ -125,6 +143,16 @@ abstract final class EnemyAttack {
         final double absorbed = dealt < boons.shield ? dealt : boons.shield;
         boons.shield -= absorbed;
         dealt -= absorbed;
+        // *Riposte* (Ovrin T3b) — "breaking a shield deals 200 % AoE." This
+        // pool is shared with Shieldweave's own Boon (Ovrin's Aegis grants
+        // "*a* shield," the same one, not a second pool), so any source
+        // emptying it counts — this block only runs when the shield was
+        // above zero a moment ago, so reaching zero (or below) here is
+        // exactly "broke."
+        if (boons.shield <= 0 &&
+            (ctx.hero?.has(HeroBehaviour.ovrinRiposte) ?? false)) {
+          ctx.hero!.riposteNovaPending = true;
+        }
       }
     }
 
@@ -138,6 +166,17 @@ abstract final class EnemyAttack {
           dealt < hero.overhealShield ? dealt : hero.overhealShield;
       hero.overhealShield -= absorbed;
       dealt -= absorbed;
+    }
+
+    // *Thorns* (Boon #31) — "reflect 15 % of contact damage." Read on the
+    // final post-mitigation hit, the same way every other percentage-of-
+    // damage Boon here reads `dealt` rather than `raw`; "contact" is not a
+    // distinct attack category anywhere in this sim (every hit reaches the
+    // player through this one function regardless of how the enemy that
+    // caused it behaves), so this fires on any hit that actually landed.
+    final double thornsShare = ctx.thornsReflect;
+    if (thornsShare > 0 && dealt > 0) {
+      _reflectDamageToAttacker(ctx, source, dealt * thornsShare);
     }
 
     ctx.entities.health[p] -= dealt;
@@ -210,6 +249,40 @@ abstract final class EnemyAttack {
     }
     return dealt;
   }
+
+  /// Deals [amount] of damage back to the enemy that just attacked the
+  /// player — Ovrin's own *Aegis Pin* reflect and *Thorns* (Boon #31) both
+  /// resolve through this, the identical absorb/plate/health path
+  /// `CompanionSystem`'s own hit resolution already uses: a hero-runtime
+  /// reflect and a companion's shot are both "damage dealt to an enemy
+  /// from outside the ordinary arrow path." No-op with no attacker (a hit
+  /// with `source < 0`, e.g. a hazard) or one that died earlier this tick.
+  static void _reflectDamageToAttacker(
+    AiContext ctx,
+    int source,
+    double amount,
+  ) {
+    if (amount <= 0 || source < 0) return;
+    if (ctx.entities.alive[source] == 0) return;
+
+    double toHealth = amount;
+    toHealth = ctx.enemies.absorb(source, toHealth);
+    ctx.enemies.wearPlate(source, toHealth);
+    if (toHealth <= 0) return;
+    ctx.enemies.bossLastHitAgo[source] = 0;
+    ctx.entities.health[source] -= toHealth;
+    ctx.events.emit(
+      SimEventType.damageDealt,
+      entityA: source,
+      entityB: ctx.player,
+      valueA: toHealth,
+      x: ctx.entities.posX[source],
+      y: ctx.entities.posY[source],
+    );
+  }
+
+  static const double _ovrinAegisPinReflectShare = 0.30;
+  static const double _ovrinMirrorWallReflectShare = 1.00;
 
   static const double _haldenVerdictBossDamageTakenReduction = 0.15;
   static const double _haldenWardedBossDamageTakenReduction = 0.28;
