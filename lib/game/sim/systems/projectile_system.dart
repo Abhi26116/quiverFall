@@ -171,6 +171,23 @@ abstract final class ProjectileSystem {
         arrowElementIndex: projectiles.element[i],
       );
 
+      // *The Lattice* (Iris) — a deliberate top-up on top of the sweep
+      // just above, not a change to it.
+      if (hero != null && hero.latticeLineCount > 0) {
+        _applyIrisLatticeOverride(
+          projectiles: projectiles,
+          hero: hero,
+          events: events,
+          slot: i,
+          fromX: fromX,
+          fromY: fromY,
+          toX: toX,
+          toY: toY,
+          maxStacks: maxConfluenceStacks,
+          confluenceDamageMultiplier: confluenceDamageMultiplier,
+        );
+      }
+
       final bool consumed = _resolveHits(
         store: store,
         projectiles: projectiles,
@@ -366,6 +383,92 @@ abstract final class ProjectileSystem {
       x: toX,
       y: toY,
     );
+  }
+
+  /// *The Lattice* (Iris) — "every shot through it caps out at 5
+  /// Confluence." A deliberate override layered on top of
+  /// [_resolveConfluence]'s own organic sweep, not a change to it: the web
+  /// is not a real [WindlineStore] entry (nothing else needs to interact
+  /// with it, and the shared Confluence-detection code every build
+  /// depends on stays untouched) — just a plain geometric test against
+  /// [HeroRuntime.latticeLines], guaranteeing the maximum stack count for
+  /// any arrow whose own swept path crosses a spoke, even one no organic
+  /// trail could ever have produced. A no-op once the arrow already sits
+  /// at the cap.
+  static void _applyIrisLatticeOverride({
+    required ProjectileStore projectiles,
+    required HeroRuntime hero,
+    required SimEventBuffer events,
+    required int slot,
+    required double fromX,
+    required double fromY,
+    required double toX,
+    required double toY,
+    required int maxStacks,
+    required double confluenceDamageMultiplier,
+  }) {
+    if (projectiles.confluenceStacks[slot] >= maxStacks) return;
+
+    bool crossed = false;
+    for (int i = 0; i < hero.latticeLineCount; i++) {
+      final int base = i * 4;
+      if (_irisLatticeIntersects(
+        fromX,
+        fromY,
+        toX,
+        toY,
+        hero.latticeLines[base],
+        hero.latticeLines[base + 1],
+        hero.latticeLines[base + 2],
+        hero.latticeLines[base + 3],
+      )) {
+        crossed = true;
+        break;
+      }
+    }
+    if (!crossed) return;
+
+    projectiles.confluenceStacks[slot] = maxStacks;
+    projectiles.confluenceBonus[slot] =
+        ConfluenceTuning.bonusFor(maxStacks) * confluenceDamageMultiplier;
+    events.emit(
+      SimEventType.confluenceTriggered,
+      entityA: slot,
+      valueA: maxStacks.toDouble(),
+      valueB: projectiles.confluenceBonus[slot],
+      x: toX,
+      y: toY,
+    );
+  }
+
+  /// Plain segment-segment intersection, with none of
+  /// [ConfluenceSystem.segmentsIntersect]'s own angle-of-approach
+  /// rejection — that rule exists specifically to stop an *organic* trail
+  /// farming Confluence by retracing itself at a shallow angle (see its
+  /// own doc comment); the Lattice is a deliberate, authored web the
+  /// player is rewarded for threading an arrow through at any angle, so
+  /// that concern does not apply here.
+  static bool _irisLatticeIntersects(
+    double ax0,
+    double ay0,
+    double ax1,
+    double ay1,
+    double bx0,
+    double by0,
+    double bx1,
+    double by1,
+  ) {
+    final double d1x = ax1 - ax0;
+    final double d1y = ay1 - ay0;
+    final double d2x = bx1 - bx0;
+    final double d2y = by1 - by0;
+    final double denom = d1x * d2y - d1y * d2x;
+    if (denom.abs() <= 1e-12) return false;
+    final double ex = bx0 - ax0;
+    final double ey = by0 - ay0;
+    final double t = (ex * d2y - ey * d2x) / denom;
+    final double u = (ex * d1y - ey * d1x) / denom;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
   }
 
   static double _length(double x, double y) {

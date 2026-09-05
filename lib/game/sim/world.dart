@@ -579,6 +579,7 @@ class SimWorld {
     _tickKadePyreLine(dt);
     _tickRookCrush(dt);
     _tickRookSingularity(dt);
+    _tickIrisLattice(dt);
 
     // Index the trails before projectiles move, so Confluence queries see this
     // tick's lines.
@@ -1028,6 +1029,8 @@ class SimWorld {
       _fireOvrinAegisPin();
     } else if (hero.has(HeroBehaviour.rookSingularity)) {
       _fireRookSingularity();
+    } else if (hero.has(HeroBehaviour.irisTheLattice)) {
+      _fireIrisTheLattice();
     }
   }
 
@@ -1609,6 +1612,82 @@ class SimWorld {
       if (dx * dx + dy * dy > radiusSq) continue;
       entities.health[e] -= damage;
     }
+  }
+
+  /// *The Lattice* (Iris) — "instantly draws a 6-line web across the
+  /// arena, persisting 10 s. Every shot through it caps out at 5
+  /// Confluence" (docs/07 §7.3). The web itself is authored as spokes
+  /// radiating from one centre at evenly spaced angles across 180°
+  /// (6, or 10 for *Grand Lattice*) — docs/07 gives a line count and a
+  /// duration but no actual geometry, so this is a deliberate choice,
+  /// the same kind ADR 0011 already made for Ashlin's own nova radius.
+  /// Length reuses [_kadePyreLineLength] ("long enough to reach across
+  /// the arena"), the identical reasoning that number already exists for.
+  /// *Grand Lattice* (T5a) only changes the line count and duration;
+  /// *Living Lattice* (T5b) instead keeps the centre pinned to the
+  /// player's own current position every tick — see
+  /// [_tickIrisLattice] — rather than fixed at cast time.
+  void _fireIrisTheLattice() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    hero.latticeRemaining = hero.has(HeroBehaviour.irisGrandLattice)
+        ? _irisGrandLatticeDuration
+        : _irisLatticeDuration;
+    hero.latticeX = entities.posX[p];
+    hero.latticeY = entities.posY[p];
+    _computeIrisLatticeLines();
+  }
+
+  static const double _irisLatticeDuration = 10.0;
+  static const double _irisGrandLatticeDuration = 16.0;
+  static const int _irisLatticeLines = 6;
+  static const int _irisGrandLatticeLines = 10;
+  static const double _irisLatticeLineHalfLength = _kadePyreLineLength / 2;
+
+  /// Recomputes every spoke's own endpoints from [HeroRuntime.latticeX]/
+  /// [HeroRuntime.latticeY] — the only place this ever needs `dart:math`,
+  /// since [ProjectileSystem] deliberately avoids it in its own hot loop.
+  /// Spokes are full diameters through the centre (not radii), so `count`
+  /// evenly spaced directions across 180° give `count` genuinely distinct
+  /// lines rather than `count / 2` doubled up.
+  void _computeIrisLatticeLines() {
+    final int count = hero.has(HeroBehaviour.irisGrandLattice)
+        ? _irisGrandLatticeLines
+        : _irisLatticeLines;
+    hero.latticeLineCount = count;
+    for (int i = 0; i < count; i++) {
+      final double angle = math.pi * i / count;
+      final double dx = math.cos(angle) * _irisLatticeLineHalfLength;
+      final double dy = math.sin(angle) * _irisLatticeLineHalfLength;
+      final int base = i * 4;
+      hero.latticeLines[base] = hero.latticeX - dx;
+      hero.latticeLines[base + 1] = hero.latticeY - dy;
+      hero.latticeLines[base + 2] = hero.latticeX + dx;
+      hero.latticeLines[base + 3] = hero.latticeY + dy;
+    }
+  }
+
+  /// Counts down The Lattice's own duration and, for *Living Lattice*
+  /// only, recentres the whole web on the player before recomputing every
+  /// spoke — "the Lattice follows the player" reads as the web itself
+  /// moving, not merely persisting longer.
+  void _tickIrisLattice(double dt) {
+    if (hero.latticeRemaining <= 0) return;
+    hero.latticeRemaining -= dt;
+    if (hero.latticeRemaining < 0) hero.latticeRemaining = 0;
+    if (hero.latticeRemaining <= 0) {
+      hero.latticeLineCount = 0;
+      return;
+    }
+
+    if (hero.has(HeroBehaviour.irisLivingLattice) &&
+        !player.isNone &&
+        entities.isAlive(player)) {
+      final int p = player.index;
+      hero.latticeX = entities.posX[p];
+      hero.latticeY = entities.posY[p];
+    }
+    _computeIrisLatticeLines();
   }
 
   /// *Pyre Line* — a straight burning wall along the aim vector, the same

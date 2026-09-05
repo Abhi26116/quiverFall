@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:quiverfall/game/sim/effects/arrow_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/hero_behaviour.dart';
 
@@ -243,6 +245,26 @@ class HeroRuntime {
   double singularity2X = 0;
   double singularity2Y = 0;
 
+  /// Seconds left on Iris's own *The Lattice*. Zero means inactive. The
+  /// same fixed-zone shape as the fields above — pinned at cast time
+  /// (recentred every tick instead for *Living Lattice*, T5b).
+  double latticeRemaining = 0;
+  double latticeX = 0;
+  double latticeY = 0;
+
+  /// The Lattice's own spokes, `[x0, y0, x1, y1]` per line, recomputed
+  /// every tick by `SimWorld._tickIrisLattice` — the trig lives there,
+  /// since `ProjectileSystem` deliberately imports no `dart:math` in its
+  /// own hot loop (see `_length`'s own doc comment). Sized for the larger
+  /// of the two ★5 branches (10 lines, *Grand Lattice*); only the first
+  /// `latticeLineCount * 4` entries are meaningful. The one array-shaped
+  /// field on this class — everything else here is a single hero's own
+  /// scalar state, but a fixed, small bundle of line endpoints is exactly
+  /// what a flat numeric buffer is for, and 10 named quadruplets would be
+  /// worse to read and to update in a loop than this one array is.
+  final Float64List latticeLines = Float64List(40);
+  int latticeLineCount = 0;
+
   // ── Once-per-run counters ─────────────────────────────────────────────────
   // Counted per run rather than per room, same as BoonRuntime.arrowsFired —
   // a counter that silently reset at every door would make the card read as
@@ -350,6 +372,10 @@ class HeroRuntime {
     singularity2Remaining = 0;
     singularity2X = 0;
     singularity2Y = 0;
+    latticeRemaining = 0;
+    latticeX = 0;
+    latticeY = 0;
+    latticeLineCount = 0;
     arrowsFired = 0;
     rekindlesUsed = 0;
     rekindleNovaPending = false;
@@ -383,5 +409,7 @@ class HeroRuntime {
     aegisPinRemaining = 0;
     singularityRemaining = 0;
     singularity2Remaining = 0;
+    latticeRemaining = 0;
+    latticeLineCount = 0;
   }
 }

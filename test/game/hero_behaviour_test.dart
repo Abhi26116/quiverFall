@@ -4222,6 +4222,164 @@ void main() {
     });
   });
 
+  group('The Lattice', () {
+    /// Same shape as the "Weave" group's own `irisArena` (a local helper
+    /// there, out of reach here) — a player 1 u from the west wall and a
+    /// stationary target at 14 u, with [lineCount] pre-existing Windlines
+    /// laid perpendicular to the firing line for tests that want organic
+    /// Confluence alongside the Lattice's own guarantee.
+    ({SimWorld world, int target}) irisArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+      int lineCount = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 181, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(1.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        iris,
+        HeroState(heroId: 'iris', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int target = world.spawnEnemy(EnemyArchetype.mote, 14.0, 4.5);
+      world.enemies.speedScale[target] = 0;
+      world.entities.maxHealth[target] = 1e9;
+      world.entities.health[target] = 1e9;
+
+      for (int i = 0; i < lineCount; i++) {
+        final double x = 3.0 + i * 1.5;
+        world.windlines.add(
+          fromX: x,
+          fromY: 1.0,
+          toX: x,
+          toY: 8.0,
+          expiresAt: 1e9,
+          ownerIndex: 0,
+          trailId: 90000 + i,
+        );
+      }
+      return (world: world, target: target);
+    }
+
+    test('fires a 6-line web lasting 10 s, centred on the player', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.latticeRemaining, closeTo(10.0, 0.02));
+      expect(a.world.hero.latticeLineCount, 6);
+      expect(a.world.hero.latticeX, closeTo(1.0, 1e-6));
+      expect(a.world.hero.latticeY, closeTo(4.5, 1e-6));
+    });
+
+    test('a shot through the web caps out at 5 Confluence, guaranteed', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      // Placed directly on the firing line but well clear of the player's
+      // own spawn point, so the arrow's flight genuinely crosses several
+      // spokes partway through rather than starting exactly where they
+      // all meet (every spoke radiates from the same centre).
+      const int lines = 6;
+      const double cx = 7.0;
+      const double cy = 4.5;
+      const double half = 9.0;
+      a.world.hero.latticeRemaining = 10.0;
+      a.world.hero.latticeX = cx;
+      a.world.hero.latticeY = cy;
+      a.world.hero.latticeLineCount = lines;
+      for (int i = 0; i < lines; i++) {
+        final double angle = math.pi * i / lines;
+        final double dx = math.cos(angle) * half;
+        final double dy = math.sin(angle) * half;
+        a.world.hero.latticeLines[i * 4] = cx - dx;
+        a.world.hero.latticeLines[i * 4 + 1] = cy - dy;
+        a.world.hero.latticeLines[i * 4 + 2] = cx + dx;
+        a.world.hero.latticeLines[i * 4 + 3] = cy + dy;
+      }
+
+      int maxStacksSeen = 0;
+      double bonusAtMax = 0;
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 400; t++) {
+        a.world.tick(idle);
+        for (int e = 0; e < a.world.events.count; e++) {
+          if (a.world.events.typeAt(e) == SimEventType.confluenceTriggered) {
+            final int stacks = a.world.events.valueAAt(e).round();
+            if (stacks > maxStacksSeen) {
+              maxStacksSeen = stacks;
+              bonusAtMax = a.world.events.valueBAt(e);
+            }
+          }
+        }
+      }
+      // No pre-existing real Windlines exist in this arena (lineCount: 0)
+      // and every autoFire shot travels the same nearly-parallel path, so
+      // the organic sweep alone would never reach anywhere near 5 — this
+      // is entirely the Lattice's own guarantee.
+      expect(maxStacksSeen, 5);
+      expect(bonusAtMax, closeTo(3.20, 0.01));
+    });
+
+    test('Grand Lattice (★5a): 10 lines lasting 16 s', () {
+      final ({SimWorld world, int target}) a = irisArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.latticeRemaining, closeTo(16.0, 0.02));
+      expect(a.world.hero.latticeLineCount, 10);
+    });
+
+    test('Living Lattice (★5b): the web recentres on the player every tick',
+        () {
+      final ({SimWorld world, int target}) a = irisArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.latticeX, closeTo(1.0, 1e-6));
+
+      a.world.entities.posX[a.world.player.index] = 5.0;
+      a.world.tick(InputSnapshot());
+      expect(a.world.hero.latticeX, closeTo(5.0, 1e-6));
+    });
+
+    test('without Living Lattice, the web stays where it was cast', () {
+      final ({SimWorld world, int target}) a = irisArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'a'},
+      );
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      a.world.entities.posX[a.world.player.index] = 5.0;
+      a.world.tick(InputSnapshot());
+      expect(a.world.hero.latticeX, closeTo(1.0, 1e-6));
+    });
+
+    test('the web disappears once its own duration ends', () {
+      final ({SimWorld world, int target}) a = irisArena();
+      a.world.autoFire = false;
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 11 * 60; t++) {
+        a.world.tick(idle);
+      }
+      expect(a.world.hero.latticeRemaining, 0);
+      expect(a.world.hero.latticeLineCount, 0);
+    });
+  });
+
   group('Umbral Step', () {
     /// A near enemy 2 u east of the player and a far one further out and
     /// off-axis — far enough that it, not the near one, is what a teleport
@@ -5315,10 +5473,12 @@ void main() {
       // timers built for other heroes), Wren's own ★5 pair (ADR 0078, a
       // new per-arrow "fired by the Ultimate" tag), and Rook's Singularity
       // trio (ADR 0079, a sustained fixed-zone Ultimate — the same shape
-      // Miasma/Pyre Line already established, not a new primitive).
+      // Miasma/Pyre Line already established, not a new primitive), and
+      // Iris's whole Lattice trio (ADR 0080, a guaranteed-max Confluence
+      // override layered on top of the organic sweep, not inside it).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(16),
+        lessThanOrEqualTo(13),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -5488,15 +5648,14 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // ("x4 and x5 exist only for Iris"). Long Weave, Bright Weave, Cutting
   // Lines and Binding Lines are the same story — pure StatModifiers with no
   // `behaviour` field of their own, so they never even joined this enum.
-  // The Lattice (and its own ★5 pair) stays pending: "every shot through it
-  // caps out at 5 Confluence" wants either a guaranteed-max override bolted
-  // onto the shared Confluence-detection code every Boon build depends on,
-  // or a genuinely dense criss-crossing web geometry docs/07 does not
-  // describe — a bigger, riskier change than a hero-local addition, and
-  // worth its own dedicated pass rather than a rushed one here.
-  HeroBehaviour.irisTheLattice,
-  HeroBehaviour.irisGrandLattice,
-  HeroBehaviour.irisLivingLattice,
+  // irisTheLattice, irisGrandLattice and irisLivingLattice are all
+  // implemented now too — see "The Lattice" group (ADR 0080). The web is
+  // deliberately not a real `WindlineStore` entry: a guaranteed-max
+  // override lives entirely in `ProjectileSystem`, layered on top of the
+  // organic Confluence sweep rather than inside it, so the shared
+  // detection code every Boon build depends on stays completely
+  // untouched. Iris is the eleventh hero (after Sable, Kade, Corvin, Lira,
+  // Halden, Zea, Mirelle, Ovrin, Wren, Rook) with nothing deferred.
 
   // Zea's whole kit is implemented now — zeaSkyhawk, zeaSharperTalons,
   // zeaSwiftHawk, zeaBonded and zeaFlock in the "Skyhawk" group (ADR
