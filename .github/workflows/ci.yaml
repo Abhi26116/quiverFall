@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  analyze:
+    name: analyze
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+
+  unit:
+    name: unit + golden damage table
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      # Includes the golden damage table (test/game/damage_resolver_test.dart,
+      # "600 cases are stable") and the architecture guards (test/guards/) —
+      # both live under test/ with everything else, not split out.
+      - run: flutter test test/
+
+  sim-perf:
+    name: sim perf
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter test benchmark/sim_performance_bench_test.dart
+
+  allocation:
+    name: allocation (TODO — Phase 12 Part 2)
+    runs-on: macos-latest
+    steps:
+      - run: |
+          echo "No zero-allocation-in-hot-loop guard exists yet."
+          echo "docs/20-roadmap.md's Phase 12 checklist names this step;"
+          echo "it is not built. Tracked as Phase 12 Part 2 work, not silently dropped."
+          exit 0
+
+  balance:
+    name: balance (TTK report — informational)
+    runs-on: macos-latest
+    # Non-blocking: with no Spire implementation until Phase 13, the TTK
+    # Law's hard band is expected to fail from chapter 4 on right now — see
+    # ADR 0089. This job prints the real distribution for visibility; it does
+    # not gate the build. Once Phase 13 gives `ExpectedPower` a real Spire
+    # contribution, flip `continue-on-error` to `false` here and remove the
+    # matching `skip:` in test/harness/ttk_probe_test.dart.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: dart run tool/balance_report.dart --runs=200
