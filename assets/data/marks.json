@@ -1,0 +1,112 @@
+{
+  "_comment": [
+    "The 9 Marks docs/04-upgrades.md §4.5 names explicitly, out of '25",
+    "Marks total... ...16 more' - the doc itself leaves the other sixteen",
+    "unspecified. See ADR 0095.",
+    "",
+    "'implemented: false' Marks are real, catalogued content with no live",
+    "effect yet - each has its own specific, checked reason in",
+    "'balanceNote'. Unlock-condition checking ('earnedBy') is not built for",
+    "ANY Mark yet, implemented or not - see ADR 0095."
+  ],
+  "marks": [
+  {
+    "id": 1,
+    "archetype": "markOfTheThread",
+    "key": "mark_of_the_thread",
+    "name": "Mark of the Thread",
+    "earnedBy": "Trigger 500 Confluences",
+    "description": "+5% Confluence damage.",
+    "channel": "confluenceDamage",
+    "value": 0.05,
+    "implemented": true
+  },
+  {
+    "id": 2,
+    "archetype": "markOfTheThreadII",
+    "key": "mark_of_the_thread_2",
+    "name": "Mark of the Thread II",
+    "earnedBy": "Trigger 5,000 Confluences",
+    "description": "+12% Confluence damage, +0.2s Windline.",
+    "channel": "confluenceDamage",
+    "value": 0.12,
+    "secondaryChannel": "windlineDuration",
+    "secondaryValue": 0.2,
+    "implemented": true
+  },
+  {
+    "id": 3,
+    "archetype": "markOfStillness",
+    "key": "mark_of_stillness",
+    "name": "Mark of Stillness",
+    "earnedBy": "Land 1,000 Tier-III shots",
+    "description": "+4% Tier III damage.",
+    "channel": "tierThreeDamage",
+    "value": 0.04,
+    "implemented": true
+  },
+  {
+    "id": 4,
+    "archetype": "markOfTheGale",
+    "key": "mark_of_the_gale",
+    "name": "Mark of the Gale",
+    "earnedBy": "Reach max Momentum 2,000 times",
+    "description": "+1 max Momentum.",
+    "channel": "maxMomentum",
+    "value": 1,
+    "implemented": true
+  },
+  {
+    "id": 5,
+    "archetype": "markOfTheUnbroken",
+    "key": "mark_of_the_unbroken",
+    "name": "Mark of the Unbroken",
+    "earnedBy": "Clear a chapter without taking damage",
+    "description": "+6% damage while at full HP.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0095. Needs a player-HP-conditional damage channel (\"while at full HP\") that does not exist - the closest existing conditionals are all enemy-HP-scoped (vsWounded, vsDying)."
+  },
+  {
+    "id": 6,
+    "archetype": "markOfTheSwift",
+    "key": "mark_of_the_swift",
+    "name": "Mark of the Swift",
+    "earnedBy": "Clear any stage in under 2:30",
+    "description": "+5% fire rate.",
+    "channel": "fireRate",
+    "value": 0.05,
+    "implemented": true
+  },
+  {
+    "id": 7,
+    "archetype": "markOfTheChoir",
+    "key": "mark_of_the_choir",
+    "name": "Mark of the Choir",
+    "earnedBy": "Defeat all 20 bosses",
+    "description": "+8% boss damage.",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0095. Needs a boss-scoped damage channel that does not exist, the same gap ADR 0092 found for the Spire's own Iron Resolve."
+  },
+  {
+    "id": 8,
+    "archetype": "markOfRuin",
+    "key": "mark_of_ruin",
+    "name": "Mark of Ruin",
+    "earnedBy": "Reach Endless floor 50",
+    "description": "+10% all damage.",
+    "channel": "damage",
+    "value": 0.10,
+    "implemented": true
+  },
+  {
+    "id": 9,
+    "archetype": "markOfTheNinefold",
+    "key": "mark_of_the_ninefold",
+    "name": "Mark of the Ninefold",
+    "earnedBy": "Ascend 9 times",
+    "description": "+1 Boon choice (4 cards instead of 3).",
+    "implemented": false,
+    "balanceNote": "Deferred - see ADR 0095. boonCardCount is read from BoonInventory.stats directly (boon_pool.dart), not world.combat - the same Wing-IV-style integration gap ADR 0092 found for the Spire's own economy nodes."
+  }
+  ]
+}

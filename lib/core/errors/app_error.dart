@@ -370,4 +370,34 @@ final class EconomyError extends AppError {
           code: 'economy_ascension_account_level_too_low',
           message: 'Ascension needs account level $requiredLevel.',
         );
+
+  const EconomyError.unknownMark(String key)
+      : this(
+          code: 'economy_unknown_mark',
+          message: 'No Mark definition for key "$key".',
+        );
+
+  const EconomyError.markNotUnlocked(String key)
+      : this(
+          code: 'economy_mark_not_unlocked',
+          message: 'Mark "$key" is not unlocked yet.',
+        );
+
+  const EconomyError.markAlreadyEquipped(String key)
+      : this(
+          code: 'economy_mark_already_equipped',
+          message: 'Mark "$key" is already equipped.',
+        );
+
+  const EconomyError.markNotEquipped(String key)
+      : this(
+          code: 'economy_mark_not_equipped',
+          message: 'Mark "$key" is not currently equipped.',
+        );
+
+  const EconomyError.markSlotsFull(int slots)
+      : this(
+          code: 'economy_mark_slots_full',
+          message: 'All $slots Mark slot(s) are full.',
+        );
 }

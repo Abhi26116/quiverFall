@@ -8,6 +8,7 @@ import 'package:quiverfall/game/balance/curves.dart';
 import 'package:quiverfall/game/boons/boon_inventory.dart';
 import 'package:quiverfall/game/boons/loadout_resolver.dart';
 import 'package:quiverfall/game/heroes/hero_definition.dart';
+import 'package:quiverfall/game/marks/mark_catalogue.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/affix_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/boon_stats.dart';
@@ -73,6 +74,8 @@ abstract final class HeroLoadoutResolver {
     AffixCatalogue? affixes,
     SpireCatalogue? spire,
     SpireState? spireState,
+    MarkCatalogue? marks,
+    List<String>? equippedMarkKeys,
   }) {
     final double heroAtk =
         Curves.heroStat(hero.stats.atk, heroState.level, heroState.stars);
@@ -153,6 +156,21 @@ abstract final class HeroLoadoutResolver {
         spireMight += node.attackFractionAt(level);
         final StatModifier? contribution = node.contributionAt(level);
         if (contribution != null) _compose(combined, contribution);
+      }
+    }
+
+    // Marks — every wired one composes into `combined` the same way a
+    // Spire node or hero talent does; none of the nine named Marks is its
+    // own separate multiplicative ATK term the way Warden's Might is, so
+    // there is no equivalent of `spireMight` to fold into `baseAttack`
+    // here. See ADR 0095.
+    if (marks != null && equippedMarkKeys != null) {
+      for (final String key in equippedMarkKeys) {
+        final mark = marks.byKey(key);
+        if (mark == null) continue;
+        for (final StatModifier m in mark.contribution()) {
+          _compose(combined, m);
+        }
       }
     }
 
