@@ -28,6 +28,7 @@ import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/ai_system.dart';
 import 'package:quiverfall/game/sim/systems/arclight_system.dart';
 import 'package:quiverfall/game/sim/systems/ashen_choir_system.dart';
+import 'package:quiverfall/game/sim/systems/bellweather_system.dart';
 import 'package:quiverfall/game/sim/systems/boon_system.dart';
 import 'package:quiverfall/game/sim/systems/boss_phase_system.dart';
 import 'package:quiverfall/game/sim/systems/cinder_choir_system.dart';
@@ -453,9 +454,15 @@ class SimWorld {
     // ── draw / momentum ────────────────────────────────────────────────────
     // After movement, so the Draw responds to motion that actually happened.
     // A player pinned against a wall is standing still and should ramp.
+    //
+    // Bellweather's own "Draw inverted so moving charges it" toll (docs/06
+    // §6.2, ADR 0064) flips only this call's own `isMoving` — `wantsToMove`
+    // itself stays unflipped for every other reader below (Kiting's own
+    // distance odometer, First Blood's window), since the card names the
+    // Draw specifically, not movement-derived state generally.
     DrawSystem.update(
       playerDraw,
-      wantsToMove,
+      playerDraw.drawChargesWhileMoving ? !wantsToMove : wantsToMove,
       dt,
       events,
       perpetual: boons.has(BoonBehaviour.perpetual),
@@ -640,6 +647,7 @@ class SimWorld {
     // reaction that hasn't happened yet this tick.
     CinderChoirSystem.update(ai);
     AshenChoirSystem.update(ai);
+    BellweatherSystem.update(ai);
     SkarnSystem.update(ai);
     GauntSystem.update(ai);
     SilversongSystem.update(ai);
@@ -2212,6 +2220,15 @@ class SimWorld {
 
     entities.velX[i] = input.stickX * inv * speed;
     entities.velY[i] = input.stickY * inv * speed;
+
+    // Bellweather's own "movement reversed" toll (docs/06 §6.2, ADR 0064) —
+    // flips the resulting velocity, not the raw stick input, so speed and
+    // every bonus above it still apply unchanged.
+    if (playerDraw.movementReversed) {
+      entities.velX[i] = -entities.velX[i];
+      entities.velY[i] = -entities.velY[i];
+    }
+
     entities.facing[i] = math.atan2(entities.velY[i], entities.velX[i]);
   }
 
@@ -2420,6 +2437,21 @@ class SimWorld {
   /// slot.
   int spawnAshenChoir(double x, double y, {required double health}) =>
       AshenChoirSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+      );
+
+  /// Places Bellweather — a single stationary body whose entire threat is
+  /// its own rule-tolling every 10s. Test/tool entry point, the same role
+  /// [spawnBoss] plays for the generic case; [BellweatherSystem.spawn] does
+  /// the real work. Returns its slot.
+  int spawnBellweather(double x, double y, {required double health}) =>
+      BellweatherSystem.spawn(
         store: entities,
         enemies: enemies,
         content: content,

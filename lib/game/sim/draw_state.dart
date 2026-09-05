@@ -139,6 +139,24 @@ class DrawState {
   /// See ADR 0043.
   double windlineSlowFactor = 1.0;
 
+  /// Bellweather's own "movement reversed" toll (docs/06 §6.2, event boss
+  /// #15) — `SimWorld._applyInput` negates the player's own resulting
+  /// velocity/facing when this reads true. The same "a boss sets a flag on
+  /// the player's own live state, the exact point that state already
+  /// lives" posture [windlineSlowFactor] and [rootRemaining] already use,
+  /// rather than an archetype-specific branch inside `_applyInput` itself.
+  /// See ADR 0064.
+  bool movementReversed = false;
+
+  /// Bellweather's own "Draw inverted so moving charges it" toll — the
+  /// player's own Draw-update call site inverts `isMoving` before passing
+  /// it to [DrawSystem.update] when this reads true. Deliberately not
+  /// touched anywhere else `isMoving`/`wantsToMove` is read this same tick
+  /// (Kiting's own distance tracking, First Blood's window) — the card
+  /// names the Draw specifically, not movement-derived state generally.
+  /// See ADR 0064.
+  bool drawChargesWhileMoving = false;
+
   DrawTier get tier {
     if (drawSeconds >= tierThreeAt * drawSpeedMultiplier) return DrawTier.three;
     if (drawSeconds >= tierTwoAt * drawSpeedMultiplier) return DrawTier.two;
@@ -173,6 +191,8 @@ class DrawState {
     rootRemaining = 0;
     momentumEffectivenessMultiplier = 1.0;
     windlineSlowFactor = 1.0;
+    movementReversed = false;
+    drawChargesWhileMoving = false;
   }
 
   /// Restores the tunables to their unmodified values. Separate from [reset],
