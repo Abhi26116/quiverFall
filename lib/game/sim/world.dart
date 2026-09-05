@@ -44,6 +44,7 @@ import 'package:quiverfall/game/sim/systems/hollow_warden_system.dart';
 import 'package:quiverfall/game/sim/systems/last_warden_system.dart';
 import 'package:quiverfall/game/sim/systems/mother_of_motes_system.dart';
 import 'package:quiverfall/game/sim/systems/movement_system.dart';
+import 'package:quiverfall/game/sim/systems/pale_judge_system.dart';
 import 'package:quiverfall/game/sim/systems/projectile_system.dart';
 import 'package:quiverfall/game/sim/systems/rimefather_system.dart';
 import 'package:quiverfall/game/sim/systems/silversong_system.dart';
@@ -648,6 +649,7 @@ class SimWorld {
     CinderChoirSystem.update(ai);
     AshenChoirSystem.update(ai);
     BellweatherSystem.update(ai);
+    PaleJudgeSystem.update(ai);
     SkarnSystem.update(ai);
     GauntSystem.update(ai);
     SilversongSystem.update(ai);
@@ -2459,6 +2461,25 @@ class SimWorld {
         centerX: x,
         centerY: y,
         health: health,
+      );
+
+  /// Places The Pale Judge — a single stationary body, permanently immune
+  /// to whichever element the player's own current build favours. Test/tool
+  /// entry point, the same role [spawnBoss] plays for the generic case;
+  /// [PaleJudgeSystem.spawn] does the real work. Reads "the player's build"
+  /// via the identical attuned-Boon-then-equipped-arrow priority
+  /// `_arrowElementIndex` already uses to decide a fired arrow's own
+  /// element. Returns its slot.
+  int spawnPaleJudge(double x, double y, {required double health}) =>
+      PaleJudgeSystem.spawn(
+        store: entities,
+        enemies: enemies,
+        content: content,
+        events: events,
+        centerX: x,
+        centerY: y,
+        health: health,
+        playerElement: boons.attunedElement ?? arrowElement,
       );
 
   /// Places Skarn the Unmade — a single directly-hittable body, holding its
