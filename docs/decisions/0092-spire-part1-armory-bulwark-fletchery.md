@@ -167,6 +167,33 @@ group: each of the fourteen wired nodes measured in isolation the same way
 every hero passive in this codebase already is — a maxed (L80) node's own
 measured bonus checked against its own table cap, independently per node.
 
+## A ceiling check against ADR 0089's own finding
+
+Not a real balance reading — no per-chapter Spire investment schedule
+exists to make `ExpectedPower` honest about this yet (see Consequences) —
+but a direct, useful sanity check on whether this Part's wiring actually
+moves the number ADR 0089 measured, run with all fourteen wired nodes at
+L80 (an unrealistic upper bound on purpose) against the identical no-Spire
+baseline:
+
+| Chapter | No Spire (ADR 0089) | All 14 nodes @ L80 |
+|---|---|---|
+| 4 | 2.43 s (fails high) | 0.48 s |
+| 5 | 3.58 s (fails high) | 0.60 s |
+| 6 | 5.55 s (fails high) | 1.02 s |
+| 7 | timeout (fails high) | 3.22 s |
+| 8 | timeout (fails high) | 5.72 s |
+
+Chapters 7-8 stop timing out entirely; every chapter's reading drops by
+roughly an order of magnitude. This is exactly the direction and rough
+scale docs/02 §2.6's own derivation chain predicts — confirmation the
+fourteen nodes are genuinely load-bearing, not plumbing that compiles with
+no practical effect. It is a ceiling, not a fix: chapters 1-3 now read
+*under* the floor at full investment, which is expected (no real account
+has all 24 nodes at 80 by chapter 1) and is exactly why this is not wired
+into `ExpectedPower` — a real reading needs a real per-chapter schedule,
+still an open question below.
+
 ## Consequences
 
 The Spire now measurably changes a build for the first time — `ExpectedPower`
