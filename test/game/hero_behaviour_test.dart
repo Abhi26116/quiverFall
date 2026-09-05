@@ -2523,6 +2523,168 @@ void main() {
     });
   });
 
+  group('Hall of Mirrors', () {
+    ({SimWorld world, int target}) mirelleArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
+      final SimWorld world = SimWorld(seed: 91, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        mirelle,
+        HeroState(heroId: 'mirelle', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      return (world: world, target: mote);
+    }
+
+    /// Every tick's own `arrowFired` events, grouped by the tick that
+    /// produced them — a duplicate (guaranteed or Reflection's own) always
+    /// spawns synchronously within the same tick as the shot that made it,
+    /// so grouping by tick is what lets a per-shot guarantee be checked
+    /// exactly rather than only on average.
+    List<List<({double damage, double angle})>> arrowsPerTick(
+        SimWorld world, int ticks) {
+      final List<List<({double damage, double angle})>> out =
+          <List<({double damage, double angle})>>[];
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < ticks; t++) {
+        world.tick(idle);
+        final List<({double damage, double angle})> thisTick =
+            <({double damage, double angle})>[];
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) != SimEventType.arrowFired) continue;
+          final int slot = world.events.entityAAt(e);
+          thisTick.add((
+            damage: world.projectiles.damage[slot],
+            angle: math.atan2(
+                world.entities.velY[slot], world.entities.velX[slot]),
+          ));
+        }
+        world.events.clear();
+        out.add(thisTick);
+      }
+      return out;
+    }
+
+    List<int> companionsOf(SimWorld world) {
+      final List<int> found = <int>[];
+      for (int i = 0; i < world.entities.highWater; i++) {
+        if (world.entities.alive[i] == 1 &&
+            world.entities.kindOf(i) == EntityKind.companion) {
+          found.add(i);
+        }
+      }
+      return found;
+    }
+
+    test('every arrow guarantees 3 more at full damage while the window runs',
+        () {
+      final ({SimWorld world, int target}) a = mirelleArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      // The ultimate-press tick can itself carry a leftover ordinary shot,
+      // fired by `_updateFiring` (earlier in `tick()`) before `_fireUltimate`
+      // (later in the same tick) ever sets the window — discarding its event
+      // here is what keeps that pre-window arrow out of the first tick this
+      // test actually samples.
+      a.world.events.clear();
+
+      final double fullDamage = a.world.playerAttack;
+      final List<List<({double damage, double angle})>> ticks =
+          arrowsPerTick(a.world, 7 * 60);
+      bool sawAShot = false;
+      for (final List<({double damage, double angle})> tick in ticks) {
+        final int originals = tick
+            .where((({double damage, double angle}) x) =>
+                (x.damage - fullDamage).abs() < 1e-6)
+            .length;
+        if (originals == 0) continue;
+        sawAShot = true;
+        // 1 original + 3 guaranteed duplicates, all at full damage — a hard
+        // floor regardless of whether Reflection's own probabilistic
+        // cascade (reduced-share duplicates) also fires this tick.
+        expect(originals, greaterThanOrEqualTo(4));
+      }
+      expect(sawAShot, isTrue);
+    });
+
+    test('the guarantee stops once the 8 s window expires', () {
+      final ({SimWorld world, int target}) a = mirelleArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      for (int t = 0; t < 9 * 60; t++) {
+        a.world.tick(InputSnapshot());
+      }
+      expect(a.world.hero.hallOfMirrorsRemaining, 0);
+
+      final double fullDamage = a.world.playerAttack;
+      final List<List<({double damage, double angle})>> ticks =
+          arrowsPerTick(a.world, 3000);
+      final bool sawAnUnaugmentedShot = ticks.any(
+          (List<({double damage, double angle})> tick) =>
+              tick
+                  .where((({double damage, double angle}) x) =>
+                      (x.damage - fullDamage).abs() < 1e-6)
+                  .length ==
+              1);
+      expect(sawAnUnaugmentedShot, isTrue);
+    });
+
+    test('spawns a mirror clone at 60 % stats for 8 s', () {
+      final ({SimWorld world, int target}) a = mirelleArena();
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      final List<int> clones = companionsOf(a.world);
+      expect(clones, hasLength(1));
+      final int clone = clones.single;
+      expect(a.world.companions.damageShare[clone], closeTo(0.60, 1e-9));
+      expect(a.world.companions.fireIntervalSeconds[clone],
+          closeTo(1.0 / (0.60 * 2.20), 1e-6));
+      expect(a.world.companions.remaining[clone], closeTo(8.0, 0.02));
+    });
+
+    test('Endless Hall (★5a): the duplication window runs 14 s instead of 8',
+        () {
+      final ({SimWorld world, int target}) a = mirelleArena(
+        stars: 5,
+        talentChoices: const <String, String>{'5': 'a'},
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.hallOfMirrorsRemaining, closeTo(14.0, 0.02));
+    });
+
+    test(
+        'Twin Warden (★5b): the clone rises to 80 % stats and outlasts the '
+        'ordinary window, which stays at 8 s', () {
+      final ({SimWorld world, int target}) a = mirelleArena(
+        stars: 5,
+        talentChoices: const <String, String>{'5': 'b'},
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+
+      expect(a.world.hero.hallOfMirrorsRemaining, closeTo(8.0, 0.02));
+      final List<int> clones = companionsOf(a.world);
+      expect(clones, hasLength(1));
+      final int clone = clones.single;
+      expect(a.world.companions.damageShare[clone], closeTo(0.80, 1e-9));
+      expect(a.world.companions.fireIntervalSeconds[clone],
+          closeTo(1.0 / (0.80 * 2.20), 1e-6));
+      expect(a.world.companions.remaining[clone], greaterThan(60.0));
+    });
+  });
+
   group('Arc and Tempest Nock', () {
     /// A primary target 8 u east of the player, plus four more enemies
     /// clustered around it at 0.3/0.4/0.5/0.8 u — all off the y = 4.5 firing
@@ -4638,11 +4800,13 @@ void main() {
       // Carom/Perfect Carom), Kestrel's Bleed, Rook's Crush and Anchor,
       // Lira's Overheal, Halden's own boss half — Zealot/Warded/
       // Sentence/Swift Judgment (ADR 0069, unblocked by Phase 11's own
-      // `isBoss`) — and Zea's whole kit (ADR 0071/0072/0073, the new
-      // companion-entity primitive).
+      // `isBoss`), Zea's whole kit (ADR 0071/0072/0073, the new
+      // companion-entity primitive), and Mirelle's Hall of
+      // Mirrors/Endless Hall/Twin Warden (ADR 0074, the same companion
+      // primitive plus a new guaranteed-duplication timer).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(31),
+        lessThanOrEqualTo(28),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -4865,15 +5029,9 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // genuine anchor.
   HeroBehaviour.ashlinEternal,
 
-  // mirelleReflection, mirelleTruerMirror, mirelleDeeperMirror,
-  // mirelleSilvered and mirelleFractured are implemented — see the
-  // "Reflection" group. Hall of Mirrors and its two ★5 variants stay
-  // pending: "a mirror clone of the player fights alongside" needs a
-  // companion entity — an AI-driven ally that mimics the player's own
-  // shooting, the same missing piece that blocks Zea's Skyhawk.
-  HeroBehaviour.mirelleHallOfMirrors,
-  HeroBehaviour.mirelleEndlessHall,
-  HeroBehaviour.mirelleTwinWarden,
+  // Mirelle's entire kit — Reflection, Hall of Mirrors and every ★1/★3/★5
+  // variant of both — is implemented. See the "Reflection" and "Hall of
+  // Mirrors" groups.
 
   // orielSpectrum, orielPrism and orielEndlessPrism are implemented — see
   // the "Spectrum and Prism" group.

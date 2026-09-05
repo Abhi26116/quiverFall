@@ -540,6 +540,10 @@ class SimWorld {
       hero.caromsRemaining -= dt;
       if (hero.caromsRemaining < 0) hero.caromsRemaining = 0;
     }
+    if (hero.hallOfMirrorsRemaining > 0) {
+      hero.hallOfMirrorsRemaining -= dt;
+      if (hero.hallOfMirrorsRemaining < 0) hero.hallOfMirrorsRemaining = 0;
+    }
     if (hero.umbralStepRemaining > 0) {
       hero.umbralStepRemaining -= dt;
       if (hero.umbralStepRemaining < 0) hero.umbralStepRemaining = 0;
@@ -1003,6 +1007,8 @@ class SimWorld {
           : HeroRuntime.caromsDuration;
     } else if (hero.has(HeroBehaviour.zeaFalconry)) {
       _fireZeaFalconry();
+    } else if (hero.has(HeroBehaviour.mirelleHallOfMirrors)) {
+      _fireMirelleHallOfMirrors();
     }
   }
 
@@ -2027,6 +2033,7 @@ class SimWorld {
     );
 
     _applyMirelleReflection(x, y, angle, tier, damageScale, mirelleDuplicateDepth);
+    _applyHallOfMirrorsDuplication(x, y, angle, tier, damageScale, mirelleDuplicateDepth);
     // Echoing's own second arrow never echoes again — "a second arrow", not
     // a chain — so this is skipped for the echo itself the same way Mirelle
     // never re-triggers Torv's Arc counter on a duplicate.
@@ -2044,6 +2051,66 @@ class SimWorld {
     if (_echoRng.nextDouble() >= hero.echoChance) return;
     _spawnArrow(x, y, angle, tier, damageScale, isEcho: true);
   }
+
+  /// *Hall of Mirrors* — "8 s where every arrow duplicates 3×, and a
+  /// mirror clone of the player fights alongside at 60 % stats" (docs/07
+  /// §7.3). Two genuinely separate mechanics: a guaranteed, fixed-count
+  /// arrow duplication (`_applyHallOfMirrorsDuplication`, spawn-time,
+  /// gated on [HeroRuntime.hallOfMirrorsRemaining] rather than any chance
+  /// roll — distinct from Reflection's own probabilistic cascade below)
+  /// and a temporary companion clone, the identical `CompanionSystem`
+  /// primitive Zea's own Falconry (ADR 0073) already proved. *Endless
+  /// Hall* (★5a) extends the duplication window; *Twin Warden* (★5b)
+  /// instead raises the clone's own share to 80 % and stretches its
+  /// lifetime well past any real room's length — "lasts the whole room"
+  /// has no literal room-boundary hook at fire time, so this uses a long,
+  /// generously-authored duration instead (ADR 0074); a room's own entity
+  /// wipe on clear removes it exactly on schedule regardless. The two ★5
+  /// branches are mutually exclusive: Twin Warden does not also extend
+  /// the duplication window, and Endless Hall does not also raise the
+  /// clone's own share.
+  void _fireMirelleHallOfMirrors() {
+    if (player.isNone || !entities.isAlive(player)) return;
+    final int p = player.index;
+    final double x = entities.posX[p];
+    final double y = entities.posY[p];
+
+    hero.hallOfMirrorsRemaining = hero.has(HeroBehaviour.mirelleEndlessHall)
+        ? _mirelleEndlessHallDuration
+        : _mirelleHallOfMirrorsDuration;
+
+    final bool twinWarden = hero.has(HeroBehaviour.mirelleTwinWarden);
+    final double cloneShare = twinWarden
+        ? _mirelleTwinWardenCloneShare
+        : _mirelleHallOfMirrorsCloneShare;
+    final double cloneDuration =
+        twinWarden ? _mirelleTwinWardenCloneDuration : hero.hallOfMirrorsRemaining;
+
+    spawnCompanion(
+      x,
+      y,
+      damageShare: cloneShare,
+      fireRate: cloneShare * _mirelleBaseFireRate,
+      lifetimeSeconds: cloneDuration,
+      followOffsetX: -0.7,
+      followOffsetY: 0.6,
+    );
+  }
+
+  static const double _mirelleHallOfMirrorsDuration = 8.0;
+  static const double _mirelleEndlessHallDuration = 14.0;
+  static const double _mirelleHallOfMirrorsCloneShare = 0.60;
+  static const double _mirelleTwinWardenCloneShare = 0.80;
+
+  /// docs/07's own stated stat line for Mirelle ("Rate 2.20") — the
+  /// clone's own "60 %/80 % stats" scales this directly, the same way
+  /// [spawnCompanion]'s `damageShare` scales `playerAttack`.
+  static const double _mirelleBaseFireRate = 2.20;
+
+  /// See the doc comment on [_fireMirelleHallOfMirrors]: authored well
+  /// past any real room's length, since a room's own clear wipes the
+  /// clone before this would ever matter.
+  static const double _mirelleTwinWardenCloneDuration = 300.0;
 
   /// *Reflection* — each arrow has a chance to spawn one more, which can
   /// itself duplicate again (geometric), up to a total arrow count from one
@@ -2100,6 +2167,47 @@ class SimWorld {
 
   /// ±20° — Fractured's own card text.
   static const double _mirelleFracturedSpreadRadians = 20 * math.pi / 180;
+
+  /// *Hall of Mirrors*' own guaranteed duplication half — "every arrow
+  /// duplicates 3×" while [HeroRuntime.hallOfMirrorsRemaining] runs, at
+  /// full damage and with no chance roll, unlike Reflection's own
+  /// probabilistic cascade above (which has no stated damage penalty here
+  /// to remove, so Silvered makes no difference to these). Gated to
+  /// depth 0 so the guaranteed triplicate never re-triggers itself; each
+  /// of the 3 still passes back through `_applyMirelleReflection` at
+  /// depth 1 and can cascade normally if Reflection is also active, the
+  /// same as any other ordinary duplicate. Fractured's own spread is read
+  /// as a general "duplicates spread wider" rule rather than one scoped
+  /// to Reflection specifically, so it applies here too.
+  void _applyHallOfMirrorsDuplication(
+    double x,
+    double y,
+    double angle,
+    DrawTier tier,
+    double damageScale,
+    int depth,
+  ) {
+    if (depth != 0) return;
+    if (hero.hallOfMirrorsRemaining <= 0) return;
+
+    for (int n = 0; n < _mirelleHallOfMirrorsDuplicateCount; n++) {
+      double duplicateAngle = angle;
+      if (hero.has(HeroBehaviour.mirelleFractured)) {
+        duplicateAngle += (_mirelleDuplicateRng.nextDouble() * 2 - 1) *
+            _mirelleFracturedSpreadRadians;
+      }
+      _spawnArrow(
+        x,
+        y,
+        duplicateAngle,
+        tier,
+        damageScale,
+        mirelleDuplicateDepth: 1,
+      );
+    }
+  }
+
+  static const int _mirelleHallOfMirrorsDuplicateCount = 3;
 
   /// Oriel: *Spectrum* cycles the equipped arrow's own element away in
   /// favour of Ember → Frost → Storm → Toxin, one per shot; *Prism* replaces

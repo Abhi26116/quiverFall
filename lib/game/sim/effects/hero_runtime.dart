@@ -184,6 +184,15 @@ class HeroRuntime {
 
   static const double caromsDuration = 6.0;
 
+  /// Seconds left on Mirelle's *Hall of Mirrors* — every arrow fired while
+  /// this reads above zero also fires the guaranteed triple-duplicate in
+  /// `SimWorld._applyHallOfMirrorsDuplication`, read at spawn time the
+  /// same way [tempestNockRemaining]/[caromsRemaining] are above. Distinct
+  /// from the mirror clone itself, which is an ordinary temporary
+  /// `CompanionSystem` entity with its own separate lifetime — this field
+  /// only ever gates the arrow-duplication half. Zero means inactive.
+  double hallOfMirrorsRemaining = 0;
+
   /// Seconds left on Sable's *Miasma* cloud. Zero means inactive. Unlike
   /// every other timed self-buff above, this one is a fixed zone rather
   /// than a buff on the player — [miasmaX]/[miasmaY] pin where it was cast,
@@ -288,6 +297,7 @@ class HeroRuntime {
     redDrawFireRateMultiplier = 1.0;
     tempestNockRemaining = 0;
     caromsRemaining = 0;
+    hallOfMirrorsRemaining = 0;
     miasmaRemaining = 0;
     miasmaX = 0;
     miasmaY = 0;
@@ -326,6 +336,7 @@ class HeroRuntime {
     redDrawRemaining = 0;
     tempestNockRemaining = 0;
     caromsRemaining = 0;
+    hallOfMirrorsRemaining = 0;
     miasmaRemaining = 0;
     pyreLineRemaining = 0;
     ashlinInvulnRemaining = 0;
