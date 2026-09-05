@@ -358,4 +358,16 @@ final class EconomyError extends AppError {
           code: 'economy_unknown_loadout',
           message: 'No saved loadout named "$name".',
         );
+
+  const EconomyError.ascensionChapterNotCleared({required int chapter})
+      : this(
+          code: 'economy_ascension_chapter_not_cleared',
+          message: 'Ascension needs chapter $chapter cleared first.',
+        );
+
+  const EconomyError.ascensionAccountLevelTooLow({required int requiredLevel})
+      : this(
+          code: 'economy_ascension_account_level_too_low',
+          message: 'Ascension needs account level $requiredLevel.',
+        );
 }
