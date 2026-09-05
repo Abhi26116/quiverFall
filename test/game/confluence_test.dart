@@ -411,6 +411,87 @@ void main() {
       );
     });
 
+    /// The same 90-degree crossing above, with an Ember arrow through a
+    /// trail of [trailElementIndex] (or no element at all, when null).
+    double firstDamageDealt(int? trailElementIndex) {
+      final SimWorld world = SimWorld(seed: 11)
+        ..playerAttack = 10
+        ..arrowElement = SimElement.ember;
+      world.spawnPlayer(8.0, 4.5);
+      world.spawnAt(EntityKind.enemy, 15.0, 4.5, radius: 0.3, health: 1e9);
+
+      world.windlines.add(
+        fromX: 11.0,
+        fromY: 1.0,
+        toX: 11.0,
+        toY: 8.0,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 99999,
+        elementIndex: trailElementIndex ?? -1,
+      );
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int i = 0; i < 120; i++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      throw StateError('no damage landed within the tick budget');
+    }
+
+    test(
+        'an Ember arrow crossing a Frost trail resolves to Steamburst — the '
+        'reaction the sim never actually produced before now', () {
+      final SimWorld world = SimWorld(seed: 11)
+        ..playerAttack = 10
+        ..arrowElement = SimElement.ember;
+      world.spawnPlayer(8.0, 4.5);
+      world.spawnAt(EntityKind.enemy, 15.0, 4.5, radius: 0.3, health: 1e9);
+      world.windlines.add(
+        fromX: 11.0,
+        fromY: 1.0,
+        toX: 11.0,
+        toY: 8.0,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 99999,
+        elementIndex: SimElement.frost.index,
+      );
+
+      final InputSnapshot idle = InputSnapshot();
+      for (int i = 0; i < 120; i++) {
+        world.tick(idle);
+      }
+
+      expect(
+        world.events.countOf(SimEventType.reactionTriggered),
+        greaterThan(0),
+        reason: 'Ember through a Frost trail must resolve to Steamburst',
+      );
+    });
+
+    test("a triggered reaction multiplies that hit's own damage", () {
+      // Same crossing, same Confluence stack either way (one line crossed) —
+      // the only variable is whether the two elements actually react, which
+      // isolates the reaction's own contribution from Confluence's.
+      final double sameElement = firstDamageDealt(SimElement.ember.index);
+      final double differentElement = firstDamageDealt(SimElement.frost.index);
+
+      // Steamburst (Ember+Frost) is a flat 1.80x on the triggering hit.
+      expect(differentElement / sameElement, closeTo(1.80, 0.05));
+    });
+
+    test('no trail element at all means no reaction, same as matching one',
+        () {
+      final double noElement = firstDamageDealt(null);
+      final double sameElement = firstDamageDealt(SimElement.ember.index);
+      expect(noElement / sameElement, closeTo(1.0, 0.02));
+    });
+
     test('room clear wipes every line', () {
       final SimWorld world = SimWorld(seed: 5);
       world.spawnPlayer(2.0, 4.5);

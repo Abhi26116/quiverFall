@@ -9,6 +9,7 @@ import 'package:quiverfall/game/sim/arena.dart';
 import 'package:quiverfall/game/sim/draw_state.dart';
 import 'package:quiverfall/game/sim/effects/boon_behaviour.dart';
 import 'package:quiverfall/game/sim/effects/combat_modifiers.dart';
+import 'package:quiverfall/game/sim/elements.dart';
 import 'package:quiverfall/game/sim/entity.dart';
 import 'package:quiverfall/game/sim/input.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
@@ -398,6 +399,100 @@ void main() {
     test('#3 Cruel Edge raises the crit multiplier, not the base', () {
       final CombatModifiers c = modsFor(<String>['cruel_edge']);
       expect(c.critMultiplier, closeTo(1.80 + 0.15, 1e-12));
+    });
+  });
+
+  group('elemental and reaction bonus resolves per hit', () {
+    // `DamageResolver`'s own step 6 — "Elemental / reaction bonus" — had no
+    // reader anywhere in the sim until now: emberDamage/frostEffect/
+    // stormDamage/toxinDamage/reactionDamage all composed correctly (Layer 1
+    // above already covers that) but fed a value nothing ever consumed.
+    // `CombatModifiers.elementalBonusFor` is the new home; these are its own
+    // Layer-2-equivalent tests.
+    CombatModifiers modsFor(List<String> keys) => build(keys).world.combat;
+
+    test('#77 Kindling raises Ember damage, and only Ember', () {
+      final CombatModifiers c = modsFor(<String>['kindling']);
+      expect(
+        c.elementalBonusFor(elementMask: 1 << SimElement.ember.index),
+        closeTo(0.12, 1e-12),
+      );
+      expect(
+        c.elementalBonusFor(elementMask: 1 << SimElement.frost.index),
+        closeTo(0, 1e-12),
+      );
+    });
+
+    test('#78 Rime raises Frost damage, and only Frost', () {
+      final CombatModifiers c = modsFor(<String>['rime']);
+      expect(
+        c.elementalBonusFor(elementMask: 1 << SimElement.frost.index),
+        closeTo(0.12, 1e-12),
+      );
+      expect(
+        c.elementalBonusFor(elementMask: 1 << SimElement.ember.index),
+        closeTo(0, 1e-12),
+      );
+    });
+
+    test('#79 Charge raises Storm damage, and only Storm', () {
+      final CombatModifiers c = modsFor(<String>['charge']);
+      expect(
+        c.elementalBonusFor(elementMask: 1 << SimElement.storm.index),
+        closeTo(0.12, 1e-12),
+      );
+    });
+
+    test('#80 Blight raises Toxin damage, and only Toxin', () {
+      final CombatModifiers c = modsFor(<String>['blight']);
+      expect(
+        c.elementalBonusFor(elementMask: 1 << SimElement.toxin.index),
+        closeTo(0.12, 1e-12),
+      );
+    });
+
+    test('an arrow carrying no element gets none of these', () {
+      final CombatModifiers c = modsFor(<String>['kindling']);
+      expect(c.elementalBonusFor(elementMask: 0), 0);
+    });
+
+    test(
+        '#82 Conductor adds to a reaction\'s own bonus — nothing without one',
+        () {
+      final CombatModifiers c = modsFor(<String>['conductor']);
+      expect(c.elementalBonusFor(elementMask: 0), 0);
+      // Steamburst is 1.80x — a 0.80 bonus — plus Conductor's own +15 %.
+      expect(
+        c.elementalBonusFor(elementMask: 0, reactionBonus: 0.80),
+        closeTo(0.95, 1e-12),
+      );
+    });
+
+    test('#87 Reactive can cut a reaction\'s own bonus below its base', () {
+      final CombatModifiers c = modsFor(<String>['reactive']);
+      expect(
+        c.elementalBonusFor(elementMask: 0, reactionBonus: 0.80),
+        closeTo(0.60, 1e-12), // 0.80 - 0.20
+      );
+    });
+
+    test('#89 Catalysis is the strongest of the three reaction Boons', () {
+      final CombatModifiers c = modsFor(<String>['catalysis']);
+      expect(
+        c.elementalBonusFor(elementMask: 0, reactionBonus: 0.80),
+        closeTo(1.40, 1e-12), // 0.80 + 0.60
+      );
+    });
+
+    test('elemental and reaction bonuses sum together, not multiply', () {
+      final CombatModifiers c = modsFor(<String>['kindling', 'conductor']);
+      expect(
+        c.elementalBonusFor(
+          elementMask: 1 << SimElement.ember.index,
+          reactionBonus: 0.80,
+        ),
+        closeTo(0.12 + 0.80 + 0.15, 1e-12),
+      );
     });
   });
 

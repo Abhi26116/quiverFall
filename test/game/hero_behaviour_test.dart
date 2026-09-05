@@ -1105,14 +1105,17 @@ void main() {
   });
 
   group('Spectrum and Prism', () {
-    ({SimWorld world, int target}) orielArena() {
+    ({SimWorld world, int target}) orielArena({
+      Map<String, String> talentChoices = const <String, String>{},
+      int stars = 0,
+    }) {
       final SimWorld world = SimWorld(seed: 31, content: content)
         ..autoFire = true;
       world.spawnPlayer(4.0, 4.5);
       HeroLoadoutResolver.apply(
         world,
         oriel,
-        const HeroState(heroId: 'oriel'),
+        HeroState(heroId: 'oriel', stars: stars, talentChoices: talentChoices),
         ashShaft,
         const ArrowInstance(arrowId: 'ash_shaft'),
       );
@@ -1264,6 +1267,161 @@ void main() {
       a.world.hero.ultimateCharge = 1.0;
       a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
       expect(a.world.hero.prismRemaining, closeTo(16.0, 1e-9));
+    });
+
+    double? firstDamageDealt(SimWorld world) {
+      final InputSnapshot idle = InputSnapshot();
+      for (int t = 0; t < 300; t++) {
+        world.tick(idle);
+        for (int e = 0; e < world.events.count; e++) {
+          if (world.events.typeAt(e) == SimEventType.damageDealt) {
+            return world.events.valueAAt(e);
+          }
+        }
+      }
+      return null;
+    }
+
+    test('Attuned (★1b): +30 % elemental damage', () {
+      // Every Oriel arrow already carries an element (Spectrum), so the
+      // plain baseline already isolates Attuned's own contribution. Both
+      // sides fixed at ★1 so `heroAtk`'s own star scaling matches on both —
+      // the same reason `Steady (★1b) removes the close-range penalty at
+      // the same distance` (Vane's own group) pins its baseline to ★1 too —
+      // and each gets its own single, clean loadout apply rather than
+      // reusing a world and re-applying, which would fire the two sides'
+      // very first arrows on different ticks and open the comparison to an
+      // unrelated crit roll.
+      final double? plain = firstDamageDealt(orielArena(stars: 1).world);
+      final double? boosted = firstDamageDealt(orielArena(
+        stars: 1,
+        talentChoices: <String, String>{'1': 'b'},
+      ).world);
+
+      expect(plain, isNotNull);
+      expect(boosted, isNotNull);
+      expect(boosted! / plain!, closeTo(1.30, 0.02));
+    });
+
+    /// An Oriel arena with a single Frost trail crossing the firing line —
+    /// forcing the very first arrow to Ember (`cycleIndex = 0`) resolves it
+    /// to Steamburst every time. [stars] is fixed at 3 for both sides of the
+    /// comparison this feeds, so only the talent choice itself varies —
+    /// `heroAtk`'s own star scaling must not leak into the ratio.
+    SimWorld resonanceArena(Map<String, String> talentChoices) {
+      final SimWorld world = SimWorld(seed: 31, content: content)
+        ..autoFire = true;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        oriel,
+        HeroState(heroId: 'oriel', stars: 3, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 12.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      world.hero.cycleIndex = 0; // the very next arrow cycles to Ember
+      world.windlines.add(
+        fromX: 8.0,
+        fromY: 1.0,
+        toX: 8.0,
+        toY: 8.0,
+        expiresAt: 1e9,
+        ownerIndex: 0,
+        trailId: 999,
+        elementIndex: SimElement.frost.index,
+      );
+      return world;
+    }
+
+    test('Resonance (★3a): reactions deal +50 %, on top of the reaction '
+        'itself', () {
+      final double? base = firstDamageDealt(resonanceArena(const {}));
+      final double? withResonance = firstDamageDealt(
+          resonanceArena(const <String, String>{'3': 'a'}));
+
+      expect(base, isNotNull);
+      expect(withResonance, isNotNull);
+      // Steamburst is 1.80x (a 0.80 bonus); Resonance adds its own +50 % to
+      // that bonus, not a fresh independent one: (1+0.80+0.50)/(1+0.80).
+      expect(withResonance! / base!, closeTo(2.30 / 1.80, 0.03));
+    });
+
+    /// An Oriel arena with three differently-elemented trails, Prism cast
+    /// with autoFire held off until the window is confirmed live — so the
+    /// very first arrow actually fired is guaranteed to be a Prism arrow
+    /// (`elementMask` carrying all four elements), never an ordinary
+    /// Spectrum-cycled one that happened to fire the same tick as the
+    /// Ultimate itself, before Prism turns on. Three distinct crossed
+    /// elements resolve to Prismbreak regardless of the arrow's own single
+    /// vs. all-four element mask — see `ProjectileSystem._applyHit`'s own
+    /// comment on `incoming`.
+    double firstDamageAfterPrismCast(Map<String, String> talentChoices, int stars) {
+      final SimWorld world = SimWorld(seed: 31, content: content)
+        ..autoFire = false;
+      world.spawnPlayer(4.0, 4.5);
+      HeroLoadoutResolver.apply(
+        world,
+        oriel,
+        HeroState(heroId: 'oriel', stars: stars, talentChoices: talentChoices),
+        ashShaft,
+        const ArrowInstance(arrowId: 'ash_shaft'),
+      );
+      final int mote = world.spawnEnemy(EnemyArchetype.mote, 14.0, 4.5);
+      world.enemies.speedScale[mote] = 0;
+      world.entities.maxHealth[mote] = 1e9;
+      world.entities.health[mote] = 1e9;
+      world.windlines.add(
+        fromX: 6.0, fromY: 1.0, toX: 6.0, toY: 8.0,
+        expiresAt: 1e9, ownerIndex: 0, trailId: 1,
+        elementIndex: SimElement.ember.index,
+      );
+      world.windlines.add(
+        fromX: 8.0, fromY: 1.0, toX: 8.0, toY: 8.0,
+        expiresAt: 1e9, ownerIndex: 0, trailId: 2,
+        elementIndex: SimElement.frost.index,
+      );
+      world.windlines.add(
+        fromX: 10.0, fromY: 1.0, toX: 10.0, toY: 8.0,
+        expiresAt: 1e9, ownerIndex: 0, trailId: 3,
+        elementIndex: SimElement.toxin.index,
+      );
+
+      world.hero.ultimateCharge = 1.0;
+      world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(world.hero.prismRemaining, greaterThan(0));
+
+      world.autoFire = true;
+      final double? damage = firstDamageDealt(world);
+      if (damage == null) throw StateError('no damage landed');
+      return damage;
+    }
+
+    test('White Light (★5b): Prism lasts 6 s instead of 10', () {
+      final ({SimWorld world, int target}) a = orielArena(
+        stars: 5,
+        talentChoices: <String, String>{'5': 'b'},
+      );
+      a.world.hero.ultimateCharge = 1.0;
+      a.world.tick(InputSnapshot()..set(0, 0, ultimate: true));
+      expect(a.world.hero.prismRemaining, closeTo(6.0, 1e-9));
+    });
+
+    test('White Light (★5b): triples a reaction\'s own bonus while Prism '
+        'is active', () {
+      // Both at ★5 so `heroAtk`'s own star scaling matches on both sides —
+      // the same reason Resonance's own comparison above fixes its star
+      // level too.
+      final double basePrism = firstDamageAfterPrismCast(const {}, 5);
+      final double whiteLight =
+          firstDamageAfterPrismCast(const <String, String>{'5': 'b'}, 5);
+
+      // Prismbreak is 4.00x — a 3.00 bonus. White Light triples that
+      // portion: (1 + 3.00*3) / (1 + 3.00) = 10 / 4.
+      expect(whiteLight / basePrism, closeTo(2.50, 0.05));
     });
   });
 
@@ -6010,11 +6168,13 @@ void main() {
       // (ADR 0082, a real once-per-shot grouping for the element cycle and
       // a generic status-duration multiplier), Bram's whole kit (ADR 0083,
       // a new player-owned telegraphed volley primitive plus two small
-      // splash riders), and Sela's own Lingering Frost (ADR 0084, a slow
-      // genuinely independent of Windlines).
+      // splash riders), Sela's own Lingering Frost (ADR 0084, a slow
+      // genuinely independent of Windlines), and Oriel's own White Light
+      // (ADR 0085 — Reactions, docs/08's own deepest idea, actually fire in
+      // real gameplay for the first time).
       expect(
         pendingHeroBehaviourWork.length,
-        lessThanOrEqualTo(3),
+        lessThanOrEqualTo(2),
         reason: 'a hero behaviour was added without being implemented, or '
             'the ledger was not shrunk after implementing one',
       );
@@ -6259,12 +6419,20 @@ const Set<HeroBehaviour> pendingHeroBehaviourWork = <HeroBehaviour>{
   // threaded through `StatusStore.apply` — the same, generic parameter any
   // future 2x/0.5x duration talent could reuse, not an Oriel-specific
   // branch.
-  // orielWhiteLight: the 6 s duration is free, but "reactions deal x3"
-  // needs Reaction/elementalBonus damage wiring that does not exist yet —
-  // projectiles.elementalBonus is set and never read anywhere. Shipping the
-  // duration alone would be a card that promises x3 and does not deliver.
-  // Real work for whoever needs elemental/reaction damage bonuses first —
-  // Attuned (#Oriel T1b, allElementDamage) and Resonance (T3a,
-  // reactionDamage) are blocked on the exact same wiring.
-  HeroBehaviour.orielWhiteLight,
+  // orielWhiteLight is implemented too now (ADR 0085), alongside the much
+  // bigger gap that was actually blocking it: Reactions (docs/08 §8.2) had
+  // never once fired in real gameplay — `ElementSystem.resolveReaction`
+  // existed, fully tested, called by nothing outside its own test file, and
+  // `DamageResolver`'s own step 6 ("Elemental / reaction bonus") had no
+  // reader anywhere. `ProjectileSystem._applyHit` now resolves a reaction
+  // whenever an arrow's Confluence crossing carries a different element
+  // from its own, and `CombatModifiers.elementalBonusFor` composes that
+  // multiplier with the elemental/reaction StatChannels (Attuned,
+  // Resonance, and five Boons/affixes — Kindling, Rime, Charge, Blight,
+  // Conductor, Reactive, Catalysis, Resonant — that were themselves already
+  // shipped, already selectable, and silently doing nothing). Oriel is the
+  // fourteenth hero (after Sable, Kade, Corvin, Lira, Halden, Zea, Mirelle,
+  // Ovrin, Wren, Rook, Iris, Bram, Sela) with nothing deferred. White
+  // Light's own "reactions deal x3" triples the reaction's own bonus
+  // portion specifically, only while Prism is live.
 };

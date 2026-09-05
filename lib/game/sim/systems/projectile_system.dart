@@ -18,6 +18,7 @@ import 'package:quiverfall/game/sim/segment_hash.dart';
 import 'package:quiverfall/game/sim/spatial_hash.dart';
 import 'package:quiverfall/game/sim/status_store.dart';
 import 'package:quiverfall/game/sim/systems/confluence_system.dart';
+import 'package:quiverfall/game/sim/systems/element_system.dart';
 import 'package:quiverfall/game/sim/windline_store.dart';
 
 /// Moves arrows, resolves what they hit, and applies damage.
@@ -955,12 +956,71 @@ abstract final class ProjectileSystem {
           : ElementTuning.frozenDamageBonus;
     }
 
+    // *Reactions* (docs/08 §8.2) — a Confluence crossing carrying a
+    // different element from this arrow's own pairs into a named reaction,
+    // each its own damage multiplier. Gated on this arrow having actually
+    // crossed a coloured Windline at all: the vast majority of hits never
+    // have, `ElementSystem.resolveReaction` already resolves to 1.0 (no
+    // reaction) on an empty mask regardless, and skipping the call outright
+    // avoids touching `status.canReact`'s own per-enemy cooldown for
+    // nothing on every ordinary hit in the game.
+    double reactionMultiplier = 1.0;
+    if (status != null && projectiles.confluenceElementMask[slot] != 0) {
+      final int ownMask = projectiles.elementMask[slot];
+      final int ownIndex = projectiles.element[slot];
+      // An arrow carrying several of its own elements at once (Prism, a
+      // multi-element Boon) only ever contributes the *crossed* side to a
+      // reaction — `resolveReaction` takes one incoming element, not a
+      // mask, and guessing which of several to prefer for a case this rare
+      // is not worth the complexity; three or more distinct crossed
+      // elements still collapses to Prismbreak regardless of `incoming`.
+      final SimElement? incoming =
+          ownMask == 0 && ownIndex >= 0 ? SimElement.values[ownIndex] : null;
+      reactionMultiplier = ElementSystem.resolveReaction(
+        status: status,
+        events: events,
+        target: target,
+        elementMask: projectiles.confluenceElementMask[slot],
+        incoming: incoming,
+        x: store.posX[target],
+        y: store.posY[target],
+      );
+    }
+
+    // *White Light* (Oriel, T5b) — "reactions deal x3," tripling the
+    // reaction's own bonus portion specifically (not the whole hit, and
+    // not *Resonance*'s own separate +50 %, which composes on top through
+    // `combat.elementalBonusFor` below) — only while Prism's own window
+    // (6 s under this talent, not the base 10 s) is actually live.
+    if (hero != null &&
+        hero.has(HeroBehaviour.orielWhiteLight) &&
+        hero.prismRemaining > 0 &&
+        reactionMultiplier > 1.0) {
+      reactionMultiplier =
+          1.0 + (reactionMultiplier - 1.0) * _orielWhiteLightReactionMultiplier;
+    }
+
+    // *Elemental* damage (Attuned, the Kindled/Rimed/Charged/Blighted
+    // affixes) and *reaction* damage (Resonance, the Resonant affix) —
+    // `DamageResolver`'s own step 6, composed by `combat` the identical
+    // additive-within-a-source way `boonSum` above already is.
+    final int arrowElementMask = projectiles.elementMask[slot] != 0
+        ? projectiles.elementMask[slot]
+        : (projectiles.element[slot] >= 0
+            ? 1 << projectiles.element[slot]
+            : 0);
+    final double elementalBonus = projectiles.elementalBonus[slot] +
+        combat.elementalBonusFor(
+          elementMask: arrowElementMask,
+          reactionBonus: reactionMultiplier > 1.0 ? reactionMultiplier - 1.0 : 0,
+        );
+
     final double damage = DamageResolver.resolve(
       attack: projectiles.damage[slot],
       arrowBaseMultiplier: 1.0,
       drawTierMultiplier: tier.damageMultiplier,
       confluenceBonus: projectiles.confluenceBonus[slot],
-      elementalBonus: projectiles.elementalBonus[slot],
+      elementalBonus: elementalBonus,
       boonDamageSum: boonSum,
       pierceIndex: effectivePierceIndex,
       armourFactor: armour,
@@ -1531,6 +1591,10 @@ abstract final class ProjectileSystem {
 
   /// *Saturation* (Oriel, T3b) — see [_applyElement]'s own doc comment.
   static const double _orielSaturationDurationMultiplier = 2.0;
+
+  /// *White Light* (Oriel, T5b) — "reactions deal x3." See [_applyHit]'s own
+  /// comment for what exactly this multiplies.
+  static const double _orielWhiteLightReactionMultiplier = 3.0;
 
   /// Kade's Kindling, Sela's Chill and Sable's Toxin: each grants their own
   /// element "without needing an [Ember/Frost/Toxin] arrow" (their own card

@@ -1,6 +1,7 @@
 import 'package:quiverfall/game/balance/damage.dart';
 import 'package:quiverfall/game/sim/effects/boon_stats.dart';
 import 'package:quiverfall/game/sim/effects/stat_channel.dart';
+import 'package:quiverfall/game/sim/elements.dart';
 
 /// The parts of a build that can only be resolved at the moment of a hit.
 ///
@@ -77,6 +78,28 @@ class CombatModifiers {
 
   double armourShredPerHit = 0;
   double armourShredMax = 0;
+
+  // ── Composed: elemental / reaction ────────────────────────────────────────
+  // `DamageResolver`'s own step 6, "Elemental / reaction bonus" — a second,
+  // separate additive-within-a-source term from `boonDamageSum`'s step 5.
+  // Every one of these was declared as a `StatChannel` (Oriel's own Attuned/
+  // Resonance, the Kindled/Rimed/Charged/Blighted/Resonant affixes, a
+  // handful of Boons) with nothing anywhere reading them until now.
+
+  double emberDamage = 0;
+  double frostDamage = 0;
+  double stormDamage = 0;
+  double toxinDamage = 0;
+
+  /// Applies regardless of *which* element a hit carries, on top of that
+  /// element's own specific bonus above — "Elemental Focus and set bonuses"
+  /// per [StatChannel.allElementDamage]'s own doc comment.
+  double allElementDamage = 0;
+
+  /// The reaction's own bonus portion (see [elementalBonusFor]) scales by
+  /// this additively, the same way every other conditional term here does —
+  /// Resonance/Resonant are a fixed bonus, not a fresh independent one.
+  double reactionDamage = 0;
 
   // ── Live: updated by the simulation ───────────────────────────────────────
 
@@ -158,6 +181,13 @@ class CombatModifiers {
 
     vsTierThree = stats[StatChannel.tierThreeDamage];
     vsTierOne = stats[StatChannel.tierOneDamage];
+
+    emberDamage = stats[StatChannel.emberDamage];
+    frostDamage = stats[StatChannel.frostEffect];
+    stormDamage = stats[StatChannel.stormDamage];
+    toxinDamage = stats[StatChannel.toxinDamage];
+    allElementDamage = stats[StatChannel.allElementDamage];
+    reactionDamage = stats[StatChannel.reactionDamage];
   }
 
   /// The summed Boon damage term for one specific hit.
@@ -200,6 +230,51 @@ class CombatModifiers {
     if (perHitStreak != 0) {
       final double byStreak = perHitStreak * hitStreak;
       sum += byStreak > perHitStreakCap ? perHitStreakCap : byStreak;
+    }
+
+    return sum;
+  }
+
+  /// [DamageResolver]'s own step 6, "Elemental / reaction bonus" — composed
+  /// the identical additive-within-a-source way [damageSumFor] composes
+  /// step 5, just fed by a different set of channels.
+  ///
+  /// [elementMask] is whichever element(s) *this specific arrow* carries
+  /// (`ProjectileStore.elementMask`, or a single bit from `element`) — not
+  /// what it crossed. An arrow with no element contributes nothing here,
+  /// same as an arrow with no Boon condition met contributes nothing to
+  /// [damageSumFor].
+  ///
+  /// [reactionBonus] is the reaction this specific hit actually triggered
+  /// (docs/08 §8.2), expressed as its own bonus portion —
+  /// `Reaction.damageMultiplier - 1.0` — rather than the raw multiplier,
+  /// since [reactionDamage] (Resonance, the *Resonant* affix) is itself an
+  /// additive bonus *to* that portion, not a second independent one. Zero
+  /// when no reaction fired this hit.
+  double elementalBonusFor({
+    required int elementMask,
+    double reactionBonus = 0,
+  }) {
+    double sum = 0;
+
+    if (elementMask != 0) {
+      if (allElementDamage != 0) sum += allElementDamage;
+      if (emberDamage != 0 && elementMask & (1 << SimElement.ember.index) != 0) {
+        sum += emberDamage;
+      }
+      if (frostDamage != 0 && elementMask & (1 << SimElement.frost.index) != 0) {
+        sum += frostDamage;
+      }
+      if (stormDamage != 0 && elementMask & (1 << SimElement.storm.index) != 0) {
+        sum += stormDamage;
+      }
+      if (toxinDamage != 0 && elementMask & (1 << SimElement.toxin.index) != 0) {
+        sum += toxinDamage;
+      }
+    }
+
+    if (reactionBonus != 0) {
+      sum += reactionBonus + reactionDamage;
     }
 
     return sum;

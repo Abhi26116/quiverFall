@@ -1020,14 +1020,16 @@ class SimWorld {
     } else if (hero.has(HeroBehaviour.kestrelFlurry)) {
       _fireKestrelFlurry();
     } else if (hero.has(HeroBehaviour.orielPrism)) {
-      // *White Light* (T5b) is not handled here: its duration change is free,
-      // but "reactions deal x3" needs Reaction/elementalBonus damage wiring
-      // that does not exist anywhere yet (see the ledger's own note on
-      // orielAttuned/orielResonance), and shipping the duration half alone
-      // would be a card that promises x3 and does not deliver it.
+      // *Endless Prism* (T5a) only extends the window; *White Light* (T5b)
+      // shortens it to 6 s instead — its own "reactions deal x3" half reads
+      // Prism's own duration live in `ProjectileSystem._applyHit`, now that
+      // Reactions actually resolve (ADR 0085). The two are this Ultimate's
+      // own mutually exclusive ★5 branches, never both active.
       hero.prismRemaining = hero.has(HeroBehaviour.orielEndlessPrism)
           ? _orielEndlessPrismDuration
-          : HeroRuntime.prismDuration;
+          : (hero.has(HeroBehaviour.orielWhiteLight)
+              ? _orielWhiteLightPrismDuration
+              : HeroRuntime.prismDuration);
     } else if (hero.has(HeroBehaviour.vanePiercingHorizon)) {
       _fireVanePiercingHorizon();
     } else if (hero.has(HeroBehaviour.haldenJudgmentSpear)) {
@@ -1181,6 +1183,11 @@ class SimWorld {
   static const double _torvLongTempestDuration = 8.0;
 
   static const double _orielEndlessPrismDuration = 16.0;
+
+  /// *White Light* (T5b) — "Prism 6 s but reactions deal x3." The x3 itself
+  /// lives in `ProjectileSystem._applyHit`, alongside the reaction it
+  /// multiplies.
+  static const double _orielWhiteLightPrismDuration = 6.0;
 
   /// *Red Draw* — costs a real slice of current HP up front (floored at 1,
   /// the same guard *Bloodprice* uses, so the button is never a literal
