@@ -301,6 +301,26 @@ class StageRunner {
     return net < 0 ? 0 : net;
   }
 
+  /// What this run actually pays out, once it has genuinely ended.
+  ///
+  /// [bankedGold]'s own 0.7 factor is stated as "the entire penalty for
+  /// dying" — reading `bankedGold` on a real [StageStatus.complete] instead
+  /// of this would apply that same penalty to a full clear, which docs/14
+  /// never asks for. `Curves.stageGold` (the *full*-clear figure) is what a
+  /// completed run pays, net of anything spent at the Shrine along the way;
+  /// a failed run still gets [bankedGold]'s own partial-credit formula.
+  double get finalGold {
+    assert(
+      status == StageStatus.complete || status == StageStatus.failed,
+      'finalGold is only meaningful once a run has actually ended',
+    );
+    if (status != StageStatus.complete) return bankedGold;
+    final double full =
+        Curves.stageGold(plan.blueprint.chapter, plan.blueprint.stage);
+    final double net = full - _shrineGoldSpent;
+    return net < 0 ? 0 : net;
+  }
+
   /// Loads the first room. Call once.
   void start() {
     _roomIndex = -1;
