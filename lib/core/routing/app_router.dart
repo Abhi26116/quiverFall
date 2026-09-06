@@ -12,6 +12,7 @@ import 'package:quiverfall/features/heroes/presentation/hero_screen.dart';
 import 'package:quiverfall/features/loadout/presentation/loadout_screen.dart';
 import 'package:quiverfall/features/menu/presentation/menu_screen.dart';
 import 'package:quiverfall/features/shell/placeholder_screen.dart';
+import 'package:quiverfall/features/spire/presentation/spire_screen.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 
 /// Every route in the game, in one file.
@@ -100,11 +101,8 @@ class AppRouter {
       ),
       GoRoute(
         path: Routes.spire,
-        builder: (_, __) => const PlaceholderScreen(
-          title: 'The Spire',
-          buildPhase: 13,
-          detail: '24 upgrade nodes across 4 wings.',
-        ),
+        builder: (_, __) =>
+            SpireScreen(repository: _repository, spire: _content.spire),
         routes: <RouteBase>[
           GoRoute(
             path: 'research',

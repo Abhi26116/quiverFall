@@ -115,7 +115,7 @@ abstract final class SpireWorkshop {
       ));
     }
 
-    final int cost = _tierGateInsightCost[band]!;
+    final int cost = tierGateInsightCost(band);
     if (save.wallet.insight < cost) {
       return Err<PlayerSave, EconomyError>(
         EconomyError.insufficientInsight(need: cost, have: save.wallet.insight),
@@ -131,7 +131,10 @@ abstract final class SpireWorkshop {
     ));
   }
 
-  /// docs/02 §2.11 / docs/04 §4.2's own fixed table.
+  /// docs/02 §2.11 / docs/04 §4.2's own fixed table — public so a UI can
+  /// show the price before a player taps, not just validate it after.
+  static int tierGateInsightCost(int band) => _tierGateInsightCost[band]!;
+
   static const Map<int, int> _tierGateInsightCost = <int, int>{
     20: 25,
     40: 90,
