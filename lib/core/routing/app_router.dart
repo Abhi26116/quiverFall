@@ -93,6 +93,8 @@ class AppRouter {
             heroState: _repository.save.heroes[snapshot.heroId],
             arrowId: snapshot.arrowId,
             arrowInstance: _repository.save.inventory.arrows[snapshot.arrowId],
+            repository: _repository,
+            runs: _runs,
           );
         },
       ),

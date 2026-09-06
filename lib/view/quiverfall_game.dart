@@ -186,13 +186,16 @@ class QuiverfallGame extends FlameGame {
     final StageRunner? r = runner;
     if (r != null && r.update()) {
       runStatus.value = r.status;
-      // Self-halts the moment an interstitial appears, rather than waiting for
-      // the widget layer to notice and set it — a frame's worth of the sim
-      // ticking on in an already-cleared room while nothing is watching for it
-      // is harmless today, but "harmless because the room is empty" is not a
+      // Self-halts the moment an interstitial appears — or the run itself
+      // ends — rather than waiting for the widget layer to notice and set
+      // it. A frame's worth of the sim ticking on in an already-cleared
+      // room, or a finished run, while nothing is watching for it is
+      // harmless today, but "harmless because the room is empty" is not a
       // property worth depending on.
       halted = r.status == StageStatus.awaitingBoonChoice ||
-          r.status == StageStatus.awaitingShrine;
+          r.status == StageStatus.awaitingShrine ||
+          r.status == StageStatus.complete ||
+          r.status == StageStatus.failed;
     }
   }
 

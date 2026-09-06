@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -5,16 +7,21 @@ import 'package:quiverfall/core/di/service_locator.dart';
 import 'package:quiverfall/core/routing/routes.dart';
 import 'package:quiverfall/core/theme/tokens.dart';
 import 'package:quiverfall/data/models/inventory.dart';
+import 'package:quiverfall/data/models/player_save.dart';
 import 'package:quiverfall/data/models/progression.dart';
+import 'package:quiverfall/data/repositories/player_repository.dart';
 import 'package:quiverfall/features/gameplay/application/feel_telemetry.dart';
+import 'package:quiverfall/features/gameplay/application/run_coordinator.dart';
 import 'package:quiverfall/features/gameplay/application/stage_runner.dart';
 import 'package:quiverfall/features/gameplay/presentation/boon_choice.dart';
+import 'package:quiverfall/features/gameplay/presentation/run_outcome.dart';
 import 'package:quiverfall/features/gameplay/presentation/shrine.dart';
 import 'package:quiverfall/game/arrows/arrow_definition.dart';
 import 'package:quiverfall/game/boons/boon_catalogue.dart';
 import 'package:quiverfall/game/boons/boon_content_loader.dart';
 import 'package:quiverfall/game/boons/boon_definition.dart';
 import 'package:quiverfall/game/boons/synergy_catalogue.dart';
+import 'package:quiverfall/game/campaign/campaign_progress_workshop.dart';
 import 'package:quiverfall/game/content/content_library.dart';
 import 'package:quiverfall/game/content/content_loader.dart';
 import 'package:quiverfall/game/feel/cues.dart';
@@ -53,6 +60,8 @@ class GameScreen extends StatefulWidget {
     this.heroState,
     this.arrowId,
     this.arrowInstance,
+    this.repository,
+    this.runs,
     super.key,
   });
 
@@ -83,6 +92,13 @@ class GameScreen extends StatefulWidget {
   final String? arrowId;
   final ArrowInstance? arrowInstance;
 
+  /// Where a finished run's outcome (ADR 0096) gets saved and the run slot
+  /// cleared. Null — the smoke test's and dev bench's own default — means
+  /// neither happens: the screen still shows [RunOutcome], it just has
+  /// nothing to persist the result into or free on the way out.
+  final PlayerRepository? repository;
+  final RunCoordinator? runs;
+
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
@@ -92,6 +108,14 @@ class _GameScreenState extends State<GameScreen>
   QuiverfallGame? _game;
   StageRunner? _runner;
   Object? _loadError;
+
+  /// Guards [_applyRunOutcomeIfNeeded] — `runStatus` can notify its
+  /// listener more than once at [StageStatus.complete]/`.failed` (a
+  /// rebuild, a second tick before [QuiverfallGame.halted] takes effect),
+  /// and [CampaignProgressWorkshop.apply] is only correct to call once, the
+  /// same "call once, on the state change" contract every other place this
+  /// codebase applies a [StageRunner] outcome already documents.
+  bool _outcomeApplied = false;
 
   late final HapticService _haptics = HapticService();
   late final SilentAudioSink _audio = SilentAudioSink();
@@ -111,7 +135,38 @@ class _GameScreenState extends State<GameScreen>
   void dispose() {
     _ticker.dispose();
     _hudFrame.dispose();
+    _game?.runStatus.removeListener(_onRunStatusChanged);
     super.dispose();
+  }
+
+  /// Persists a finished run's outcome (ADR 0096) the first time
+  /// `runStatus` reports it — attached once [_game] exists, so it fires
+  /// independently of whether anything is currently rebuilding this
+  /// widget's own `build()`.
+  void _onRunStatusChanged() {
+    final QuiverfallGame? game = _game;
+    if (game == null) return;
+    _applyRunOutcomeIfNeeded(game.runStatus.value);
+  }
+
+  void _applyRunOutcomeIfNeeded(StageStatus status) {
+    if (_outcomeApplied) return;
+    if (status != StageStatus.complete && status != StageStatus.failed) {
+      return;
+    }
+    final StageRunner? runner = _runner;
+    final PlayerRepository? repository = widget.repository;
+    if (runner == null || repository == null) return;
+
+    _outcomeApplied = true;
+    // Not awaited — the outcome screen shows immediately regardless, and
+    // `PlayerRepository.mutateAndFlush`'s own doc comment names "run
+    // results" directly as the reason to flush now rather than debounce: a
+    // crash between here and the next room's own save would otherwise lose
+    // gold and campaign advance that already genuinely happened.
+    unawaited(repository.mutateAndFlush(
+      (PlayerSave save) => CampaignProgressWorkshop.apply(save, runner),
+    ));
   }
 
   void _onFrame(Duration _) {
@@ -238,7 +293,7 @@ class _GameScreenState extends State<GameScreen>
           quality: locator.isRegistered<QualityController>()
               ? locator<QualityController>()
               : null,
-        );
+        )..runStatus.addListener(_onRunStatusChanged);
       });
     } catch (error) {
       if (mounted) setState(() => _loadError = error);
@@ -303,10 +358,17 @@ class _GameScreenState extends State<GameScreen>
                       onBuyBoon: () => _resolve(runner.buyShrineBoon),
                       onLeave: () => _resolve(runner.leaveShrine),
                     ),
-                  StageStatus.fighting ||
+                  StageStatus.fighting => const SizedBox.shrink(),
                   StageStatus.complete ||
                   StageStatus.failed =>
-                    const SizedBox.shrink(),
+                    RunOutcome(
+                      runner: runner,
+                      onContinue: () {
+                        widget.runs?.endRun();
+                        final NavigatorState navigator = Navigator.of(context);
+                        if (navigator.canPop()) navigator.pop();
+                      },
+                    ),
                 };
               },
             ),
