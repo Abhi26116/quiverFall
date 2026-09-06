@@ -29,6 +29,7 @@ import 'package:quiverfall/game/heroes/hero_definition.dart';
 import 'package:quiverfall/game/heroes/hero_loadout_resolver.dart';
 import 'package:quiverfall/game/level/level_generator.dart';
 import 'package:quiverfall/game/level/stage_blueprint.dart';
+import 'package:quiverfall/game/research/research_loadout_resolver.dart';
 import 'package:quiverfall/game/sim/world.dart';
 import 'package:quiverfall/services/audio/audio_port.dart';
 import 'package:quiverfall/services/device/quality_controller.dart';
@@ -239,6 +240,16 @@ class _GameScreenState extends State<GameScreen>
         boonCatalogue: boons.$1,
         synergies: boons.$2,
       )..start();
+
+      // A permanent, account-level unlock rather than a per-build one —
+      // applies with no hero/arrow needed at all, unlike the block below,
+      // and needs no player entity to exist first either (unlike
+      // `HeroLoadoutResolver.apply`'s own max-health clamp), so this runs
+      // unconditionally right after the world exists.
+      ResearchLoadoutResolver.apply(
+        sim,
+        widget.repository?.save.research ?? const ResearchState(),
+      );
 
       // The chosen build, applied *after* `start()` — not inside
       // `buildStageWorld`, before it — because `start()` is what spawns the

@@ -1,4 +1,4 @@
-# ADR 0099 — The Spire and Marks now actually reach a real run
+# ADR 0099 — The Spire, Marks, and Research now actually reach a real run
 
 **Phase** Direct follow-on to ADR 0092/0095, found while looking for the
 next reachability gap after ADR 0098 closed the campaign-persistence one.
@@ -19,6 +19,11 @@ through — never passed either. A player's entire Spire investment and
 every equipped Mark were silently inert in real play, exactly the same
 shape of gap ADR 0096 found for campaign persistence: the primitive was
 correct, reachable only from a test.
+
+Checking for the same shape of gap elsewhere found a third instance in the
+same sweep: `ResearchLoadoutResolver.apply` (ADR 0093, Windline Memory's
+own effect) had exactly one caller in the whole codebase — itself. Nothing
+had ever invoked it either.
 
 A second, smaller gap sat underneath it: `SpireCatalogue`/`MarkCatalogue`
 were never loaded anywhere near `GameScreen` at all — `ContentLibrary`
@@ -49,6 +54,13 @@ account state from inside the screen" need. Null/empty (no repository, the
 smoke test's and dev bench's own default) folds in nothing, the identical
 graceful degradation `heroState`/`arrowInstance` already get.
 
+**`ResearchLoadoutResolver.apply(sim, save?.research ?? const
+ResearchState())` now runs unconditionally, right after the world exists.**
+Unlike the hero/arrow block, it needs no player entity to exist first (no
+max-health clamp to no-op against) and applies with no hero or arrow
+chosen at all, since Windline Memory is a permanent account unlock, not
+part of a build.
+
 ## A real testing pitfall found along the way
 
 An early version of the verifying test called `tester.pumpWidget(...)`
@@ -67,13 +79,13 @@ control values are) rather than a second live boot.
 
 ## Verified
 
-`test/view/game_screen_spire_marks_test.dart`, 5 tests, each a single real
+`test/view/game_screen_spire_marks_test.dart`, 7 tests, each a single real
 `GameScreen` boot through a real stage: the plain hero+arrow baseline with
 no investment at all; Warden's Might at L80 raising `playerAttack` by
 exactly the documented factor; no equipped Marks leaving `flatDamage`
 untouched; an equipped, unlocked Mark of Ruin raising it by exactly 10%;
-and — the graceful-degradation case — no repository at all still starting
-the run.
+Windline Memory off by default and on once researched; and — the
+graceful-degradation case — no repository at all still starting the run.
 
 ## Consequences
 

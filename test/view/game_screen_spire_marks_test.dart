@@ -10,9 +10,11 @@ import 'package:quiverfall/view/quiverfall_game.dart';
 
 import '../features/repository_test_support.dart';
 
-/// A real account's Spire investment and equipped Marks now actually reach
-/// a real run — the gap `HeroLoadoutResolver.apply` supported since
-/// ADR 0092/0095 but nothing in `GameScreen` ever passed through until now.
+/// A real account's Spire investment, equipped Marks, and completed
+/// Research items now actually reach a real run — the gap
+/// `HeroLoadoutResolver.apply`/`ResearchLoadoutResolver.apply` supported
+/// since ADR 0092/0095/0093 but nothing in `GameScreen` ever passed
+/// through until ADR 0099.
 ///
 /// Each case boots exactly one `GameScreen` — `pumpWidget` a second time in
 /// the same test to compare against a live "before" reading does not
@@ -105,6 +107,24 @@ void main() {
     final QuiverfallGame game = await boot(tester, withMark);
 
     expect(game.sim.combat.flatDamage, closeTo(0.10, 1e-9));
+  });
+
+  testWidgets('with no Windline Memory researched, the flag is off', (
+    WidgetTester tester,
+  ) async {
+    final QuiverfallGame game = await boot(tester, baseSave());
+    expect(game.sim.windlinesSurviveRoomTransition, isFalse);
+  });
+
+  testWidgets('Windline Memory researched turns the flag on in a real run', (
+    WidgetTester tester,
+  ) async {
+    final PlayerSave withResearch = baseSave().copyWith(
+      research: const ResearchState(completedIds: {'windline_memory'}),
+    );
+    final QuiverfallGame game = await boot(tester, withResearch);
+
+    expect(game.sim.windlinesSurviveRoomTransition, isTrue);
   });
 
   testWidgets('with no repository, the run still starts (nothing to fold in)', (
