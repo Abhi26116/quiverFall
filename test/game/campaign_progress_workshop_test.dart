@@ -202,4 +202,59 @@ void main() {
     final updated = CampaignProgressWorkshop.apply(save, runner);
     expect(updated.ascension.highestChapterEver, 9);
   });
+
+  group('boss-defeat tracking (ADR 0097)', () {
+    test('a completed boss stage records the boss defeated', () {
+      // Chapter 1's stage 20 is Cinder Choir's own fight (ADR 0021).
+      final runner = completeStage(
+        chapter: 1,
+        stage: StageBlueprint.stagesPerChapter,
+        seed: 501,
+      );
+      final updated = CampaignProgressWorkshop.apply(
+        freshSave(currentStage: StageBlueprint.stagesPerChapter),
+        runner,
+      );
+      expect(updated.campaign.bossesDefeated, contains('cinderChoir'));
+      expect(updated.campaign.bossKillCounts['cinderChoir'], 1);
+    });
+
+    test('killing the same boss again increments the count, not the set', () {
+      final runner = completeStage(
+        chapter: 1,
+        stage: StageBlueprint.stagesPerChapter,
+        seed: 501,
+      );
+      final save = freshSave(currentChapter: 5).copyWith(
+        campaign: const CampaignState(
+          currentChapter: 5,
+          bossesDefeated: {'cinderChoir'},
+          bossKillCounts: {'cinderChoir': 3},
+        ),
+      );
+      final updated = CampaignProgressWorkshop.apply(save, runner);
+      expect(updated.campaign.bossesDefeated, {'cinderChoir'});
+      expect(updated.campaign.bossKillCounts['cinderChoir'], 4);
+    });
+
+    test('an ordinary (non-boss) stage clear leaves boss tracking untouched',
+        () {
+      final runner = completeStage(chapter: 1, stage: 1);
+      final updated = CampaignProgressWorkshop.apply(freshSave(), runner);
+      expect(updated.campaign.bossesDefeated, isEmpty);
+      expect(updated.campaign.bossKillCounts, isEmpty);
+    });
+
+    test('a failed run never records a boss defeat', () {
+      final runner = failStage(
+        chapter: 1,
+        stage: StageBlueprint.stagesPerChapter,
+      );
+      final updated = CampaignProgressWorkshop.apply(
+        freshSave(currentStage: StageBlueprint.stagesPerChapter),
+        runner,
+      );
+      expect(updated.campaign.bossesDefeated, isEmpty);
+    });
+  });
 }

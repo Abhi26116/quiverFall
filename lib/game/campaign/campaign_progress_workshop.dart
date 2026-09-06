@@ -12,11 +12,12 @@ import 'package:quiverfall/game/level/stage_blueprint.dart';
 /// and chapter 2 would never unlock. See ADR 0096.
 ///
 /// Deliberately the smallest version of this that is genuinely correct:
-/// gold and campaign position only. Boss-defeat tracking, per-stage
-/// records/stars, material rewards, and what happens once a player clears
-/// chapter 12 (docs/14's own Endless Descent transition, not a chapter 13
-/// that does not exist) are all real, separate follow-ons, not attempted
-/// here — see ADR 0096's own Consequences.
+/// gold, campaign position, and — since ADR 0097 — the campaign bosses
+/// defeated along the way. Per-stage records/stars, material rewards, Elite
+/// and Endless boss tracking, and what happens once a player clears chapter
+/// 12 (docs/14's own Endless Descent transition, not a chapter 13 that does
+/// not exist) are all real, separate follow-ons, not attempted here — see
+/// ADR 0096's own Consequences and ADR 0097's.
 abstract final class CampaignProgressWorkshop {
   /// Call once, the first tick `runner.status` reads
   /// [StageStatus.complete] or [StageStatus.failed] — mirrors the exact
@@ -51,6 +52,25 @@ abstract final class CampaignProgressWorkshop {
     final int highestChapterEver = chapter > save.ascension.highestChapterEver
         ? chapter
         : save.ascension.highestChapterEver;
+
+    // Mark of the Choir's own condition ("defeat all 20 bosses") — the
+    // campaign-boss slice of it. `bossArchetype` is only ever non-null on a
+    // real fight's own room (`BossRoomComposer.bossFor` found one for this
+    // chapter); a chapter with no fight built yet, or an ordinary
+    // fallback room, leaves this untouched. See ADR 0097 for why Elite and
+    // Endless bosses are not counted here.
+    if (runner.status == StageStatus.complete &&
+        runner.room.kind == RoomKind.boss &&
+        runner.room.bossArchetype != null) {
+      final String key = runner.room.bossArchetype!.name;
+      campaign = campaign.copyWith(
+        bossesDefeated: <String>{...campaign.bossesDefeated, key},
+        bossKillCounts: <String, int>{
+          ...campaign.bossKillCounts,
+          key: (campaign.bossKillCounts[key] ?? 0) + 1,
+        },
+      );
+    }
 
     return save.copyWith(
       wallet: save.wallet.copyWith(gold: save.wallet.gold + gold.round()),
