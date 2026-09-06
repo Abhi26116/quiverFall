@@ -258,6 +258,15 @@ class _GameScreenState extends State<GameScreen>
           heroState != null &&
           arrow != null &&
           arrowInstance != null) {
+        // The account's own Spire investment and equipped Marks — read
+        // straight off the live save when one is available (the same
+        // `widget.repository` ADR 0098 added), so a real run finally
+        // reflects both instead of silently running as if neither existed.
+        // Null/empty (the smoke test's and dev bench's own default) folds
+        // in nothing, the same graceful-degradation `heroState`/
+        // `arrowInstance` already get from a null build.
+        final PlayerSave? save = widget.repository?.save;
+
         // The return value matters: forwarding it is what keeps this build
         // alive past the run's first Boon pick — see `setBaseLoadout`'s own
         // doc comment and ADR 0090.
@@ -273,6 +282,10 @@ class _GameScreenState extends State<GameScreen>
           arrow,
           arrowInstance,
           affixes: content.affixes,
+          spire: content.spire,
+          spireState: save?.spire,
+          marks: content.marks,
+          equippedMarkKeys: save?.profile.equippedMarkIds,
         );
         runner.setBaseLoadout(
           baseAttack: base.baseAttack,

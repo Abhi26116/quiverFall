@@ -6,7 +6,9 @@ import 'package:quiverfall/game/content/boss_catalogue.dart';
 import 'package:quiverfall/game/content/enemy_definition.dart';
 import 'package:quiverfall/game/heroes/hero_catalogue.dart';
 import 'package:quiverfall/game/level/arena_definition.dart';
+import 'package:quiverfall/game/marks/mark_catalogue.dart';
 import 'package:quiverfall/game/sim/sim_config.dart';
+import 'package:quiverfall/game/spire/spire_catalogue.dart';
 
 /// A problem found while loading content.
 class ContentError {
@@ -45,6 +47,8 @@ class ContentLibrary {
     required this.arrows,
     required this.affixes,
     required this.bosses,
+    required this.spire,
+    required this.marks,
   }) : _byArchetype = enemyIndexByArchetype;
 
   /// Ordered enemy table. Entities reference definitions by *index* into this
@@ -86,6 +90,15 @@ class ContentLibrary {
   /// resolves an [EnemyDefinition].
   final BossCatalogue bosses;
 
+  /// The Spire's 24 nodes (docs/04 §4.2, ADR 0092) and the 9 named Marks
+  /// (docs/04 §4.5, ADR 0095) — kept here for the identical reason
+  /// [heroes]/[arrows]/[affixes] are: `GameScreen`'s own loadout resolution
+  /// needs both to fold a real account's investment into a real run, not
+  /// just the Spire/Marks hub screens that read them the way the Hero/Gear
+  /// screens already read [heroes]/[arrows].
+  final SpireCatalogue spire;
+  final MarkCatalogue marks;
+
   /// Archetype ordinal to table index. The AI resolves a definition on every
   /// enemy on every tick, so this has to be an array read.
   final List<int> _byArchetype;
@@ -99,6 +112,8 @@ class ContentLibrary {
         arrows: ArrowCatalogue.empty(),
         affixes: AffixCatalogue.empty(),
         bosses: BossCatalogue.empty(),
+        spire: SpireCatalogue.empty(),
+        marks: MarkCatalogue.empty(),
       );
 
   /// Parses and validates content.
@@ -112,6 +127,8 @@ class ContentLibrary {
     String? arrowsJson,
     String? affixesJson,
     String? bossesJson,
+    String? spireJson,
+    String? marksJson,
   }) {
     final List<ContentError> errors = <ContentError>[];
 
@@ -141,6 +158,16 @@ class ContentLibrary {
     final BossCatalogue bosses = bossesJson == null
         ? BossCatalogue.empty()
         : _unwrap(BossCatalogue.parse(bossesJson), errors, BossCatalogue.empty());
+    if (errors.isNotEmpty) return (null, errors);
+
+    final SpireCatalogue spire = spireJson == null
+        ? SpireCatalogue.empty()
+        : _unwrap(SpireCatalogue.parse(spireJson), errors, SpireCatalogue.empty());
+    if (errors.isNotEmpty) return (null, errors);
+
+    final MarkCatalogue marks = marksJson == null
+        ? MarkCatalogue.empty()
+        : _unwrap(MarkCatalogue.parse(marksJson), errors, MarkCatalogue.empty());
     if (errors.isNotEmpty) return (null, errors);
 
     final Map<String, int> byId = <String, int>{};
@@ -173,6 +200,8 @@ class ContentLibrary {
         arrows: arrows,
         affixes: affixes,
         bosses: bosses,
+        spire: spire,
+        marks: marks,
       ),
       const <ContentError>[],
     );

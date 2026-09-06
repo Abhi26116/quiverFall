@@ -33,6 +33,8 @@ abstract final class ContentLoader {
         await rootBundle.loadString('assets/data/affixes.json');
     final String bosses =
         await rootBundle.loadString('assets/data/bosses.json');
+    final String spire = await rootBundle.loadString('assets/data/spire.json');
+    final String marks = await rootBundle.loadString('assets/data/marks.json');
 
     final (ContentLibrary?, List<ContentError>) parsed = ContentLibrary.parse(
       enemiesJson: enemies,
@@ -41,6 +43,8 @@ abstract final class ContentLoader {
       arrowsJson: arrows,
       affixesJson: affixes,
       bossesJson: bosses,
+      spireJson: spire,
+      marksJson: marks,
     );
 
     final ContentLibrary? library = parsed.$1;
